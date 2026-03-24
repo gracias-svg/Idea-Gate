@@ -1,4 +1,4 @@
-# Product Builder Coworker 🚀
+# Idea Gate - A Product Builder Coworker v1.0 🚀
 
 > AI coworker that turns rough product ideas into shipped prototypes
 
@@ -6,7 +6,7 @@
 
 ## What This Does
 
-Product Builder Coworker is an AI-powered tool that acts as your full-stack product team. Give it a rough idea, and it generates:
+Idea Gate is an AI-powered tool that acts as your full-stack product team. Give it a rough idea, and it generates:
 
 - ✅ **Phase 1** (Complete): Product Brief + PRD
 - ✅ **Phase 2** (Complete): Task breakdown + Architecture diagrams + API schema

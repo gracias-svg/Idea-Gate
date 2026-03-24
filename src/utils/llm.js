@@ -1,7 +1,7 @@
 import fetch from "node-fetch";
 import { config } from "../config.js";
 
-const OLLAMA_URL = process.env.OLLAMA_URL || "http://127.0.0.1:11434";
+const OLLAMA_URL = process.env.OLLAMA_URL || "URL";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 /**

@@ -1,0 +1,8 @@
+UPI Escrow Simulator for Rental Deposits
+
+Target: Indian renters aged 25-35 in metros
+Platform: Mobile-first Progressive Web App
+Problem: Landlords don't return deposits; renters don't trust them
+Solution: Blockchain-inspired escrow that auto-releases after 30 days unless dispute raised
+Constraints: Must be free to host, use mock UPI integration, work offline
+Key Feature: Smart contract-like rules without blockchain complexity

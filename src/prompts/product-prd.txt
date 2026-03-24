@@ -1,0 +1,135 @@
+You are a senior product manager writing a lean PRD (Product Requirements Document) for an MVP. You have the product brief below.
+
+IDEA & CONTEXT:
+{{idea}}
+
+PRODUCT BRIEF:
+{{brief}}
+
+Write a comprehensive but focused PRD with these sections:
+
+# [Product Name] - Product Requirements Document
+
+## 1. Executive Summary
+Brief overview (2-3 sentences) of what this PRD covers.
+
+## 2. Goals & Success Metrics
+**Primary Goal:** [One sentence]
+
+**Success Metrics (MVP):**
+- Metric 1: [specific, measurable]
+- Metric 2: [specific, measurable]
+- Metric 3: [specific, measurable]
+
+## 3. User Personas
+
+### Primary Persona: [Name/Type]
+- **Demographics:** Age, location, tech-savviness
+- **Context:** When/where they use the product
+- **Needs:** What they're trying to accomplish
+- **Pain Points:** Current frustrations
+
+## 4. User Stories (MVP Scope)
+
+**Core Flow:**
+1. As a [persona], I want to [action] so that [benefit]
+2. As a [persona], I want to [action] so that [benefit]
+3. [Continue for 5-7 critical user stories]
+
+**Out of Scope for MVP:**
+- [Feature/story we won't build yet]
+- [Feature/story we won't build yet]
+
+## 5. Functional Requirements
+
+### 5.1 Core Features (Must Have)
+
+**Feature 1: [Name]**
+- Description: [What it does]
+- User benefit: [Why it matters]
+- Acceptance criteria:
+  - [ ] Criterion 1
+  - [ ] Criterion 2
+  - [ ] Criterion 3
+
+**Feature 2: [Name]**
+[Same structure]
+
+**Feature 3: [Name]**
+[Same structure]
+
+### 5.2 Secondary Features (Should Have)
+[List 2-3 secondary features with brief descriptions]
+
+## 6. Technical Constraints
+
+**Platform:** [Web/Mobile/Desktop - specific]
+**Infrastructure:** [Hosting approach, database, key services]
+**Budget Constraints:** [Cost limits that affect design decisions]
+**Performance Requirements:** [Load time, scalability needs]
+**Security Requirements:** [Authentication, data protection]
+
+## 7. User Experience Requirements
+
+### Key Screens/Views
+1. **[Screen Name]:** Purpose and key elements
+2. **[Screen Name]:** Purpose and key elements
+3. **[Screen Name]:** Purpose and key elements
+
+### Navigation Flow
+[Brief description of primary user journey]
+
+### Mobile/Responsive Requirements
+[Specific needs for different devices]
+
+## 8. Data & Integration Requirements
+
+**Data Model (Simplified):**
+- Entity 1: [fields]
+- Entity 2: [fields]
+- Relationships: [how they connect]
+
+**External Integrations:**
+- [Service/API]: Purpose
+- [Service/API]: Purpose
+
+## 9. Non-Functional Requirements
+
+- **Availability:** [uptime expectations]
+- **Scalability:** [expected user load]
+- **Accessibility:** [WCAG level, specific needs]
+- **Localization:** [languages, regions]
+
+## 10. Launch Requirements
+
+**MVP Definition of Done:**
+- [ ] All "Must Have" features complete
+- [ ] Core user flow works end-to-end
+- [ ] Basic error handling in place
+- [ ] Deployed to production URL
+- [ ] Initial analytics tracking live
+
+**Launch Blockers:**
+- [What absolutely must work]
+- [What would prevent launch]
+
+## 11. Open Questions & Future Considerations
+
+**Open Questions:**
+1. [Question that needs answering]
+2. [Question that needs answering]
+
+**Post-MVP Roadmap Ideas:**
+- [Feature for v2]
+- [Feature for v2]
+
+---
+
+REQUIREMENTS FOR YOUR PRD:
+- Be specific: Use concrete examples, not abstract descriptions
+- Be realistic: This is an MVP, not a full product
+- Be technical: Include enough detail for developers to start
+- Be constraint-aware: Constantly reference budget/platform/timeline limits
+- Focus on the "happy path": MVP doesn't need to handle every edge case
+- Keep it under 2000 words
+- Use checkboxes for acceptance criteria (for easy tracking)

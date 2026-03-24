@@ -1,0 +1,215 @@
+You are an API architect creating an OpenAPI 3.0 specification. Based on the PRD, design a RESTful API.
+
+PRODUCT BRIEF:
+{{brief}}
+
+PRODUCT PRD:
+{{prd}}
+
+Create a complete OpenAPI 3.0 specification in YAML format:
+
+```yaml
+openapi: 3.0.0
+info:
+  title: [Product Name] API
+  description: API for [brief description from PRD]
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@example.com
+
+servers:
+  - url: https://api.example.com/v1
+    description: Production server
+  - url: http://localhost:3000/v1
+    description: Development server
+
+tags:
+  - name: Authentication
+    description: User authentication endpoints
+  - name: Users
+    description: User management endpoints
+  - name: [Feature]
+    description: [Feature description]
+
+paths:
+  /auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: Register a new user
+      description: Creates a new user account with email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@example.com
+                password:
+                  type: string
+                  format: password
+                  minLength: 8
+                  example: SecurePass123!
+                name:
+                  type: string
+                  example: John Doe
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Email already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: User login
+      description: Authenticate user and return JWT token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                  user:
+                    $ref: '#/components/schemas/User'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 123e4567-e89b-12d3-a456-426614174000
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        name:
+          type: string
+          example: John Doe
+        createdAt:
+          type: string
+          format: date-time
+          example: 2024-03-05T10:30:00Z
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Invalid input
+        message:
+          type: string
+          example: Email format is invalid
+        code:
+          type: string
+          example: VALIDATION_ERROR
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+security:
+  - bearerAuth: []
+```
+
+REQUIREMENTS:
+
+**API Design Principles:**
+- Follow RESTful conventions (GET, POST, PUT, DELETE)
+- Use plural nouns for resources (/users, /tasks)
+- Version the API (/v1/)
+- Use proper HTTP status codes
+- Include authentication scheme (JWT recommended)
+
+**Endpoints to Create:**
+- Base on user stories from PRD
+- Include all CRUD operations for main entities
+- Add authentication endpoints (register, login, logout)
+- Include search/filter endpoints where relevant
+- Add pagination for list endpoints
+
+**Response Codes:**
+- 200: Success (GET, PUT)
+- 201: Created (POST)
+- 204: No Content (DELETE)
+- 400: Bad Request
+- 401: Unauthorized
+- 403: Forbidden
+- 404: Not Found
+- 409: Conflict
+- 500: Server Error
+
+**Schemas:**
+- Define all data models from PRD
+- Include validation rules (required, min/max, format)
+- Use examples for documentation
+- Reference schemas with $ref
+- Include error schema
+
+**Security:**
+- Define authentication method
+- Mark protected endpoints
+- Include rate limiting notes
+- Document CORS requirements
+
+Keep the API:
+- Simple for MVP (5-10 core endpoints)
+- Consistent in naming and structure
+- Well-documented with descriptions
+- Aligned with PRD requirements
+- Realistic for the constraints (serverless-friendly, etc.)

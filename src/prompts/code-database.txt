@@ -1,0 +1,87 @@
+You are a database engineer creating a clean SQLite schema.
+
+DATABASE MODEL:
+{{dataModel}}
+
+Generate a complete database schema with:
+
+## FILE: schema.sql
+Complete database schema for SQLite.
+
+```sql
+-- schema.sql
+-- Database schema for [Product Name]
+
+-- Users table
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  name VARCHAR(255),
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_users_email ON users(email);
+
+-- Main resource table (based on data model)
+CREATE TABLE IF NOT EXISTS [table_name] (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  [field1] VARCHAR(255) NOT NULL,
+  [field2] TEXT,
+  [field3] INTEGER,
+  [field4] BOOLEAN DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_[table]_user_id ON [table_name](user_id);
+CREATE INDEX idx_[table]_created_at ON [table_name](created_at);
+
+-- Additional tables as needed from data model
+
+-- Triggers for updated_at
+CREATE TRIGGER IF NOT EXISTS update_users_timestamp
+AFTER UPDATE ON users
+BEGIN
+  UPDATE users SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS update_[table]_timestamp
+AFTER UPDATE ON [table_name]
+BEGIN
+  UPDATE [table_name] SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+```
+
+## FILE: seed.sql
+Optional seed data for development.
+
+```sql
+-- seed.sql
+-- Sample data for development
+
+-- Insert a test user (password: 'password123')
+INSERT INTO users (email, password_hash, name) VALUES
+('test@example.com', '$2a$10$XqjGz5fq5Jy6K5K5K5K5KeL5K5K5K5K5K5K5K5K5K5K5K5K5K5', 'Test User');
+
+-- Insert sample data for main resource
+-- INSERT INTO [table_name] (user_id, [field1], [field2]) VALUES
+-- (1, 'Sample Title', 'Sample Description');
+```
+
+REQUIREMENTS:
+- Use SQLite syntax
+- Include INTEGER PRIMARY KEY AUTOINCREMENT for IDs
+- Add created_at and updated_at timestamps to all tables
+- Use FOREIGN KEY constraints with ON DELETE CASCADE
+- Add indexes for foreign keys and commonly queried fields
+- Create triggers for auto-updating updated_at
+- Follow naming conventions (snake_case for table and column names)
+- Include appropriate constraints (NOT NULL, UNIQUE, DEFAULT)
+- Keep it simple - denormalized is okay for MVP
+- Match the data model provided
+
+Generate clean SQL that can be executed directly to create the database.

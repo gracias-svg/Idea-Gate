@@ -1,0 +1,117 @@
+You are a system architect creating a technical architecture diagram. Based on the PRD, create a Mermaid diagram showing the system architecture.
+
+PRODUCT BRIEF:
+{{brief}}
+
+PRODUCT PRD:
+{{prd}}
+
+Create a comprehensive architecture diagram using Mermaid syntax. Include:
+
+1. **Client/Frontend Layer** (web, mobile, etc.)
+2. **API/Backend Layer** (endpoints, services)
+3. **Data Layer** (databases, caching)
+4. **External Services** (third-party APIs)
+5. **Infrastructure** (hosting, CDN)
+
+Return a complete Mermaid diagram in this format:
+
+```mermaid
+graph TB
+    subgraph "Client Layer"
+        WEB[Web Application<br/>React/Next.js]
+        MOBILE[Mobile App<br/>PWA]
+    end
+
+    subgraph "API Layer"
+        API[API Gateway<br/>Node.js/Express]
+        AUTH[Auth Service]
+        CORE[Core Service]
+    end
+
+    subgraph "Data Layer"
+        DB[(PostgreSQL<br/>Main Database)]
+        CACHE[(Redis<br/>Session Cache)]
+    end
+
+    subgraph "External Services"
+        EMAIL[Email Service<br/>SendGrid]
+        PAYMENT[Payment Gateway<br/>Stripe]
+    end
+
+    WEB --> API
+    MOBILE --> API
+    API --> AUTH
+    API --> CORE
+    CORE --> DB
+    AUTH --> CACHE
+    CORE --> EMAIL
+    CORE --> PAYMENT
+
+    style WEB fill:#e1f5ff
+    style MOBILE fill:#e1f5ff
+    style API fill:#fff3e0
+    style DB fill:#f3e5f5
+    style CACHE fill:#f3e5f5
+```
+
+Also include a **Component Diagram** showing the main modules:
+
+```mermaid
+graph LR
+    subgraph "Frontend Components"
+        UI[UI Components]
+        STATE[State Management]
+        API_CLIENT[API Client]
+    end
+
+    subgraph "Backend Components"
+        ROUTES[API Routes]
+        CONTROLLERS[Controllers]
+        SERVICES[Business Logic]
+        MODELS[Data Models]
+    end
+
+    UI --> STATE
+    STATE --> API_CLIENT
+    API_CLIENT --> ROUTES
+    ROUTES --> CONTROLLERS
+    CONTROLLERS --> SERVICES
+    SERVICES --> MODELS
+```
+
+And a **Data Flow Diagram** for the primary user flow:
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant F as Frontend
+    participant A as API
+    participant D as Database
+
+    U->>F: Submit form
+    F->>A: POST /api/resource
+    A->>D: Insert data
+    D-->>A: Success
+    A-->>F: 201 Created
+    F-->>U: Show success message
+```
+
+REQUIREMENTS:
+- Use proper Mermaid syntax (graph TB, graph LR, sequenceDiagram)
+- Show all major system components
+- Indicate technology choices from the PRD
+- Show data flow directions with arrows
+- Use subgraphs to group related components
+- Include external dependencies (APIs, services)
+- Match the platform constraints from PRD (web vs mobile, etc.)
+- Consider the budget constraints (free hosting, etc.)
+- Keep it clean and readable
+- Add brief tech stack labels to components
+- Use appropriate colors/styling for clarity
+
+Make sure the diagram accurately reflects:
+- The platform mentioned in PRD (web/mobile/both)
+- The database choice if specified
+- Any third-party integrations mentioned
+- The hosting constraints (serverless, free tier, etc.)

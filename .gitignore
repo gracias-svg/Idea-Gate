@@ -1,0 +1,43 @@
+node_modules/
+.env
+workspace/
+*.log
+.DS_Store
+dist/
+build/
+# ENV / SECRETS
+.env
+.env.*
+*.env
+
+# API KEYS / CONFIG
+config.local.js
+secrets.json
+
+# NODE
+node_modules/
+npm-debug.log
+
+# OS FILES
+.DS_Store
+
+# LOGS
+logs/
+*.log
+
+# MEMORY / RUNTIME (DO NOT PUSH)
+memory/
+sessions/
+
+# WORKSPACE PROJECT OUTPUTS (VERY IMPORTANT)
+workspace/
+
+# TEMP FILES
+tmp/
+temp/
+
+# VSCODE
+.vscode/
+
+# CACHE
+.cache/

@@ -1,0 +1,403 @@
+You are a backend engineer creating a clean, production-ready Express.js API server.
+
+API ENDPOINTS:
+{{apiSpec}}
+
+DATABASE SCHEMA:
+{{dataModel}}
+
+TECH STACK:
+{{techStack}}
+
+Generate a complete Node.js/Express backend with the following structure.
+
+Use this exact format for each file:
+
+FILE: path/to/file.js
+
+IMPORTANT: Each file MUST start with "FILE: " followed by the path, then a code block.
+
+## FILE: index.js
+
+```javascript
+// index.js
+const express = require('express');
+const cors = require('cors');
+const dotenv = require('dotenv');
+
+dotenv.config();
+
+const app = express();
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Routes
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/[resource]', require('./routes/[resource]'));
+
+// Health check
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Error handling
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(err.status || 500).json({
+    error: err.message || 'Internal server error'
+  });
+});
+
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
+```
+
+## FILE: routes/auth.js
+
+```javascript
+// routes/auth.js
+const express = require('express');
+const router = express.Router();
+const authController = require('../controllers/authController');
+
+router.post('/register', authController.register);
+router.post('/login', authController.login);
+router.post('/logout', authController.logout);
+
+module.exports = router;
+```
+
+## FILE: routes/[resource].js
+Main resource routes (based on API spec).
+
+```javascript
+// routes/[resource].js
+const express = require('express');
+const router = express.Router();
+const [resource]Controller = require('../controllers/[resource]Controller');
+const auth = require('../middleware/auth');
+
+router.get('/', auth, [resource]Controller.getAll);
+router.get('/:id', auth, [resource]Controller.getById);
+router.post('/', auth, [resource]Controller.create);
+router.put('/:id', auth, [resource]Controller.update);
+router.delete('/:id', auth, [resource]Controller.delete);
+
+module.exports = router;
+```
+
+## FILE: controllers/authController.js
+Authentication controller with JWT.
+
+```javascript
+// controllers/authController.js
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const db = require('../db');
+
+exports.register = async (req, res) => {
+  try {
+    const { email, password, name } = req.body;
+
+    // Validate
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password required' });
+    }
+
+    // Check if user exists
+    const existing = await db.get('SELECT * FROM users WHERE email = ?', [email]);
+    if (existing) {
+      return res.status(409).json({ error: 'User already exists' });
+    }
+
+    // Hash password
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    // Create user
+    const result = await db.run(
+      'INSERT INTO users (email, password_hash, name) VALUES (?, ?, ?)',
+      [email, passwordHash, name || '']
+    );
+
+    // Generate token
+    const token = jwt.sign(
+      { userId: result.lastID, email },
+      process.env.JWT_SECRET || 'dev-secret',
+      { expiresIn: '24h' }
+    );
+
+    res.status(201).json({
+      token,
+      user: { id: result.lastID, email, name }
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.login = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    const user = await db.get('SELECT * FROM users WHERE email = ?', [email]);
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const valid = await bcrypt.compare(password, user.password_hash);
+    if (!valid) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const token = jwt.sign(
+      { userId: user.id, email: user.email },
+      process.env.JWT_SECRET || 'dev-secret',
+      { expiresIn: '24h' }
+    );
+
+    res.json({
+      token,
+      user: { id: user.id, email: user.email, name: user.name }
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.logout = (req, res) => {
+  res.json({ message: 'Logged out successfully' });
+};
+```
+
+## FILE: controllers/[resource]Controller.js
+Main resource controller with CRUD operations.
+
+```javascript
+// controllers/[resource]Controller.js
+const db = require('../db');
+
+exports.getAll = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const items = await db.all(
+      'SELECT * FROM [table] WHERE user_id = ? ORDER BY created_at DESC',
+      [userId]
+    );
+    res.json(items);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.getById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.userId;
+
+    const item = await db.get(
+      'SELECT * FROM [table] WHERE id = ? AND user_id = ?',
+      [id, userId]
+    );
+
+    if (!item) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    res.json(item);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.create = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { [field1], [field2] } = req.body;
+
+    // Validate
+    if (![field1]) {
+      return res.status(400).json({ error: '[field1] is required' });
+    }
+
+    const result = await db.run(
+      'INSERT INTO [table] (user_id, [field1], [field2]) VALUES (?, ?, ?)',
+      [userId, [field1], [field2]]
+    );
+
+    const newItem = await db.get(
+      'SELECT * FROM [table] WHERE id = ?',
+      [result.lastID]
+    );
+
+    res.status(201).json(newItem);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.update = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.userId;
+    const { [field1], [field2] } = req.body;
+
+    await db.run(
+      'UPDATE [table] SET [field1] = ?, [field2] = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?',
+      [[field1], [field2], id, userId]
+    );
+
+    const updated = await db.get(
+      'SELECT * FROM [table] WHERE id = ?',
+      [id]
+    );
+
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.delete = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.userId;
+
+    await db.run(
+      'DELETE FROM [table] WHERE id = ? AND user_id = ?',
+      [id, userId]
+    );
+
+    res.status(204).send();
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+```
+
+## FILE: middleware/auth.js
+JWT authentication middleware.
+
+```javascript
+// middleware/auth.js
+const jwt = require('jsonwebtoken');
+
+module.exports = (req, res, next) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+
+    if (!token) {
+      return res.status(401).json({ error: 'No token provided' });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'dev-secret');
+    req.user = decoded;
+    next();
+  } catch (error) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+};
+```
+
+## FILE: db/index.js
+Database connection (SQLite).
+
+```javascript
+// db/index.js
+const sqlite3 = require('sqlite3').verbose();
+const { promisify } = require('util');
+const fs = require('fs');
+const path = require('path');
+
+const dbPath = process.env.DATABASE_PATH || './database.sqlite';
+
+const db = new sqlite3.Database(dbPath);
+
+// Promisify db methods
+db.getAsync = promisify(db.get.bind(db));
+db.allAsync = promisify(db.all.bind(db));
+db.runAsync = promisify(db.run.bind(db));
+
+// Initialize schema
+const initSchema = () => {
+  const schemaPath = path.join(__dirname, '../database/schema.sql');
+  if (fs.existsSync(schemaPath)) {
+    const schema = fs.readFileSync(schemaPath, 'utf-8');
+    db.exec(schema, (err) => {
+      if (err) console.error('Schema init error:', err);
+      else console.log('Database schema initialized');
+    });
+  }
+};
+
+initSchema();
+
+module.exports = {
+  get: db.getAsync,
+  all: db.allAsync,
+  run: db.runAsync
+};
+```
+
+## FILE: package.json
+
+```json
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "Backend API server",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "sqlite3": "^5.1.6"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
+```
+
+## FILE: .env.example
+
+```
+PORT=3001
+JWT_SECRET=your-secret-key-change-in-production
+DATABASE_PATH=./database.sqlite
+NODE_ENV=development
+```
+
+## FILE: .gitignore
+
+```
+node_modules/
+.env
+database.sqlite
+*.log
+.DS_Store
+```
+
+REQUIREMENTS:
+- Use SQLite for simplicity (single file database)
+- Implement JWT authentication
+- Add proper error handling
+- Use async/await consistently
+- Follow REST conventions
+- Keep it simple - single server, no microservices
+- Include clear comments
+- Use environment variables for config
+- Implement the main resource endpoints from the API spec
+- Add validation on inputs
+
+Generate clean, working code that a developer can run immediately with npm install && npm start.

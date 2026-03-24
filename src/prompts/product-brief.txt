@@ -1,0 +1,46 @@
+You are a senior product manager creating a concise product brief. Based on the idea and context below, write a 1-page product brief.
+
+IDEA & CONTEXT:
+{{idea}}
+
+Create a brief with these sections:
+
+# [Product Name]
+
+## Problem Statement
+One clear paragraph: What problem exists? Who has it? Why does it matter?
+
+## Target Users
+- Primary persona (age, location, behavior)
+- Secondary personas (if any)
+- User needs and pain points
+
+## Proposed Solution
+2-3 paragraphs describing:
+- What the product does (core value proposition)
+- How it solves the problem
+- Why this approach (key insight or differentiation)
+
+## Core Constraints
+- Platform (web/mobile/desktop)
+- Budget (infrastructure costs)
+- Timeline (MVP scope)
+- Geographic/regulatory constraints
+
+## Key Assumptions & Risks
+- Critical assumptions we're making
+- Biggest risks to success
+- How we'll validate assumptions
+
+## Success Criteria (MVP)
+- 3-5 measurable outcomes that define "success"
+- Leading indicators we'll track
+
+---
+
+REQUIREMENTS:
+- Be specific and concrete (avoid vague terms like "seamless" or "intuitive")
+- Focus on constraints (what we WON'T do is as important as what we will)
+- Keep it under 500 words
+- Use clear, jargon-free language
+- If the idea mentions specific tech/platforms, incorporate them into constraints

@@ -1,0 +1,233 @@
+You are a database architect creating a data model. Based on the PRD, design the database schema.
+
+PRODUCT PRD:
+{{prd}}
+
+Create a comprehensive data model document:
+
+# Data Model Documentation
+
+## 1. Entity-Relationship Overview
+
+```
+[User] 1---* [Resource]
+       1---* [Session]
+
+[Resource] *---* [Tag]
+           1---* [Comment]
+```
+
+## 2. Core Entities
+
+### 2.1 User Entity
+
+**Purpose:** Store user account information
+
+**Fields:**
+- `id` (UUID, Primary Key) - Unique user identifier
+- `email` (String, Unique, Not Null) - User email address
+- `passwordHash` (String, Not Null) - Hashed password (bcrypt)
+- `name` (String, Nullable) - User display name
+- `role` (Enum: 'user', 'admin') - User role
+- `emailVerified` (Boolean, Default: false) - Email verification status
+- `createdAt` (Timestamp, Default: NOW()) - Account creation time
+- `updatedAt` (Timestamp, Auto-update) - Last update time
+
+**Indexes:**
+- Primary: `id`
+- Unique: `email`
+- Index: `createdAt` (for sorting)
+
+**Constraints:**
+- Email must be valid format
+- Password hash must be present
+- Email must be unique
+
+**Example:**
+```json
+{
+  "id": "123e4567-e89b-12d3-a456-426614174000",
+  "email": "user@example.com",
+  "passwordHash": "$2b$10$...",
+  "name": "John Doe",
+  "role": "user",
+  "emailVerified": true,
+  "createdAt": "2024-03-05T10:30:00Z",
+  "updatedAt": "2024-03-05T10:30:00Z"
+}
+```
+
+### 2.2 [Main Resource Entity]
+
+**Purpose:** [Description based on PRD]
+
+**Fields:**
+[List fields with types, constraints, descriptions]
+
+**Relationships:**
+- Belongs to User (userId)
+- Has many [related entities]
+
+**Indexes:**
+[List indexes]
+
+**Constraints:**
+[List constraints]
+
+[Repeat for other entities from PRD]
+
+## 3. Relationship Tables (Many-to-Many)
+
+### 3.1 [Relationship Table Name]
+
+**Purpose:** Link [Entity A] to [Entity B]
+
+**Fields:**
+- `id` (UUID, Primary Key)
+- `entityAId` (UUID, Foreign Key → EntityA.id)
+- `entityBId` (UUID, Foreign Key → EntityB.id)
+- `createdAt` (Timestamp)
+
+**Indexes:**
+- Unique composite: (entityAId, entityBId)
+- Index: entityAId
+- Index: entityBId
+
+## 4. Database Schema (SQL)
+
+```sql
+-- Users table
+CREATE TABLE users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email VARCHAR(255) UNIQUE NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  name VARCHAR(255),
+  role VARCHAR(20) DEFAULT 'user',
+  email_verified BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_users_created_at ON users(created_at);
+
+-- [Main Resource] table
+CREATE TABLE [resources] (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title VARCHAR(255) NOT NULL,
+  description TEXT,
+  status VARCHAR(50) DEFAULT 'draft',
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_resources_user_id ON resources(user_id);
+CREATE INDEX idx_resources_status ON resources(status);
+CREATE INDEX idx_resources_created_at ON resources(created_at);
+
+-- [Add other tables]
+```
+
+## 5. Data Validation Rules
+
+### 5.1 User Entity
+- Email: Must match regex `^[^\s@]+@[^\s@]+\.[^\s@]+$`
+- Password: Minimum 8 characters, must include uppercase, lowercase, number
+- Name: Max 100 characters
+- Role: Must be 'user' or 'admin'
+
+### 5.2 [Other Entities]
+[List validation rules]
+
+## 6. Query Patterns
+
+### 6.1 Common Queries
+
+**Get user by email:**
+```sql
+SELECT * FROM users WHERE email = ?;
+```
+
+**Get user's resources:**
+```sql
+SELECT * FROM resources
+WHERE user_id = ?
+ORDER BY created_at DESC
+LIMIT 20 OFFSET ?;
+```
+
+**Search resources:**
+```sql
+SELECT * FROM resources
+WHERE title ILIKE ? OR description ILIKE ?
+ORDER BY created_at DESC;
+```
+
+### 6.2 Performance Considerations
+- Use indexes for frequently queried fields
+- Add composite indexes for common query combinations
+- Consider pagination for large result sets
+- Use prepared statements to prevent SQL injection
+
+## 7. Data Migration Strategy
+
+### 7.1 Initial Schema
+- Create all tables
+- Add indexes
+- Set up foreign key constraints
+
+### 7.2 Future Migrations
+- Use migration tool (e.g., Prisma Migrate, Knex)
+- Always create reversible migrations
+- Test on staging before production
+- Back up database before major migrations
+
+## 8. Data Retention & Cleanup
+
+### 8.1 Retention Policy
+- User data: Kept until account deletion
+- Sessions: Expire after 30 days
+- Logs: Keep for 90 days
+- [Other data types]
+
+### 8.2 Cleanup Jobs
+- Delete expired sessions daily
+- Archive old data quarterly
+- Clean up orphaned records weekly
+
+## 9. Backup Strategy
+
+- **Frequency:** Daily automated backups
+- **Retention:** Keep 7 daily, 4 weekly, 12 monthly backups
+- **Recovery:** Point-in-time recovery available
+- **Testing:** Test restoration monthly
+
+## 10. Scaling Considerations
+
+### 10.1 MVP Phase
+- Single database instance
+- Expected data: < 10 GB
+- Expected queries: < 100/second
+
+### 10.2 Growth Phase
+- Read replicas for scaling reads
+- Partitioning for large tables
+- Caching frequently accessed data
+- Expected data: < 100 GB
+- Expected queries: < 1,000/second
+
+---
+
+REQUIREMENTS:
+- Extract entities from user stories in PRD
+- Include all fields needed for features
+- Define proper relationships (1-to-1, 1-to-many, many-to-many)
+- Add appropriate indexes for performance
+- Include validation rules
+- Consider privacy and security
+- Match database choice to constraints (free tier, etc.)
+- Keep it simple for MVP (can extend later)
+- Include timestamps (createdAt, updatedAt) on all entities
+- Use UUIDs for primary keys (better for distributed systems)
+- Add soft deletes if needed (deletedAt field)

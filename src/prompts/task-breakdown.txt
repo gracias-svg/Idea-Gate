@@ -1,0 +1,89 @@
+You are a senior engineering manager breaking down a product into implementation tasks. Based on the PRD below, create a structured task breakdown.
+
+PRODUCT BRIEF:
+{{brief}}
+
+PRODUCT PRD:
+{{prd}}
+
+Create a comprehensive task breakdown with:
+
+1. **Epics** (high-level feature groups)
+2. **User Stories** (specific user-facing features)
+3. **Technical Tasks** (implementation steps)
+
+Return your response as JSON in this exact format:
+
+```json
+{
+  "epics": [
+    {
+      "name": "User Authentication",
+      "description": "Complete user authentication and authorization system",
+      "priority": "high",
+      "stories": [
+        {
+          "title": "User can sign up with email",
+          "description": "As a new user, I want to create an account with my email and password",
+          "priority": "high",
+          "estimate": "4 hours",
+          "acceptanceCriteria": [
+            "Email validation works",
+            "Password strength requirements enforced",
+            "Confirmation email sent"
+          ],
+          "tasks": [
+            "Create user registration API endpoint",
+            "Add email validation logic",
+            "Implement password hashing",
+            "Set up email service integration",
+            "Create registration form UI",
+            "Add error handling and validation messages"
+          ]
+        }
+      ]
+    }
+  ],
+  "phases": {
+    "phase1": {
+      "name": "MVP Core Features",
+      "duration": "2-3 weeks",
+      "epics": ["User Authentication", "Core Feature Name"]
+    },
+    "phase2": {
+      "name": "Enhanced Features",
+      "duration": "2-3 weeks",
+      "epics": ["Secondary Feature Name"]
+    }
+  },
+  "dependencies": [
+    {
+      "task": "User Authentication",
+      "dependsOn": [],
+      "blockedBy": []
+    }
+  ],
+  "estimatedTimeline": {
+    "totalStories": 15,
+    "totalHours": 120,
+    "estimatedWeeks": 4,
+    "recommendedTeamSize": 2
+  }
+}
+```
+
+REQUIREMENTS:
+- Create 3-5 epics based on PRD features
+- Each epic should have 2-5 user stories
+- Each story should have 3-8 technical tasks
+- Provide realistic time estimates (in hours)
+- Include acceptance criteria from PRD
+- Identify dependencies between tasks
+- Prioritize as: high, medium, low
+- Focus on MVP scope (not all possible features)
+- Consider the constraints mentioned in the PRD (platform, budget, timeline)
+
+Be specific and actionable. Each task should be:
+- Clear enough for a developer to start immediately
+- Small enough to complete in 1-4 hours
+- Testable (has clear done criteria)

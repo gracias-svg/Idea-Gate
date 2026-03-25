@@ -3,7 +3,7 @@ import { FileManager } from './utils/file-manager.js';
 import { config } from './config.js';
 import chalk from 'chalk';
 import path from 'path';
-
+import { loadProjectContext } from './utils/context-loader.js';
 export class ProductBuilderOrchestrator {
   constructor(options = {}) {
     config.validate();

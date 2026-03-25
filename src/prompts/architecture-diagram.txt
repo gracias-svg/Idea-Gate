@@ -6,6 +6,13 @@ PRODUCT BRIEF:
 PRODUCT PRD:
 {{prd}}
 
+You are given additional external context from documents.
+
+Use it heavily in your reasoning.
+
+External Context:
+{{externalContext}}
+
 Create a comprehensive architecture diagram using Mermaid syntax. Include:
 
 1. **Client/Frontend Layer** (web, mobile, etc.)

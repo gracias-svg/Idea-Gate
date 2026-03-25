@@ -6,6 +6,14 @@ IDEA & CONTEXT:
 PRODUCT BRIEF:
 {{brief}}
 
+You are given additional external context from documents.
+
+Use it heavily in your reasoning.
+
+External Context:
+{{externalContext}}
+
+
 Write a comprehensive but focused PRD with these sections:
 
 # [Product Name] - Product Requirements Document

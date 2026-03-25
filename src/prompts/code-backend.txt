@@ -9,6 +9,13 @@ DATABASE SCHEMA:
 TECH STACK:
 {{techStack}}
 
+You are given additional external context from documents.
+
+Use it heavily in your reasoning.
+
+External Context:
+{{externalContext}}
+
 Generate a complete Node.js/Express backend with the following structure.
 
 Use this exact format for each file:

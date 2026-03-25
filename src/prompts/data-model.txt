@@ -3,6 +3,13 @@ You are a database architect creating a data model. Based on the PRD, design the
 PRODUCT PRD:
 {{prd}}
 
+You are given additional external context from documents.
+
+Use it heavily in your reasoning.
+
+External Context:
+{{externalContext}}
+
 Create a comprehensive data model document:
 
 # Data Model Documentation

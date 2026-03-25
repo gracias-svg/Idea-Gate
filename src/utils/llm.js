@@ -1,82 +1,85 @@
+<<<<<<< HEAD
 import fetch from "node-fetch";
 import { config } from "../config.js";
 
 const OLLAMA_URL = process.env.OLLAMA_URL || "URL";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+=======
+import fetch from 'node-fetch';
+import { config } from '../config.js';
+>>>>>>> 367d754 (IdeaGate V2 - PM lifecycle multi-agent system (clean, no secrets))
 
 /**
- * Normalize input into string prompt
+ * UNIFIED LLM INTERFACE
+ * → Supports OpenRouter (primary)
+ * → Falls back to Ollama
  */
-function normalizeInput(input) {
-  if (typeof input === "string") return input;
+class LLM {
+  async generate({ prompt, taskType = "medium" }) {
+    try {
+      // 🔥 USE OPENROUTER FIRST
+      if (process.env.OPENROUTER_API_KEY) {
+        return await this.callOpenRouter(prompt);
+      }
 
-  if (typeof input === "object") {
-    return input.prompt || JSON.stringify(input, null, 2);
+      // 🔁 FALLBACK → OLLAMA
+      return await this.callOllama(prompt);
+    } catch (err) {
+      console.error("LLM Error:", err.message);
+      throw err;
+    }
   }
 
-  return String(input);
-}
-
-/**
- * SAFE trimming — only trims if absolutely needed
- */
-function trimPrompt(prompt, maxChars = 20000) {
-  if (!prompt) return "";
-
-  if (prompt.length <= maxChars) return prompt;
-
-  return prompt.slice(0, maxChars) + "\n\n[TRUNCATED FOR SAFETY]";
-}
-
-/**
- * OLLAMA CALL (LOCAL FIRST)
- */
-async function callOllama(prompt) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 180000); // 3 min
-
-  try {
-    const response = await fetch(`${OLLAMA_URL}/api/generate`, {
+  /**
+   * OPENROUTER (PRIMARY)
+   */
+  async callOpenRouter(prompt) {
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
-      signal: controller.signal,
+      headers: {
+        "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: process.env.OPENROUTER_MODEL || "x-ai/grok-4-fast",
+        messages: [
+          { role: "user", content: prompt }
+        ]
+      })
+    });
+
+    const data = await response.json();
+
+    if (!data.choices || !data.choices.length) {
+      throw new Error("Invalid OpenRouter response");
+    }
+
+    return data.choices[0].message.content;
+  }
+
+  /**
+   * OLLAMA (FALLBACK)
+   */
+  async callOllama(prompt) {
+    const response = await fetch(`${process.env.OLLAMA_URL || "http://127.0.0.1:11434"}/api/generate`, {
+      method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: process.env.OLLAMA_MODEL || config.model,
+        model: process.env.OLLAMA_MODEL || "qwen3:8b",
         prompt,
-        stream: false,
-        options: {
-          temperature: config.temperature || 0.7,
-          num_predict: config.maxTokens || 3000
-        }
+        stream: false
       })
     });
 
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      throw new Error(`Ollama HTTP error ${response.status}`);
-    }
-
     const data = await response.json();
 
-    if (!data.response) {
-      throw new Error("Empty response from Ollama");
-    }
-
     return data.response;
-  } catch (err) {
-    clearTimeout(timeout);
-
-    if (err.name === "AbortError") {
-      throw new Error("Ollama timeout (model too slow)");
-    }
-
-    throw err;
   }
 }
 
+<<<<<<< HEAD
 /**
  * OPENROUTER FALLBACK (CLOUD)
  */
@@ -157,3 +160,7 @@ IMPORTANT:
     }
   }
 }
+=======
+// ✅ EXPORT INSTANCE (IMPORTANT)
+export const llm = new LLM();
+>>>>>>> 367d754 (IdeaGate V2 - PM lifecycle multi-agent system (clean, no secrets))

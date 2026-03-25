@@ -12,6 +12,13 @@ ARCHITECTURE DIAGRAM:
 API SCHEMA:
 {{api}}
 
+You are given additional external context from documents.
+
+Use it heavily in your reasoning.
+
+External Context:
+{{externalContext}}
+
 Create a detailed technical architecture document:
 
 # Technical Architecture Document

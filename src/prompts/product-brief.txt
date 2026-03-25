@@ -3,6 +3,13 @@ You are a senior product manager creating a concise product brief. Based on the 
 IDEA & CONTEXT:
 {{idea}}
 
+You are given additional external context from documents.
+
+Use it heavily in your reasoning.
+
+External Context:
+{{externalContext}}
+
 Create a brief with these sections:
 
 # [Product Name]

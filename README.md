@@ -1,6 +1,6 @@
 # 🚀 Idea Gate (Product Multi-Agent Team V2)
 
-A lifecycle-driven, multi-agent AI system that transforms:
+A PM lifecycle-driven, multi-agent AI system that transforms:
 
 👉 IDEA → FULL PRODUCT → PROTOTYPE PROMPT
 

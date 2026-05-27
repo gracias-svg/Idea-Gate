@@ -1,0 +1,935 @@
+'use client';
+
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { useData } from '@/lib/DataProvider';
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type RightTab = 'improve' | 'snapshots' | 'context';
+type Extent = 'light' | 'medium' | 'strong';
+type AgentStatus = 'idle' | 'running' | 'reviewing' | 'done' | 'blocked';
+
+interface Snapshot {
+  id: string;
+  name: string;
+  date: string;
+  stage: number;
+  artifacts: string[];
+  tag: string;
+}
+
+interface ImproveFeedback {
+  id: string;
+  intent: string;
+  extent: Extent;
+  target: string;
+  timestamp: string;
+  status: 'queued' | 'applied';
+}
+
+interface Agent {
+  role: string;
+  abbr: string;
+  status: AgentStatus;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function parseContent(raw: string): { type: 'json'; summary: string; output: string } | { type: 'text'; output: string } {
+  try {
+    const parsed = JSON.parse(raw);
+    return {
+      type: 'json',
+      summary: parsed.summary || '',
+      output: parsed.output || raw,
+    };
+  } catch {
+    return { type: 'text', output: raw };
+  }
+}
+
+function renderMarkdown(text: string): React.ReactNode[] {
+  const lines = text.split('\n');
+  const elements: React.ReactNode[] = [];
+  let keyCounter = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const k = keyCounter++;
+
+    if (line.startsWith('# ')) {
+      elements.push(<h1 key={k} style={{ fontSize: '18px', fontWeight: 700, color: '#f1f5f9', margin: '20px 0 8px', fontFamily: 'monospace', borderBottom: '1px solid #1e293b', paddingBottom: '6px' }}>{line.slice(2)}</h1>);
+    } else if (line.startsWith('## ')) {
+      elements.push(<h2 key={k} style={{ fontSize: '14px', fontWeight: 700, color: '#4ade80', margin: '16px 0 6px', fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{line.slice(3)}</h2>);
+    } else if (line.startsWith('### ')) {
+      elements.push(<h3 key={k} style={{ fontSize: '13px', fontWeight: 600, color: '#94a3b8', margin: '12px 0 4px', fontFamily: 'monospace' }}>{line.slice(4)}</h3>);
+    } else if (line.startsWith('- ') || line.startsWith('* ')) {
+      elements.push(<div key={k} style={{ display: 'flex', gap: '8px', margin: '3px 0', paddingLeft: '8px' }}><span style={{ color: '#4ade80', flexShrink: 0 }}>›</span><span style={{ fontSize: '13px', color: '#cbd5e1', lineHeight: 1.6 }}>{line.slice(2)}</span></div>);
+    } else if (line.startsWith('---')) {
+      elements.push(<hr key={k} style={{ border: 'none', borderTop: '1px solid #1e293b', margin: '12px 0' }} />);
+    } else if (line.trim() === '') {
+      elements.push(<div key={k} style={{ height: '6px' }} />);
+    } else {
+      elements.push(<p key={k} style={{ fontSize: '13px', color: '#cbd5e1', lineHeight: 1.7, margin: '4px 0' }}>{line}</p>);
+    }
+  }
+  return elements;
+}
+
+const AGENTS: Agent[] = [
+  { role: 'Coordinator', abbr: 'CO', status: 'done' },
+  { role: 'Product Strategist', abbr: 'PS', status: 'done' },
+  { role: 'Researcher', abbr: 'RE', status: 'idle' },
+  { role: 'UX Designer', abbr: 'UX', status: 'reviewing' },
+  { role: 'Architect', abbr: 'AR', status: 'idle' },
+  { role: 'QA', abbr: 'QA', status: 'idle' },
+];
+
+const STAGE_LABELS: Record<number, string> = {
+  0: 'Idea Intake', 1: 'Discovery', 2: 'Problem Definition', 3: 'Solution Design',
+  4: 'MVP Hypothesis', 5: 'Validation', 6: 'Prioritization', 7: 'PRD',
+  8: 'UX Design', 9: 'Usability', 10: 'Architecture', 11: 'Backlog & Release',
+  12: 'Implementation', 13: 'QA & Readiness', 14: 'Prototype Prompt',
+};
+
+const IMPROVE_PRESETS = [
+  'More concise', 'More technical', 'More strategic', 'More MVP-focused',
+  'Sharpen summary', 'Add evidence', 'Reduce repetition', 'Clarify problem',
+  'Stronger recommendation', 'Improve structure',
+];
+
+const STATUS_COLOR: Record<AgentStatus, string> = {
+  idle: '#334155', running: '#f59e0b', reviewing: '#818cf8', done: '#4ade80', blocked: '#f87171',
+};
+
+// ─── Main Component ────────────────────────────────────────────────────────────
+
+export default function DeskPage() {
+  const { state, setSelectedArtifact } = useData();
+
+  // Right panel state
+  const [rightTab, setRightTab] = useState<RightTab>('improve');
+  const [rightOpen, setRightOpen] = useState(true);
+
+  // Improve state
+  const [improveIntent, setImproveIntent] = useState('');
+  const [improveExtent, setImproveExtent] = useState<Extent>('medium');
+  const [improveTarget, setImproveTarget] = useState<'block' | 'stage' | 'project'>('stage');
+  const [improveFeedbacks, setImproveFeedbacks] = useState<ImproveFeedback[]>([]);
+  const [pulseActive, setPulseActive] = useState(false);
+
+  // Snapshots state
+  const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
+  const [savingSnapshot, setSavingSnapshot] = useState(false);
+  const [snapshotName, setSnapshotName] = useState('');
+  const [savedConfirm, setSavedConfirm] = useState(false);
+
+  // Parsed content
+  const parsed = state.selectedContent ? parseContent(state.selectedContent) : null;
+
+  // Stage index from artifact name
+  const getStageFromArtifact = (name: string): number => {
+    const match = name.match(/^(\d+)-/);
+    return match ? parseInt(match[1]) : -1;
+  };
+
+  const currentArtifactStage = state.selectedArtifact
+    ? getStageFromArtifact(state.selectedArtifact)
+    : -1;
+
+  // Preview sentence for improve
+  const getPreviewSentence = () => {
+    if (!improveIntent) return 'Describe what to improve above.';
+    const targetLabel = improveTarget === 'block' ? 'this section' : improveTarget === 'stage' ? 'this stage' : 'the full project';
+    const extentLabel = improveExtent === 'light' ? 'light polish' : improveExtent === 'medium' ? 'moderate refinement' : 'aggressive rewrite';
+    return `→ Apply "${improveIntent}" with ${extentLabel} across ${targetLabel}.`;
+  };
+
+  const handleImproveSubmit = () => {
+    if (!improveIntent.trim()) return;
+    const fb: ImproveFeedback = {
+      id: Date.now().toString(),
+      intent: improveIntent,
+      extent: improveExtent,
+      target: improveTarget === 'block' ? state.selectedArtifact || 'selection' : improveTarget,
+      timestamp: new Date().toLocaleTimeString(),
+      status: 'queued',
+    };
+    setImproveFeedbacks(prev => [fb, ...prev]);
+    setPulseActive(true);
+    setImproveIntent('');
+    setTimeout(() => setPulseActive(false), 1200);
+    // Simulate applying after 3s
+    setTimeout(() => {
+      setImproveFeedbacks(prev => prev.map(f => f.id === fb.id ? { ...f, status: 'applied' } : f));
+    }, 3000);
+  };
+
+  const handleSaveSnapshot = () => {
+    if (!snapshotName.trim()) return;
+    const snap: Snapshot = {
+      id: Date.now().toString(),
+      name: snapshotName.trim(),
+      date: new Date().toLocaleString(),
+      stage: state.currentStage,
+      artifacts: [...state.artifacts],
+      tag: state.currentStage >= 12 ? 'Ready' : state.currentStage >= 7 ? 'In Progress' : 'Early',
+    };
+    setSnapshots(prev => [snap, ...prev]);
+    setSnapshotName('');
+    setSavingSnapshot(false);
+    setSavedConfirm(true);
+    setTimeout(() => setSavedConfirm(false), 3000);
+  };
+
+  // ─── Styles ────────────────────────────────────────────────────────────────
+
+  const S = {
+    root: {
+      display: 'flex',
+      flexDirection: 'column' as const,
+      height: '100vh',
+      backgroundColor: '#060a0f',
+      fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+      color: '#e2e8f0',
+      overflow: 'hidden',
+    },
+    agentStrip: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '6px',
+      padding: '6px 16px',
+      backgroundColor: '#080c12',
+      borderBottom: '1px solid #0f1923',
+      flexShrink: 0,
+    },
+    agentLabel: {
+      fontSize: '10px',
+      color: '#334155',
+      marginRight: '4px',
+      textTransform: 'uppercase' as const,
+      letterSpacing: '0.1em',
+    },
+    agentDot: (status: AgentStatus) => ({
+      display: 'flex',
+      alignItems: 'center',
+      gap: '4px',
+      padding: '2px 8px',
+      borderRadius: '3px',
+      backgroundColor: '#0d1520',
+      border: `1px solid ${STATUS_COLOR[status]}22`,
+      fontSize: '10px',
+      color: STATUS_COLOR[status],
+      cursor: 'default',
+    }),
+    agentAbbr: {
+      fontWeight: 700,
+      letterSpacing: '0.05em',
+    },
+    columns: {
+      display: 'flex',
+      flex: 1,
+      overflow: 'hidden',
+    },
+    leftRail: {
+      width: '200px',
+      flexShrink: 0,
+      backgroundColor: '#080c12',
+      borderRight: '1px solid #0f1923',
+      overflowY: 'auto' as const,
+      padding: '8px 0',
+    },
+    leftHeader: {
+      fontSize: '9px',
+      color: '#334155',
+      padding: '4px 12px 8px',
+      textTransform: 'uppercase' as const,
+      letterSpacing: '0.12em',
+    },
+    artifactItem: (active: boolean, stageNum: number, currentStage: number) => ({
+      padding: '6px 12px',
+      cursor: 'pointer',
+      fontSize: '11px',
+      backgroundColor: active ? '#0f1f12' : 'transparent',
+      color: active ? '#4ade80' : stageNum <= currentStage ? '#64748b' : '#1e293b',
+      borderLeft: active ? '2px solid #4ade80' : '2px solid transparent',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '6px',
+      transition: 'all 0.15s ease',
+      fontFamily: 'inherit',
+    }),
+    stageDot: (stageNum: number, currentStage: number, active: boolean) => ({
+      width: '5px',
+      height: '5px',
+      borderRadius: '50%',
+      flexShrink: 0,
+      backgroundColor: active ? '#4ade80' : stageNum < currentStage ? '#1a3a20' : stageNum === currentStage ? '#f59e0b' : '#0f1923',
+      boxShadow: active ? '0 0 6px #4ade80' : 'none',
+    }),
+    center: {
+      flex: 1,
+      display: 'flex',
+      flexDirection: 'column' as const,
+      overflow: 'hidden',
+      backgroundColor: '#060a0f',
+    },
+    centerHeader: {
+      padding: '12px 20px',
+      borderBottom: '1px solid #0f1923',
+      flexShrink: 0,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: '12px',
+    },
+    stageTag: {
+      fontSize: '10px',
+      color: '#4ade80',
+      backgroundColor: '#0a1f0e',
+      border: '1px solid #1a3a20',
+      padding: '2px 8px',
+      borderRadius: '3px',
+      textTransform: 'uppercase' as const,
+      letterSpacing: '0.1em',
+    },
+    artifactName: {
+      fontSize: '12px',
+      color: '#94a3b8',
+      fontFamily: 'inherit',
+    },
+    centerActions: {
+      display: 'flex',
+      gap: '6px',
+    },
+    actionBtn: (variant: 'ghost' | 'accent' | 'dim') => ({
+      padding: '3px 10px',
+      fontSize: '11px',
+      fontFamily: 'inherit',
+      borderRadius: '3px',
+      cursor: 'pointer',
+      border: variant === 'accent' ? '1px solid #4ade8044' : '1px solid #0f1923',
+      backgroundColor: variant === 'accent' ? '#0a1f0e' : variant === 'dim' ? '#0d1520' : 'transparent',
+      color: variant === 'accent' ? '#4ade80' : '#64748b',
+      transition: 'all 0.15s',
+    }),
+    content: {
+      flex: 1,
+      overflowY: 'auto' as const,
+      padding: '24px',
+    },
+    summaryCard: {
+      backgroundColor: '#080c12',
+      border: '1px solid #0f1923',
+      borderRadius: '4px',
+      padding: '12px 16px',
+      marginBottom: '20px',
+    },
+    summaryLabel: {
+      fontSize: '9px',
+      color: '#334155',
+      textTransform: 'uppercase' as const,
+      letterSpacing: '0.12em',
+      marginBottom: '6px',
+    },
+    summaryText: {
+      fontSize: '12px',
+      color: '#94a3b8',
+      lineHeight: 1.6,
+    },
+    emptyState: {
+      display: 'flex',
+      flexDirection: 'column' as const,
+      alignItems: 'center',
+      justifyContent: 'center',
+      height: '100%',
+      gap: '12px',
+      color: '#1e293b',
+    },
+    emptyGlyph: {
+      fontSize: '32px',
+      opacity: 0.4,
+    },
+    emptyText: {
+      fontSize: '12px',
+      color: '#334155',
+      fontFamily: 'inherit',
+    },
+    rightPanel: {
+      width: rightOpen ? '280px' : '36px',
+      flexShrink: 0,
+      borderLeft: '1px solid #0f1923',
+      backgroundColor: '#080c12',
+      display: 'flex',
+      flexDirection: 'column' as const,
+      transition: 'width 0.2s ease',
+      overflow: 'hidden',
+    },
+    rightToggle: {
+      padding: '8px',
+      cursor: 'pointer',
+      fontSize: '14px',
+      color: '#334155',
+      textAlign: 'center' as const,
+      borderBottom: '1px solid #0f1923',
+      backgroundColor: 'transparent',
+      border: 'none',
+      width: '100%',
+      fontFamily: 'inherit',
+      flexShrink: 0,
+    },
+    tabBar: {
+      display: 'flex',
+      borderBottom: '1px solid #0f1923',
+      flexShrink: 0,
+    },
+    tab: (active: boolean) => ({
+      flex: 1,
+      padding: '8px 4px',
+      fontSize: '10px',
+      textAlign: 'center' as const,
+      cursor: 'pointer',
+      color: active ? '#4ade80' : '#334155',
+      backgroundColor: 'transparent',
+      border: 'none',
+      borderBottom: active ? '1px solid #4ade80' : '1px solid transparent',
+      fontFamily: 'inherit',
+      textTransform: 'uppercase' as const,
+      letterSpacing: '0.1em',
+      transition: 'color 0.15s',
+    }),
+    rightContent: {
+      flex: 1,
+      overflowY: 'auto' as const,
+      padding: '12px',
+      display: 'flex',
+      flexDirection: 'column' as const,
+      gap: '10px',
+    },
+    sectionLabel: {
+      fontSize: '9px',
+      color: '#334155',
+      textTransform: 'uppercase' as const,
+      letterSpacing: '0.12em',
+      marginBottom: '6px',
+    },
+    improveInput: {
+      width: '100%',
+      backgroundColor: '#060a0f',
+      border: '1px solid #0f1923',
+      borderRadius: '3px',
+      padding: '8px',
+      color: '#e2e8f0',
+      fontSize: '11px',
+      fontFamily: 'inherit',
+      resize: 'none' as const,
+      outline: 'none',
+      boxSizing: 'border-box' as const,
+    },
+    extentRow: {
+      display: 'flex',
+      gap: '4px',
+    },
+    extentBtn: (active: boolean, level: Extent) => {
+      const colors: Record<Extent, string> = { light: '#818cf8', medium: '#f59e0b', strong: '#f87171' };
+      return {
+        flex: 1,
+        padding: '4px',
+        fontSize: '10px',
+        fontFamily: 'inherit',
+        borderRadius: '3px',
+        cursor: 'pointer',
+        border: active ? `1px solid ${colors[level]}66` : '1px solid #0f1923',
+        backgroundColor: active ? `${colors[level]}11` : '#060a0f',
+        color: active ? colors[level] : '#334155',
+        transition: 'all 0.15s',
+        textAlign: 'center' as const,
+      };
+    },
+    targetRow: {
+      display: 'flex',
+      gap: '4px',
+    },
+    targetBtn: (active: boolean) => ({
+      flex: 1,
+      padding: '4px 2px',
+      fontSize: '9px',
+      fontFamily: 'inherit',
+      borderRadius: '3px',
+      cursor: 'pointer',
+      border: active ? '1px solid #4ade8044' : '1px solid #0f1923',
+      backgroundColor: active ? '#0a1f0e' : '#060a0f',
+      color: active ? '#4ade80' : '#334155',
+      transition: 'all 0.15s',
+      textAlign: 'center' as const,
+      textTransform: 'uppercase' as const,
+      letterSpacing: '0.05em',
+    }),
+    previewBox: {
+      padding: '8px',
+      backgroundColor: '#060a0f',
+      border: '1px solid #0f1923',
+      borderRadius: '3px',
+      fontSize: '10px',
+      color: '#4ade8088',
+      lineHeight: 1.5,
+      fontStyle: 'italic',
+    },
+    improveActions: {
+      display: 'flex',
+      gap: '4px',
+    },
+    presetsGrid: {
+      display: 'flex',
+      flexWrap: 'wrap' as const,
+      gap: '4px',
+    },
+    presetChip: {
+      padding: '3px 8px',
+      fontSize: '10px',
+      fontFamily: 'inherit',
+      borderRadius: '2px',
+      cursor: 'pointer',
+      border: '1px solid #0f1923',
+      backgroundColor: '#060a0f',
+      color: '#475569',
+      transition: 'all 0.15s',
+    },
+    feedbackItem: (status: 'queued' | 'applied') => ({
+      padding: '8px',
+      backgroundColor: '#060a0f',
+      border: `1px solid ${status === 'applied' ? '#1a3a20' : '#0f1923'}`,
+      borderRadius: '3px',
+      fontSize: '11px',
+    }),
+    pulseRing: {
+      position: 'fixed' as const,
+      top: '50%',
+      left: '50%',
+      transform: 'translate(-50%, -50%)',
+      width: '120px',
+      height: '120px',
+      borderRadius: '50%',
+      border: '2px solid #4ade80',
+      opacity: pulseActive ? 0 : 0,
+      animation: pulseActive ? 'pulseOut 1.2s ease-out forwards' : 'none',
+      pointerEvents: 'none' as const,
+      zIndex: 100,
+    },
+    snapshotCard: {
+      padding: '10px',
+      backgroundColor: '#060a0f',
+      border: '1px solid #0f1923',
+      borderRadius: '3px',
+      fontSize: '11px',
+    },
+    snapshotName: {
+      color: '#94a3b8',
+      fontWeight: 600,
+      marginBottom: '4px',
+    },
+    snapshotMeta: {
+      color: '#334155',
+      fontSize: '10px',
+    },
+    snapshotTag: (tag: string) => ({
+      display: 'inline-block',
+      padding: '1px 6px',
+      borderRadius: '2px',
+      fontSize: '9px',
+      backgroundColor: tag === 'Ready' ? '#0a1f0e' : tag === 'In Progress' ? '#1a1206' : '#0d1520',
+      color: tag === 'Ready' ? '#4ade80' : tag === 'In Progress' ? '#f59e0b' : '#818cf8',
+      border: '1px solid currentColor',
+      opacity: 0.7,
+    }),
+    saveInput: {
+      width: '100%',
+      backgroundColor: '#060a0f',
+      border: '1px solid #0f1923',
+      borderRadius: '3px',
+      padding: '6px 8px',
+      color: '#e2e8f0',
+      fontSize: '11px',
+      fontFamily: 'inherit',
+      outline: 'none',
+      boxSizing: 'border-box' as const,
+      marginBottom: '6px',
+    },
+  };
+
+  return (
+    <>
+      <style>{`
+        @keyframes pulseOut {
+          0% { transform: translate(-50%, -50%) scale(0.2); opacity: 0.8; }
+          100% { transform: translate(-50%, -50%) scale(3); opacity: 0; }
+        }
+        .artifact-item:hover { background-color: #0d1a10 !important; color: #4ade8088 !important; }
+        .preset-chip:hover { border-color: #4ade8044 !important; color: #4ade80 !important; background-color: #0a1f0e !important; }
+        .action-btn:hover { opacity: 0.8; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 2px; }
+      `}</style>
+
+      {pulseActive && <div style={S.pulseRing} />}
+
+      <div style={S.root}>
+
+        {/* Agent Strip */}
+        <div style={S.agentStrip}>
+          <span style={S.agentLabel}>Team</span>
+          {AGENTS.map(agent => (
+            <div key={agent.role} style={S.agentDot(agent.status)} title={`${agent.role}: ${agent.status}`}>
+              <span style={S.agentAbbr}>{agent.abbr}</span>
+              <span style={{ fontSize: '8px', opacity: 0.7 }}>{agent.status}</span>
+            </div>
+          ))}
+          <div style={{ flex: 1 }} />
+          <span style={{ fontSize: '10px', color: '#1e293b' }}>
+            Stage <span style={{ color: '#4ade80' }}>{state.currentStage}</span> / 14
+          </span>
+        </div>
+
+        {/* Main columns */}
+        <div style={S.columns}>
+
+          {/* Left Rail */}
+          <div style={S.leftRail}>
+            <div style={S.leftHeader}>Artifacts</div>
+            {state.artifacts.length === 0 ? (
+              <div style={{ padding: '12px', fontSize: '11px', color: '#1e293b' }}>No artifacts yet</div>
+            ) : (
+              state.artifacts.map((file) => {
+                const stageNum = getStageFromArtifact(file);
+                const active = state.selectedArtifact === file;
+                return (
+                  <div
+                    key={file}
+                    className="artifact-item"
+                    style={S.artifactItem(active, stageNum, state.currentStage)}
+                    onClick={() => setSelectedArtifact(file)}
+                  >
+                    <div style={S.stageDot(stageNum, state.currentStage, active)} />
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {file.replace('.md', '')}
+                    </span>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Center */}
+          <div style={S.center}>
+            {/* Center Header */}
+            <div style={S.centerHeader}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                {state.selectedArtifact && (
+                  <>
+                    <span style={S.stageTag}>
+                      {currentArtifactStage >= 0 ? STAGE_LABELS[currentArtifactStage] || `Stage ${currentArtifactStage}` : 'Artifact'}
+                    </span>
+                    <span style={S.artifactName}>{state.selectedArtifact}</span>
+                  </>
+                )}
+              </div>
+              <div style={S.centerActions}>
+                <button
+                  className="action-btn"
+                  style={S.actionBtn('dim')}
+                  onClick={() => { setRightTab('improve'); setRightOpen(true); }}
+                >
+                  ✦ Improve
+                </button>
+                <button
+                  className="action-btn"
+                  style={S.actionBtn('dim')}
+                  onClick={() => { setRightTab('snapshots'); setRightOpen(true); setSavingSnapshot(true); }}
+                >
+                  ⊡ Save
+                </button>
+              </div>
+            </div>
+
+            {/* Content Area */}
+            <div style={S.content}>
+              {!state.selectedArtifact ? (
+                <div style={S.emptyState}>
+                  <div style={S.emptyGlyph}>◈</div>
+                  <div style={S.emptyText}>Select an artifact from the left rail</div>
+                </div>
+              ) : !parsed ? (
+                <div style={S.emptyState}>
+                  <div style={{ fontSize: '11px', color: '#334155' }}>Loading...</div>
+                </div>
+              ) : (
+                <>
+                  {parsed.type === 'json' && parsed.summary && (
+                    <div style={S.summaryCard}>
+                      <div style={S.summaryLabel}>Summary</div>
+                      <div style={S.summaryText}>{parsed.summary}</div>
+                    </div>
+                  )}
+                  <div>{renderMarkdown(parsed.output)}</div>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Right Panel */}
+          <div style={S.rightPanel}>
+            <button style={S.rightToggle} onClick={() => setRightOpen(!rightOpen)}>
+              {rightOpen ? '›' : '‹'}
+            </button>
+
+            {rightOpen && (
+              <>
+                {/* Tab Bar */}
+                <div style={S.tabBar}>
+                  {(['improve', 'snapshots', 'context'] as RightTab[]).map(tab => (
+                    <button key={tab} style={S.tab(rightTab === tab)} onClick={() => setRightTab(tab)}>
+                      {tab}
+                    </button>
+                  ))}
+                </div>
+
+                <div style={S.rightContent}>
+
+                  {/* ── IMPROVE TAB ── */}
+                  {rightTab === 'improve' && (
+                    <>
+                      {/* Improve Snippet */}
+                      <div>
+                        <div style={S.sectionLabel}>Improve Snippet</div>
+
+                        <textarea
+                          style={{ ...S.improveInput, height: '60px' }}
+                          placeholder='e.g. "more concise", "stronger PM framing"...'
+                          value={improveIntent}
+                          onChange={e => setImproveIntent(e.target.value)}
+                        />
+
+                        <div style={{ ...S.sectionLabel, marginTop: '8px' }}>Extent</div>
+                        <div style={S.extentRow}>
+                          {(['light', 'medium', 'strong'] as Extent[]).map(lvl => (
+                            <button key={lvl} style={S.extentBtn(improveExtent === lvl, lvl)} onClick={() => setImproveExtent(lvl)}>
+                              {lvl}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div style={{ ...S.sectionLabel, marginTop: '8px' }}>Apply to</div>
+                        <div style={S.targetRow}>
+                          {[
+                            { k: 'block' as const, label: 'Block' },
+                            { k: 'stage' as const, label: 'Stage' },
+                            { k: 'project' as const, label: 'Project' },
+                          ].map(({ k, label }) => (
+                            <button key={k} style={S.targetBtn(improveTarget === k)} onClick={() => setImproveTarget(k)}>
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div style={{ ...S.previewBox, marginTop: '8px' }}>
+                          {getPreviewSentence()}
+                        </div>
+
+                        <div style={{ ...S.improveActions, marginTop: '8px' }}>
+                          <button
+                            style={{ ...S.actionBtn('accent'), flex: 1, padding: '6px' }}
+                            onClick={handleImproveSubmit}
+                          >
+                            ✦ Improve now
+                          </button>
+                          <button
+                            style={{ ...S.actionBtn('dim'), flex: 1, padding: '6px' }}
+                            onClick={() => {
+                              if (!improveIntent.trim()) return;
+                              const fb: ImproveFeedback = {
+                                id: Date.now().toString(),
+                                intent: improveIntent,
+                                extent: improveExtent,
+                                target: improveTarget,
+                                timestamp: new Date().toLocaleTimeString(),
+                                status: 'queued',
+                              };
+                              setImproveFeedbacks(prev => [fb, ...prev]);
+                              setImproveIntent('');
+                            }}
+                          >
+                            Queue
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Presets */}
+                      <div>
+                        <div style={S.sectionLabel}>Quick presets</div>
+                        <div style={S.presetsGrid}>
+                          {IMPROVE_PRESETS.map(p => (
+                            <button
+                              key={p}
+                              className="preset-chip"
+                              style={S.presetChip}
+                              onClick={() => setImproveIntent(p.toLowerCase())}
+                            >
+                              {p}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Feedback history */}
+                      {improveFeedbacks.length > 0 && (
+                        <div>
+                          <div style={S.sectionLabel}>Recent</div>
+                          {improveFeedbacks.slice(0, 5).map(fb => (
+                            <div key={fb.id} style={{ ...S.feedbackItem(fb.status), marginBottom: '4px' }}>
+                              <div style={{ color: '#94a3b8', marginBottom: '2px' }}>"{fb.intent}"</div>
+                              <div style={{ color: '#334155', fontSize: '10px' }}>
+                                {fb.extent} · {fb.target} · {fb.timestamp} ·{' '}
+                                <span style={{ color: fb.status === 'applied' ? '#4ade80' : '#f59e0b' }}>
+                                  {fb.status}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {/* ── SNAPSHOTS TAB ── */}
+                  {rightTab === 'snapshots' && (
+                    <>
+                      {/* Save UI */}
+                      <div>
+                        <div style={S.sectionLabel}>Save current run</div>
+                        {savingSnapshot ? (
+                          <>
+                            <input
+                              style={S.saveInput}
+                              placeholder="Snapshot name..."
+                              value={snapshotName}
+                              onChange={e => setSnapshotName(e.target.value)}
+                              onKeyDown={e => e.key === 'Enter' && handleSaveSnapshot()}
+                              autoFocus
+                            />
+                            <div style={{ display: 'flex', gap: '4px' }}>
+                              <button style={{ ...S.actionBtn('accent'), flex: 1, padding: '5px' }} onClick={handleSaveSnapshot}>
+                                ⊡ Save
+                              </button>
+                              <button style={{ ...S.actionBtn('dim'), padding: '5px 10px' }} onClick={() => setSavingSnapshot(false)}>
+                                ✕
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <button
+                            style={{ ...S.actionBtn('accent'), width: '100%', padding: '7px' }}
+                            onClick={() => setSavingSnapshot(true)}
+                          >
+                            {savedConfirm ? '✓ Saved!' : '⊡ Save snapshot'}
+                          </button>
+                        )}
+                        {savedConfirm && (
+                          <div style={{ fontSize: '10px', color: '#4ade80', textAlign: 'center', marginTop: '4px' }}>
+                            Snapshot saved ✓
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Snapshot list */}
+                      <div>
+                        <div style={S.sectionLabel}>
+                          Saved runs {snapshots.length > 0 && `(${snapshots.length})`}
+                        </div>
+                        {snapshots.length === 0 ? (
+                          <div style={{ fontSize: '11px', color: '#1e293b', padding: '8px 0' }}>
+                            No snapshots yet. Save the current run above.
+                          </div>
+                        ) : (
+                          snapshots.map(snap => (
+                            <div key={snap.id} style={{ ...S.snapshotCard, marginBottom: '6px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <div style={S.snapshotName}>{snap.name}</div>
+                                <span style={S.snapshotTag(snap.tag)}>{snap.tag}</span>
+                              </div>
+                              <div style={{ ...S.snapshotMeta, marginBottom: '6px' }}>
+                                {snap.date} · Stage {snap.stage} · {snap.artifacts.length} artifacts
+                              </div>
+                              <div style={{ display: 'flex', gap: '4px' }}>
+                                <button style={{ ...S.actionBtn('dim'), fontSize: '10px', padding: '2px 8px' }}>
+                                  Restore
+                                </button>
+                                <button style={{ ...S.actionBtn('dim'), fontSize: '10px', padding: '2px 8px' }}>
+                                  Compare
+                                </button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </>
+                  )}
+
+                  {/* ── CONTEXT TAB ── */}
+                  {rightTab === 'context' && (
+                    <>
+                      <div>
+                        <div style={S.sectionLabel}>Project</div>
+                        <div style={{
+                          padding: '8px',
+                          backgroundColor: '#060a0f',
+                          border: '1px solid #0f1923',
+                          borderRadius: '3px',
+                          fontSize: '11px',
+                          color: '#64748b',
+                        }}>
+                          <div style={{ color: '#94a3b8', marginBottom: '4px' }}>Active workspace</div>
+                          <div style={{ color: '#334155', fontSize: '10px' }}>Stage {state.currentStage} of 14</div>
+                          <div style={{ color: '#334155', fontSize: '10px' }}>{state.artifacts.length} artifacts generated</div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <div style={S.sectionLabel}>Stage map</div>
+                        {Object.entries(STAGE_LABELS).map(([num, label]) => {
+                          const n = parseInt(num);
+                          const done = n < state.currentStage;
+                          const current = n === state.currentStage;
+                          return (
+                            <div key={num} style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              padding: '3px 0',
+                              fontSize: '10px',
+                              color: done ? '#334155' : current ? '#4ade80' : '#1e293b',
+                            }}>
+                              <span style={{ width: '16px', textAlign: 'right', flexShrink: 0 }}>{n}</span>
+                              <span style={{
+                                width: '4px', height: '4px', borderRadius: '50%', flexShrink: 0,
+                                backgroundColor: done ? '#1a3a20' : current ? '#4ade80' : '#0f1923',
+                              }} />
+                              <span>{label}</span>
+                              {done && <span style={{ marginLeft: 'auto', color: '#1a3a20' }}>✓</span>}
+                              {current && <span style={{ marginLeft: 'auto', color: '#f59e0b', fontSize: '8px' }}>active</span>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}

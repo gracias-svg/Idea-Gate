@@ -1,0 +1,48 @@
+You are converting a task breakdown into GitHub Issues format. Transform the tasks below into properly formatted GitHub Issues.
+
+TASK BREAKDOWN:
+{{tasks}}
+
+Convert this into GitHub Issues JSON format that can be used with GitHub API:
+
+```json
+{
+  "issues": [
+    {
+      "title": "[Epic] User Authentication",
+      "body": "## Description\n\nComplete user authentication and authorization system\n\n## User Stories\n- [ ] User can sign up with email\n- [ ] User can log in\n- [ ] User can reset password\n\n## Acceptance Criteria\n- All authentication flows work\n- Security best practices followed\n- Error handling in place",
+      "labels": ["epic", "authentication", "high-priority"],
+      "milestone": "MVP - Phase 1"
+    },
+    {
+      "title": "Implement user registration endpoint",
+      "body": "## Description\nCreate API endpoint for user registration with email and password.\n\n## Tasks\n- [ ] Create POST /api/auth/register endpoint\n- [ ] Add email validation\n- [ ] Implement password hashing with bcrypt\n- [ ] Add rate limiting\n- [ ] Write unit tests\n\n## Acceptance Criteria\n- [ ] Endpoint validates email format\n- [ ] Password is hashed before storage\n- [ ] Returns proper error codes\n- [ ] Tests pass\n\n## Estimate\n4 hours\n\n## Dependencies\nNone\n\n## Technical Notes\n- Use bcrypt for password hashing\n- Validate email with regex\n- Return 400 for invalid input, 409 for existing user",
+      "labels": ["backend", "authentication", "high-priority"],
+      "milestone": "MVP - Phase 1",
+      "assignees": []
+    }
+  ]
+}
+```
+
+REQUIREMENTS:
+- Convert each epic into an Epic issue with label "epic"
+- Convert each user story into a Feature issue
+- Convert complex tasks into Task issues
+- Simple tasks can be checkboxes within Feature issues
+- Use proper GitHub markdown formatting
+- Include clear acceptance criteria
+- Add appropriate labels: epic, feature, bug, documentation, frontend, backend, etc.
+- Set milestones based on phases
+- Include time estimates in body
+- List dependencies explicitly
+- Use checkboxes for sub-tasks
+- Keep titles concise but descriptive
+
+Label categories:
+- Type: epic, feature, task, bug, documentation
+- Priority: high-priority, medium-priority, low-priority
+- Component: frontend, backend, database, api, ui/ux
+- Status: blocked, in-progress, needs-review
+
+Make issues actionable - a developer should be able to pick up any issue and start working immediately.

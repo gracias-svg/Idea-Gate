@@ -19,6 +19,16 @@ export class CoordinatorV2 {
   async run(initialInput) {
     let currentStage = this.lifecycle.getCurrentStage();
 
+    // ── BUG FIX: per-stage iteration counter ─────────────────────────────
+    // Without this, decision:"iterate" (which the merge fallback sets when
+    // the LLM call fails) causes an infinite loop on the same stage.
+    // The stage artifacts directory fills up with repeated "fallback merge"
+    // overwrites of the same file, and the CLI never advances.
+    // With this guard: after 2 iterate attempts on any single stage, the
+    // coordinator force-advances to keep the lifecycle moving.
+    const stageIterations = {};
+    const MAX_ITERATIONS_PER_STAGE = 2;
+
     while (currentStage) {
       const stageDef = this.lifecycle.getStageDefinition(currentStage);
 
@@ -57,7 +67,14 @@ export class CoordinatorV2 {
       }
 
       if (decision === "iterate") {
-        console.log("🔁 Re-running same stage");
+        stageIterations[currentStage] = (stageIterations[currentStage] || 0) + 1;
+        if (stageIterations[currentStage] >= MAX_ITERATIONS_PER_STAGE) {
+          console.log(`⚠️ Stage ${currentStage} hit max iterations (${MAX_ITERATIONS_PER_STAGE}) — force-advancing`);
+          stageIterations[currentStage] = 0;
+          currentStage = this.lifecycle.nextStage();
+        } else {
+          console.log(`🔁 Re-running stage ${currentStage} (attempt ${stageIterations[currentStage]}/${MAX_ITERATIONS_PER_STAGE})`);
+        }
         continue;
       }
 
@@ -71,6 +88,8 @@ export class CoordinatorV2 {
         console.log("⚠️ Exit criteria weak (continuing)");
       }
 
+      // Reset iteration counter on clean advance
+      stageIterations[currentStage] = 0;
       currentStage = this.lifecycle.nextStage();
     }
 
@@ -142,8 +161,9 @@ export class CoordinatorV2 {
   }
 
   async mergeOutputs(stage, stageDef, agentData, context) {
-    if (stage === "14") {
-      const prompt = `
+    const buildPrompt = () => {
+      if (stage === "14") {
+        return `
 You are a Senior Product Manager + Architect.
 
 Generate ONE high-quality prototype prompt using ALL lifecycle artifacts.
@@ -177,22 +197,15 @@ Return STRICT JSON:
   "conflicts": ""
 }
 `;
+      }
 
-      const response = await this.llm.generate({
-        prompt,
-        taskType: "heavy"
-      });
+      let agentJson = JSON.stringify(agentData.outputs, null, 2);
 
-      return this.safeParse(response);
-    }
+      if (agentJson.length > 10000) {
+        agentJson = agentJson.substring(0, 10000) + "\n...[truncated]";
+      }
 
-    let agentJson = JSON.stringify(agentData.outputs, null, 2);
-
-    if (agentJson.length > 10000) {
-      agentJson = agentJson.substring(0, 10000) + "\n...[truncated]";
-    }
-
-    const prompt = `
+      return `
 You are a Senior Product Manager.
 
 Stage: ${stageDef.name}
@@ -219,13 +232,43 @@ Return STRICT JSON:
   "conflicts": "..."
 }
 `;
+    };
 
-    const response = await this.llm.generate({
-      prompt,
-      taskType: stageDef.taskType || "heavy"
-    });
+    const prompt = buildPrompt();
 
-    return this.safeParse(response);
+    // ✅ SAFE RETRY (NO BREAKAGE)
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const response = await this.llm.generate({
+          prompt,
+          taskType: stageDef.taskType || "heavy"
+        });
+
+        return this.safeParse(response);
+
+      } catch (err) {
+        console.log(`⚠️ Merge failed (attempt ${attempt}):`, err.message);
+
+        if (attempt === 2) {
+          console.log("❌ Merge failed — using fallback");
+
+          // ── BUG FIX: 'iterate' → 'go' ──────────────────────────────────
+          // The old fallback set decision:"iterate", which fed straight into
+          // the infinite-loop bug. When the merge LLM call itself is what
+          // failed (network error, auth error, timeout), retrying the same
+          // call immediately produces the same failure. 'go' keeps the
+          // lifecycle moving so remaining stages can still be generated.
+          return {
+            summary: "fallback merge",
+            output: JSON.stringify(agentData.outputs, null, 2),
+            confidence: "low",
+            decision: "go",
+            reasoning: "LLM merge failed after 2 attempts — advancing with raw agent output",
+            conflicts: ""
+          };
+        }
+      }
+    }
   }
 
   logDecision(stage, stageDef, agentData, merged) {
@@ -275,7 +318,6 @@ ${merged.confidence}
     return merged && merged.output && merged.confidence !== "low";
   }
 
-  // 🔥 FIXED SAFE PARSE (ONLY CHANGE)
   safeParse(response) {
     if (!response) {
       return {

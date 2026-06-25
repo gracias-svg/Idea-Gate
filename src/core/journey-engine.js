@@ -67,11 +67,15 @@ export class JourneyEngine {
       confidence: data.confidence || "",
       conflicts: data.conflicts || "",
 
-      // 🔥 NEW METADATA
-      startedAt: existing.startedAt || now,
+      // ── TIMING FIX ─────────────────────────────────────────────────────
+      // data.startedAt is set by coordinator BEFORE runStageAgents executes,
+      // giving us the true stage start time. existing.startedAt is used when
+      // a stage is being iterated (already started). Fallback to now only if
+      // neither is available (should not occur in normal execution).
+      startedAt: data.startedAt || existing.startedAt || now,
       completedAt: now,
-      durationMs: existing.startedAt
-        ? new Date(now) - new Date(existing.startedAt)
+      durationMs: (data.startedAt || existing.startedAt)
+        ? new Date(now).getTime() - new Date(data.startedAt || existing.startedAt).getTime()
         : 0,
 
       history,

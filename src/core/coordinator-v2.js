@@ -293,6 +293,10 @@ Return STRICT JSON:
     const fileName = `${stage}-${stageDef.name.replace(/\s+/g, '-').toLowerCase()}`;
     const filePath = path.join(this.artifactDir, `${fileName}.md`);
 
+    const outputStr = typeof merged.output === 'string'
+      ? merged.output
+      : JSON.stringify(merged.output, null, 2);
+
     const content = `
 # ${stageDef.name}
 
@@ -301,7 +305,7 @@ ${merged.summary}
 
 ---
 
-${merged.output}
+${outputStr}
 
 ---
 

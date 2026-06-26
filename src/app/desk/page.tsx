@@ -1,546 +1,649 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { useData } from '@/lib/DataProvider';
+// src/app/desk/page.tsx
+// IdeaGate — Artifact Reading Desk
+// Fix: ArtifactReader uses if-else-if chains (no continue with JSX)
+// TSX parser cannot handle `elements.push(<jsx>)` followed by `continue` in a for loop.
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-type RightTab = 'improve' | 'snapshots' | 'context';
-type Extent = 'light' | 'medium' | 'strong';
-type AgentStatus = 'idle' | 'working' | 'reviewing' | 'done' | 'blocked';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { ModelDropdown } from '@/components/ModelDropdown';
+import { useGlobalStore } from '@/lib/GlobalStore';
+import { useRuntime } from '@/lib/RuntimeContext';
+import { parseContent } from '@/lib/parseContent';
 
-interface LiveAgent {
-  name: string;
-  role: string;
-  stage: number;
-  status: AgentStatus;
-  message: string;
-}
+const MONO: React.CSSProperties = { fontFamily: "'JetBrains Mono','Fira Code',monospace" };
+const BASE_FONT = 17;
 
-interface Snapshot {
-  id: string; name: string; date: string;
-  stage: number; artifacts: string[]; tag: string; summary: string;
-}
-
-interface ImproveFeedback {
-  id: string; intent: string; extent: Extent; target: string;
-  timestamp: string; status: 'queued' | 'applying' | 'applied';
-}
-
-interface Settings {
-  brightness: 'low' | 'medium' | 'high';
-  fontSize: 'sm' | 'md' | 'lg';
-  showAgents: boolean;
-  showAnimations: boolean;
-  density: 'compact' | 'normal';
-}
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-const FALLBACK_AGENTS: LiveAgent[] = [
-  { name: 'CO', role: 'Coordinator',        stage: 0,  status: 'idle', message: 'standby'  },
-  { name: 'PS', role: 'Product Strategist', stage: 1,  status: 'idle', message: 'waiting'  },
-  { name: 'RE', role: 'Researcher',         stage: 2,  status: 'idle', message: 'waiting'  },
-  { name: 'UX', role: 'UX Designer',        stage: 7,  status: 'idle', message: 'waiting'  },
-  { name: 'AR', role: 'Architect',          stage: 10, status: 'idle', message: 'waiting'  },
-  { name: 'QA', role: 'QA',                 stage: 13, status: 'idle', message: 'waiting'  },
-];
-
-const STAGE_LABELS: Record<number, string> = {
-  0:'Idea Intake', 1:'Discovery', 2:'Problem Definition', 3:'Solution Design',
-  4:'MVP Hypothesis', 5:'Validation', 6:'Prioritization', 7:'PRD',
-  8:'UX Design', 9:'Usability', 10:'Architecture', 11:'Backlog & Release',
-  12:'Implementation', 13:'QA & Readiness', 14:'Prototype Prompt',
+// ── Stage intelligence ────────────────────────────────────────────────────────
+const STAGE_INTEL: Record<number, { purpose:string; agentId:string; agentFull:string; agentColor:string; framework:string; interview:string }> = {
+   0: { purpose:'Initial idea framing, scope boundary-setting, and NSM validation. Establishes the hypothesis governing all subsequent lifecycle decisions.', agentId:'CO', agentFull:'Coordinator (CO)', agentColor:'#4ade80', framework:'NSM lens', interview:'Idea clarity + testability assessment' },
+   1: { purpose:'Market discovery, competitive landscape, PESTEL and Porter\'s Five Forces. Establishes strategic context for all downstream product decisions.', agentId:'PS', agentFull:'Product Strategist (PS)', agentColor:'#818cf8', framework:'PESTEL · Porter\'s · JTBD', interview:'Market sizing + competitive differentiation' },
+   2: { purpose:'User problem framing, evidence collection, Jobs-to-be-Done analysis. Validates the problem is real, frequent, and worth solving.', agentId:'RE', agentFull:'Researcher (RE)', agentColor:'#38bdf8', framework:'JTBD · Empathy Mapping · 5W1H', interview:'Problem validation depth' },
+   3: { purpose:'Solution concept, user flows, and interaction logic. Translates validated problem into a coherent product experience.', agentId:'UX', agentFull:'UX Designer (UX)', agentColor:'#f59e0b', framework:'OST · User Journey Mapping', interview:'Solution-problem fit reasoning' },
+   4: { purpose:'MVP scope compression, feature prioritization, test cards. Defines the minimum to ship that tests the riskiest assumption.', agentId:'AR', agentFull:'Architect (AR)', agentColor:'#fb923c', framework:'MVP Test Cards · RICE · MoSCoW', interview:'Scope discipline + tradeoff reasoning' },
+   5: { purpose:'Validation experiment design, AARRR metrics, evidence-based go/no-go criteria. Makes the success bar explicit before building.', agentId:'QA', agentFull:'QA Engineer (QA)', agentColor:'#f472b6', framework:'AARRR · Experiment Design', interview:'Validation rigor + metric design' },
+   6: { purpose:'Feature prioritization with multiple frameworks simultaneously. Resolves competing PM priorities into a defensible ordered backlog.', agentId:'CO', agentFull:'Coordinator (CO)', agentColor:'#4ade80', framework:'RICE · Kano · Value vs Effort', interview:'Prioritization logic + stakeholder alignment' },
+   7: { purpose:'Full product requirements with acceptance criteria, edge cases, delivery dependencies. The execution blueprint for engineering.', agentId:'PS', agentFull:'Product Strategist (PS)', agentColor:'#818cf8', framework:'PRD structure · DoR/DoD · AC', interview:'Requirements completeness + clarity' },
+   8: { purpose:'UX specification, information architecture, interaction design. Translates PRD requirements into a buildable UX layer.', agentId:'UX', agentFull:'UX Designer (UX)', agentColor:'#f59e0b', framework:'UX Heuristics · IA · Cognitive Load', interview:'Design thinking + UX rigor' },
+   9: { purpose:'Usability testing plan, accessibility considerations, UX quality criteria. Ensures the product is testable before prototype handoff.', agentId:'RE', agentFull:'Researcher (RE)', agentColor:'#38bdf8', framework:'Usability Testing · WCAG', interview:'User research methodology' },
+  10: { purpose:'System architecture, tech stack decisions, scalability planning. Technical constraints bounding the implementation space.', agentId:'AR', agentFull:'Architect (AR)', agentColor:'#fb923c', framework:'System Design · API contracts', interview:'Technical depth + architectural judgment' },
+  11: { purpose:'Sprint backlog, release sequencing, Definition of Ready/Done. Operationalizes the PRD into engineering work units.', agentId:'CO', agentFull:'Coordinator (CO)', agentColor:'#4ade80', framework:'Agile · Scrum · Critical Path', interview:'Delivery planning + sprint discipline' },
+  12: { purpose:'Implementation roadmap, dependency mapping, engineering timeline. Bridges PRD to the development team\'s execution plan.', agentId:'PS', agentFull:'Product Strategist (PS)', agentColor:'#818cf8', framework:'Delivery Planning · Risk Map', interview:'Project planning + dependency awareness' },
+  13: { purpose:'QA strategy, readiness criteria, launch checklist. Defines what "production ready" means before the prototype prompt.', agentId:'QA', agentFull:'QA Engineer (QA)', agentColor:'#f472b6', framework:'QA Strategy · Readiness Gate', interview:'Quality standards + launch readiness' },
+  14: { purpose:'Complete prototype prompt for Lovable, Bolt, v0, Cursor, or Claude. Packages all lifecycle intelligence into a single buildable context.', agentId:'AR', agentFull:'Architect (AR)', agentColor:'#fb923c', framework:'Builder Context Package', interview:'End-to-end lifecycle synthesis' },
 };
 
-const IMPROVE_PRESETS = [
-  'More concise','More technical','More strategic','More MVP-focused',
-  'Sharpen summary','Add evidence','Reduce repetition','Clarify problem',
-  'Stronger recommendation','Improve structure',
-];
-
-const STATUS_COLOR: Record<AgentStatus, string> = {
-  idle:'#64748b', working:'#f59e0b', reviewing:'#818cf8', done:'#4ade80', blocked:'#f87171',
+const STAGE_DEPS: Record<number,number[]> = {
+   0:[], 1:[0], 2:[1], 3:[2], 4:[3,2], 5:[4], 6:[5,4], 7:[6,3],
+   8:[7,3], 9:[8], 10:[7,4], 11:[10,6], 12:[11,7], 13:[12,9], 14:[13,10],
+};
+const STAGE_LABEL: Record<number,string> = {
+   0:'Idea Intake',1:'Discovery',2:'Problem Definition',3:'Solution Design',
+   4:'MVP Hypothesis',5:'Validation',6:'Prioritization',7:'PRD',8:'UX Design',
+   9:'Usability',10:'Architecture',11:'Backlog & Release',12:'Implementation',
+  13:'QA & Readiness',14:'Prototype Prompt',
+};
+const STAGE_COLOR: Record<number,string> = {
+  0:'#22c55e',1:'#22c55e',2:'#22c55e',3:'#38bdf8',4:'#38bdf8',5:'#38bdf8',
+  6:'#a78bfa',7:'#a78bfa',8:'#a78bfa',9:'#a78bfa',10:'#fb923c',11:'#fb923c',
+  12:'#fde047',13:'#fde047',14:'#fde047',
 };
 
-const DEFAULT_SETTINGS: Settings = {
-  brightness:'high', fontSize:'md', showAgents:true, showAnimations:true, density:'normal',
-};
+const stageNum  = (f:string) => parseInt(f.split('-')[0],10)||0;
+const humanName = (f:string) => f.replace('.md','').replace(/^\d+-/,'').replace(/-/g,' ');
+const titleCase = (s:string) => s.replace(/\b\w/g,c=>c.toUpperCase());
+const wordCount = (t:string) => t.split(/\s+/).filter(Boolean).length;
+const readTime  = (t:string) => { const m=Math.ceil(wordCount(t)/220); return m<=1?'<1 min':`~${m} min`; };
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-function parseContent(raw: string) {
-  try {
-    const p = JSON.parse(raw);
-    return { type: 'json' as const, summary: p.summary || '', output: p.output || raw };
-  } catch { return { type: 'text' as const, output: raw }; }
+interface TocEntry { level:2|3; text:string; id:string; }
+function extractTOC(content:string): TocEntry[] {
+  const entries: TocEntry[] = [];
+  for (const line of content.split('\n')) {
+    const h2=line.match(/^##\s+(.+)/), h3=line.match(/^###\s+(.+)/), m=h2??h3;
+    if (!m) continue;
+    const text=m[1].trim(), id=text.toLowerCase().replace(/[^a-z0-9]+/g,'-');
+    entries.push({ level: h2?2:3, text, id });
+  }
+  return entries;
 }
 
-function getTC(b: Settings['brightness']) {
-  if (b === 'high')   return { primary:'#f1f5f9', secondary:'#cbd5e1', muted:'#94a3b8', dim:'#64748b' };
-  if (b === 'medium') return { primary:'#cbd5e1', secondary:'#94a3b8', muted:'#64748b', dim:'#475569' };
-  return                     { primary:'#94a3b8', secondary:'#64748b', muted:'#475569', dim:'#334155' };
-}
-
-function getFS(s: Settings['fontSize']) {
-  if (s === 'lg') return { base:'15px', sm:'13px', xs:'11px' };
-  if (s === 'sm') return { base:'12px', sm:'10px', xs:'9px' };
-  return                 { base:'13px', sm:'11px', xs:'10px' };
-}
-
-function renderMd(text: string, tc: ReturnType<typeof getTC>, fs: ReturnType<typeof getFS>) {
-  return text.split('\n').map((line, k) => {
-    if (line.startsWith('# '))  return <h1 key={k} style={{fontSize:'20px',fontWeight:700,color:tc.primary,margin:'20px 0 8px',borderBottom:'1px solid #1e293b',paddingBottom:'6px'}}>{line.slice(2)}</h1>;
-    if (line.startsWith('## ')) return <h2 key={k} style={{fontSize:'13px',fontWeight:700,color:'#4ade80',margin:'18px 0 6px',textTransform:'uppercase',letterSpacing:'0.08em'}}>{line.slice(3)}</h2>;
-    if (line.startsWith('### ')) return <h3 key={k} style={{fontSize:fs.base,fontWeight:600,color:tc.secondary,margin:'14px 0 4px'}}>{line.slice(4)}</h3>;
-    if (line.startsWith('- ')||line.startsWith('* ')) return <div key={k} style={{display:'flex',gap:'8px',margin:'4px 0',paddingLeft:'8px'}}><span style={{color:'#4ade80',flexShrink:0}}>›</span><span style={{fontSize:fs.base,color:tc.secondary,lineHeight:1.7}}>{line.slice(2)}</span></div>;
-    if (line.startsWith('---')) return <hr key={k} style={{border:'none',borderTop:'1px solid #1e293b',margin:'14px 0'}} />;
-    if (line.trim()==='')       return <div key={k} style={{height:'8px'}} />;
-    return <p key={k} style={{fontSize:fs.base,color:tc.secondary,lineHeight:1.8,margin:'4px 0'}}>{line}</p>;
+// ── Inline renderer ───────────────────────────────────────────────────────────
+function ir(text:string, k:string): React.ReactNode[] {
+  return text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g).map((p,i)=>{
+    const key=`${k}-${i}`;
+    if (p.startsWith('**')&&p.endsWith('**')) return <strong key={key} style={{color:'#f1f5f9',fontWeight:700}}>{p.slice(2,-2)}</strong>;
+    if (p.startsWith('*')&&p.endsWith('*')&&p.length>2&&!p.startsWith('**')) return <em key={key} style={{color:'#cbd5e1',fontStyle:'italic'}}>{p.slice(1,-1)}</em>;
+    if (p.startsWith('`')&&p.endsWith('`')&&p.length>2) return <code key={key} style={{background:'#0d1117',color:'#4ade80',padding:'2px 6px',borderRadius:'3px',fontSize:`${BASE_FONT-1}px`}}>{p.slice(1,-1)}</code>;
+    return <React.Fragment key={key}>{p}</React.Fragment>;
   });
 }
 
-// ─── Settings Panel ───────────────────────────────────────────────────────────
-function SettingsPanel({ settings, onChange, onClose }: { settings: Settings; onChange: (s: Settings) => void; onClose: () => void }) {
-  const row: React.CSSProperties = { display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 0', borderBottom:'1px solid #0f1923' };
-  const optBtn = (active: boolean): React.CSSProperties => ({
-    padding:'3px 10px', fontSize:'10px', fontFamily:'inherit', borderRadius:'3px', cursor:'pointer',
-    border: active ? '1px solid #4ade8066' : '1px solid #0f1923',
-    backgroundColor: active ? '#0a1f0e' : '#060a0f',
-    color: active ? '#4ade80' : '#475569',
-  });
-  const toggle = (active: boolean): React.CSSProperties => ({
-    width:'32px', height:'16px', borderRadius:'8px', cursor:'pointer', border:'none', flexShrink:0,
-    backgroundColor: active ? '#4ade80' : '#1e293b', transition:'background 0.2s',
-  });
-  return (
-    <div style={{
-      position:'absolute', top:'42px', right:'12px', zIndex:200,
-      width:'280px', backgroundColor:'#080c12', border:'1px solid #1e293b',
-      borderRadius:'6px', padding:'16px', boxShadow:'0 8px 32px #000c',
-      fontFamily:"'JetBrains Mono',monospace",
-    }}>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}}>
-        <span style={{fontSize:'11px',color:'#4ade80',fontWeight:700,letterSpacing:'0.1em',textTransform:'uppercase'}}>⚙ Settings</span>
-        <button onClick={onClose} style={{background:'none',border:'none',color:'#475569',cursor:'pointer',fontSize:'16px'}}>✕</button>
-      </div>
-      {([
-        {label:'Brightness', key:'brightness', opts:['low','medium','high']},
-        {label:'Font size',  key:'fontSize',   opts:['sm','md','lg']},
-        {label:'Density',    key:'density',    opts:['compact','normal']},
-      ] as const).map(({label,key,opts})=>(
-        <div key={key} style={row}>
-          <span style={{fontSize:'11px',color:'#cbd5e1',fontFamily:'inherit'}}>{label}</span>
-          <div style={{display:'flex',gap:'3px'}}>
-            {opts.map((v:string)=>(
-              <button key={v} style={optBtn((settings as any)[key]===v)} onClick={()=>onChange({...settings,[key]:v})}>{v}</button>
+// ── Artifact reader — if-else-if chains, NO continue with JSX ────────────────
+// TSX parser fails when elements.push(<JSX/>) is followed by `continue` in a for loop.
+// Fix: use if-else-if so every branch is mutually exclusive — no continue needed.
+function ArtifactReader({ content, scrollRef }: { content:string; scrollRef:React.RefObject<HTMLDivElement> }) {
+  const lines = content.split('\n');
+  const elements: React.ReactNode[] = [];
+  let inCode = false;
+  let codeLang = '';
+  let codeLines: string[] = [];
+  let codeStartKey = '';
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const t    = line.trim();
+    const k    = `l${i}`;
+
+    // ── Code block state machine ──────────────────────────────────────────────
+    if (inCode) {
+      if (t.startsWith('```')) {
+        // Close the code block
+        const captured = codeLines.join('\n');
+        elements.push(
+          <div key={codeStartKey} style={{margin:'14px 0',background:'#0d1117',border:'1px solid #1e293b',borderRadius:'4px',overflow:'hidden'}}>
+            {codeLang && <div style={{padding:'4px 14px',borderBottom:'1px solid #1e293b',fontSize:'10px',color:'#64748b',background:'#080d12'}}>{codeLang}</div>}
+            <pre style={{...MONO,margin:0,padding:'14px 16px',fontSize:'12px',color:'#4ade80',lineHeight:1.7,overflowX:'auto',whiteSpace:'pre'}}>{captured}</pre>
+          </div>
+        );
+        inCode = false; codeLines = []; codeLang = '';
+      } else {
+        codeLines.push(line);
+      }
+    } else if (t.startsWith('```')) {
+      inCode = true; codeLang = t.slice(3).trim(); codeStartKey = k;
+    } else if (!t) {
+      elements.push(<div key={k} style={{height:'9px'}} />);
+    } else if (t === '---' || t === '***') {
+      elements.push(<div key={k} style={{borderTop:'1px solid #1e293b',margin:'20px 0'}} />);
+    } else if (t.startsWith('# ')) {
+      elements.push(
+        <div key={k} style={{marginTop:i===0?0:'30px',marginBottom:'14px',paddingBottom:'10px',borderBottom:'1px solid #1e293b'}}>
+          <h1 id={t.slice(2).toLowerCase().replace(/[^a-z0-9]+/g,'-')} style={{...MONO,fontSize:'22px',color:'#f1f5f9',fontWeight:700,margin:0,lineHeight:1.3}}>{ir(t.slice(2),k)}</h1>
+        </div>
+      );
+    } else if (t.startsWith('## ')) {
+      elements.push(
+        <div key={k} style={{marginTop:'26px',marginBottom:'9px'}}>
+          <h2 id={t.slice(3).toLowerCase().replace(/[^a-z0-9]+/g,'-')} style={{...MONO,fontSize:'17px',color:'#cbd5e1',fontWeight:700,margin:0}}>{ir(t.slice(3),k)}</h2>
+        </div>
+      );
+    } else if (t.startsWith('### ')) {
+      elements.push(
+        <div key={k} style={{marginTop:'18px',marginBottom:'6px'}}>
+          <h3 id={t.slice(4).toLowerCase().replace(/[^a-z0-9]+/g,'-')} style={{...MONO,fontSize:'13px',color:'#64748b',fontWeight:700,margin:0,textTransform:'uppercase',letterSpacing:'0.05em'}}>{ir(t.slice(4),k)}</h3>
+        </div>
+      );
+    } else if (t.startsWith('#### ')) {
+      elements.push(
+        <div key={k} style={{marginTop:'12px',marginBottom:'4px',fontSize:'13px',color:'#cbd5e1',fontWeight:600,...MONO}}>{ir(t.slice(5),k)}</div>
+      );
+    } else if (t.startsWith('> ')) {
+      elements.push(
+        <div key={k} style={{margin:'10px 0',padding:'10px 16px',borderLeft:'3px solid #4ade8033',background:'#040f08',fontSize:`${BASE_FONT}px`,color:'#4ade8099',...MONO,lineHeight:1.8}}>{ir(t.slice(2),k)}</div>
+      );
+    } else if (line.match(/^(\s*)([-*])\s+(.+)/)) {
+      const bm = line.match(/^(\s*)([-*])\s+(.+)/)!;
+      elements.push(
+        <div key={k} style={{display:'flex',gap:'10px',marginLeft:Math.floor(bm[1].length/2)*20,margin:'3px 0'}}>
+          <span style={{color:'#4ade8055',flexShrink:0,fontSize:'14px'}}>▸</span>
+          <span style={{fontSize:`${BASE_FONT}px`,color:'#cbd5e1',lineHeight:1.85,...MONO}}>{ir(bm[3],k)}</span>
+        </div>
+      );
+    } else if (line.match(/^(\s*)(\d+)\.\s+(.+)/)) {
+      const om = line.match(/^(\s*)(\d+)\.\s+(.+)/)!;
+      elements.push(
+        <div key={k} style={{display:'flex',gap:'12px',margin:'3px 0'}}>
+          <span style={{fontSize:`${BASE_FONT}px`,color:'#64748b',flexShrink:0,minWidth:'24px',textAlign:'right' as const,...MONO}}>{om[2]}.</span>
+          <span style={{fontSize:`${BASE_FONT}px`,color:'#cbd5e1',lineHeight:1.85,...MONO}}>{ir(om[3],k)}</span>
+        </div>
+      );
+    } else if (t.startsWith('|')) {
+      // Table row — separator rows are silently skipped (else branch does nothing)
+      const isSep = !!t.match(/^[\|\-\s:]+$/);
+      if (!isSep) {
+        const cells    = t.split('|').slice(1,-1);
+        const isHeader = !!lines[i+1]?.trim().match(/^[\|\-\s:]+$/);
+        elements.push(
+          <div key={k} style={{display:'flex',borderBottom:'1px solid #0f1923',marginTop:isHeader?'14px':'0'}}>
+            {cells.map((c,ci) => (
+              <div key={ci} style={{
+                flex:1, padding:'6px 12px',
+                fontSize:`${BASE_FONT-1}px`,
+                color:isHeader?'#64748b':'#94a3b8',
+                fontWeight:isHeader?700:400,
+                letterSpacing:isHeader?'0.05em':'normal',
+                ...MONO,
+                borderRight:'1px solid #0f1923',
+                background:isHeader?'#040b14':'transparent',
+              }}>
+                {ir(c.trim(),`${k}-${ci}`)}
+              </div>
             ))}
           </div>
-        </div>
-      ))}
-      <div style={row}>
-        <span style={{fontSize:'11px',color:'#cbd5e1',fontFamily:'inherit'}}>Agent strip</span>
-        <button style={toggle(settings.showAgents)} onClick={()=>onChange({...settings,showAgents:!settings.showAgents})} />
-      </div>
-      <div style={{...row,borderBottom:'none'}}>
-        <span style={{fontSize:'11px',color:'#cbd5e1',fontFamily:'inherit'}}>Animations</span>
-        <button style={toggle(settings.showAnimations)} onClick={()=>onChange({...settings,showAnimations:!settings.showAnimations})} />
-      </div>
-      <div style={{marginTop:'12px',padding:'8px',backgroundColor:'#060a0f',borderRadius:'3px',fontSize:'10px',color:'#334155'}}>
-        Settings saved automatically · Persists across sessions
-      </div>
+        );
+      }
+      // separator rows: fall through (no push) — equivalent to skipping
+    } else {
+      elements.push(
+        <div key={k} style={{fontSize:`${BASE_FONT}px`,color:'#cbd5e1',lineHeight:1.9,...MONO}}>{ir(t,k)}</div>
+      );
+    }
+  }
+
+  return (
+    <div ref={scrollRef} style={{padding:'28px 36px',overflowY:'auto',flex:1,...MONO,fontSize:`${BASE_FONT}px`}}>
+      {elements}
     </div>
   );
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
+// ── PM Intelligence panel ──────────────────────────────────────────────────────
+function PMIntelligence({
+  selected, content, runtime, artifacts,
+}: {
+  selected:string; content:string; runtime:ReturnType<typeof useRuntime>; artifacts:string[];
+}) {
+  const n       = stageNum(selected);
+  const intel   = STAGE_INTEL[n];
+  const col     = STAGE_COLOR[n] ?? '#94a3b8';
+  const ver     = runtime.getVersion(selected);
+  const isStale = runtime.isStale(selected);
+  const wc      = wordCount(content);
+  const rt      = readTime(content);
+  const toc     = extractTOC(content);
+  const reasoning = runtime.getReasoningFor(selected);
+  const upstreamNums   = STAGE_DEPS[n] ?? [];
+  const downstreamNums = Object.entries(STAGE_DEPS)
+    .filter(([,deps])=>deps.includes(n)).map(([k])=>parseInt(k,10));
+  if (!intel) return null;
+  return (
+    <div>
+      {/* Purpose */}
+      <div style={{marginBottom:'12px'}}>
+        <div style={{fontSize:'10px',color:'#2a5a30',letterSpacing:'0.1em',fontWeight:700,marginBottom:'6px'}}>PURPOSE</div>
+        <div style={{padding:'9px 10px',backgroundColor:'#040b14',border:`1px solid ${col}22`,borderRadius:'3px',fontSize:'11px',color:'#64748b',lineHeight:1.8}}>{intel.purpose}</div>
+      </div>
+      {/* Agent ownership */}
+      <div style={{marginBottom:'12px'}}>
+        <div style={{fontSize:'10px',color:'#2a5a30',letterSpacing:'0.1em',fontWeight:700,marginBottom:'6px'}}>AGENT OWNERSHIP</div>
+        <div style={{padding:'8px 10px',backgroundColor:'#040b14',border:`1px solid ${intel.agentColor}22`,borderRadius:'3px',fontSize:'11px',lineHeight:1.9}}>
+          <div style={{display:'flex',alignItems:'center',gap:'7px',marginBottom:'4px'}}>
+            <div style={{width:'6px',height:'6px',borderRadius:'50%',backgroundColor:intel.agentColor}}/>
+            <span style={{color:intel.agentColor,fontWeight:700}}>{intel.agentFull}</span>
+          </div>
+          <div style={{color:'#64748b'}}>Framework: <span style={{color:'#cbd5e1'}}>{intel.framework}</span></div>
+          <div style={{color:'#64748b'}}>Interview: <span style={{color:'#cbd5e1'}}>{intel.interview}</span></div>
+        </div>
+      </div>
+      {/* Dependency map */}
+      <div style={{marginBottom:'12px'}}>
+        <div style={{fontSize:'10px',color:'#2a5a30',letterSpacing:'0.1em',fontWeight:700,marginBottom:'6px'}}>DEPENDENCY MAP</div>
+        <div style={{padding:'8px 10px',backgroundColor:'#040b14',border:'1px solid #0a1a2e',borderRadius:'3px',fontSize:'10px'}}>
+          {upstreamNums.length > 0 ? (
+            <div style={{marginBottom:'7px'}}>
+              <div style={{color:'#64748b',marginBottom:'3px',fontSize:'9px',letterSpacing:'0.06em'}}>↑ DEPENDS ON</div>
+              {upstreamNums.map(u => {
+                const upArt = artifacts.find(a=>stageNum(a)===u);
+                const upStale = upArt ? runtime.isStale(upArt) : false;
+                return (
+                  <div key={u} style={{color:upStale?'#f59e0b':'#94a3b8',marginBottom:'2px',paddingLeft:'8px'}}>
+                    {STAGE_LABEL[u]} {upStale?'△':''}
+                    <span style={{color:'#2a5a30',marginLeft:'6px',fontSize:'9px'}}>[{STAGE_INTEL[u]?.agentId}]</span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{color:'#64748b',marginBottom:'7px',fontSize:'9px'}}>↑ Root artifact — no upstream dependencies</div>
+          )}
+          {downstreamNums.length > 0 && (
+            <div>
+              <div style={{color:'#64748b',marginBottom:'3px',fontSize:'9px',letterSpacing:'0.06em'}}>↓ REQUIRED BY</div>
+              {downstreamNums.map(d => {
+                const dArt = artifacts.find(a=>stageNum(a)===d);
+                const dStale = dArt ? runtime.isStale(dArt) : false;
+                return (
+                  <div key={d} style={{color:dStale?'#f59e0b':'#94a3b8',marginBottom:'2px',paddingLeft:'8px'}}>
+                    {STAGE_LABEL[d]} {dStale?'△':''}
+                    <span style={{color:'#2a5a30',marginLeft:'6px',fontSize:'9px'}}>[{STAGE_INTEL[d]?.agentId}]</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+      {/* Version lineage */}
+      <div style={{marginBottom:'12px'}}>
+        <div style={{fontSize:'10px',color:'#2a5a30',letterSpacing:'0.1em',fontWeight:700,marginBottom:'6px'}}>VERSION LINEAGE</div>
+        <div style={{padding:'8px 10px',backgroundColor:'#040b14',border:'1px solid #0a1a2e',borderRadius:'3px',fontSize:'10px',lineHeight:1.9}}>
+          <div style={{color:'#cbd5e1'}}>v1 · Created by V2 lifecycle run</div>
+          {reasoning.map((r,i) => (
+            <div key={i} style={{color:'#cbd5e1',paddingLeft:'8px',borderLeft:'2px solid #4ade8022',marginLeft:'6px',marginTop:'4px'}}>
+              <div style={{color:'#4ade80'}}>v{i+2} · {r.model} · {new Date(r.timestamp).toLocaleTimeString()}</div>
+              <div style={{color:'#64748b',fontSize:'9px'}}>{r.intent.slice(0,60)}{r.intent.length>60?'…':''}</div>
+            </div>
+          ))}
+          {ver === 0 && <div style={{color:'#334155',fontSize:'9px',marginTop:'4px'}}>No improvements yet — original V2 lifecycle output</div>}
+        </div>
+      </div>
+      {/* Quality signal */}
+      <div style={{marginBottom:'12px'}}>
+        <div style={{fontSize:'10px',color:'#2a5a30',letterSpacing:'0.1em',fontWeight:700,marginBottom:'6px'}}>QUALITY SIGNAL</div>
+        <div style={{padding:'8px 10px',backgroundColor:'#040b14',border:'1px solid #0a1a2e',borderRadius:'3px',fontSize:'10px',lineHeight:1.9}}>
+          <div style={{color:'#64748b'}}>Score: <span style={{color:'#334155'}}>N/A — evaluator in V3.3</span></div>
+          <div style={{color:'#64748b'}}>Status: <span style={{color:isStale?'#f59e0b':'#4ade80'}}>{isStale?'△ Stale':'✓ Current'}</span></div>
+          <div style={{color:'#64748b'}}>Words: <span style={{color:'#cbd5e1'}}>{wc.toLocaleString()}</span></div>
+          <div style={{color:'#64748b'}}>Sections: <span style={{color:'#cbd5e1'}}>{toc.length}</span></div>
+          <div style={{color:'#64748b'}}>Read time: <span style={{color:'#cbd5e1'}}>{rt}</span></div>
+        </div>
+      </div>
+      {/* Comparison stub */}
+      {ver > 0 && (
+        <div style={{marginBottom:'12px'}}>
+          <div style={{fontSize:'10px',color:'#2a5a30',letterSpacing:'0.1em',fontWeight:700,marginBottom:'6px'}}>COMPARISON</div>
+          <div style={{padding:'8px 10px',backgroundColor:'#040b14',border:'1px solid #818cf822',borderRadius:'3px',fontSize:'10px',color:'#64748b',lineHeight:1.7}}>
+            <div style={{color:'#818cf8',marginBottom:'4px'}}>v{ver} vs v1 diff — V3.2 feature</div>
+            <div>Full before/after diff (Cursor-style) requires storing v1 at improvement time. Open in Refine to see the improvement reasoning chain.</div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
 export default function DeskPage() {
-  const { state, setSelectedArtifact } = useData();
+  const runtime = useRuntime();
 
-  const [settings, setSettings]         = useState<Settings>(DEFAULT_SETTINGS);
-  const [showSettings, setShowSettings] = useState(false);
-  const [rightTab, setRightTab]         = useState<RightTab>('improve');
-  const [rightOpen, setRightOpen]       = useState(true);
+  const [artifacts,    setArtifacts]    = useState<string[]>([]);
+  const [currentStage, setCurrentStage] = useState(0);
+  const [selected,     setSelected]     = useState<string|null>(null);
+  const [rawContent,   setRawContent]   = useState<string|null>(null);
+  const [loading,      setLoading]      = useState(false);
+  const [focusMode,    setFocusMode]    = useState(false);
+  const [rightTab,     setRightTab]     = useState<'overview'|'actions'|'history'>('overview');
+  const [snapName,     setSnapName]     = useState('');
+  const [snapshots,    setSnapshots]    = useState<{name:string;stage:number;ts:string}[]>([]);
+  const [snapSaved,    setSnapSaved]    = useState(false);
+  const [quickIntent,  setQuickIntent]  = useState('');
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  // ── LIVE AGENTS (real data from /api/agents) ──
-  const [liveAgents, setLiveAgents]     = useState<LiveAgent[]>([]);
-  const [isRunning, setIsRunning]       = useState(false);
+  useEffect(()=>{
+    const loadData = () => fetch('/api/data').then(r=>r.json()).then(d=>{ setArtifacts(d.artifacts??[]); setCurrentStage(d.currentStage??0); }).catch(()=>{});
+    loadData();
+    try{ const s=localStorage.getItem('ig_snapshots'); if(s) setSnapshots(JSON.parse(s)); }catch{}
+    const poll = setInterval(loadData, 4000);
+    return () => clearInterval(poll);
+  },[]);
 
-  const [improveIntent, setImproveIntent]             = useState('');
-  const [improveExtent, setImproveExtent]             = useState<Extent>('medium');
-  const [improveTarget, setImproveTarget]             = useState<'block'|'stage'|'project'>('stage');
-  const [improveFeedbacks, setImproveFeedbacks]       = useState<ImproveFeedback[]>([]);
-  const [improveAppliedBadge, setImproveAppliedBadge] = useState<string|null>(null);
-  const [pulseActive, setPulseActive]                 = useState(false);
+  useEffect(()=>{
+    setRawContent(null); setLoading(false);
+    if(!selected) return;
+    setLoading(true);
+    fetch(`/api/improve?file=${encodeURIComponent(selected)}`).then(r=>r.json())
+      .then(d=>setRawContent(parseContent(d.content??'')))
+      .catch(e=>setRawContent(`[Error: ${e.message}]`))
+      .finally(()=>setLoading(false));
+  },[selected]);
 
-  const [snapshots, setSnapshots]         = useState<Snapshot[]>([]);
-  const [savingSnapshot, setSavingSnapshot] = useState(false);
-  const [snapshotName, setSnapshotName]   = useState('');
-  const [savedConfirm, setSavedConfirm]   = useState(false);
+  const content  = rawContent ?? '';
+  const toc      = extractTOC(content);
+  const selStage = selected ? stageNum(selected) : -1;
+  const selColor = selStage >= 0 ? (STAGE_COLOR[selStage] ?? '#94a3b8') : '#94a3b8';
+  const isStale  = selected ? runtime.isStale(selected) : false;
+  const ver      = selected ? runtime.getVersion(selected) : 0;
+  const staleCount = runtime.state.staleArtifacts.size;
 
-  // Persist settings + snapshots
-  useEffect(() => {
-    try {
-      const s = localStorage.getItem('ig_settings');
-      if (s) setSettings(JSON.parse(s));
-      const sn = localStorage.getItem('ig_snapshots');
-      if (sn) setSnapshots(JSON.parse(sn));
-    } catch {}
-  }, []);
+  const handleDownload = useCallback(()=>{
+    if(!content||!selected) return;
+    const a = Object.assign(document.createElement('a'),{ href:URL.createObjectURL(new Blob([content],{type:'text/markdown'})), download:selected });
+    a.click(); URL.revokeObjectURL(a.href);
+  },[content,selected]);
 
-  // ── Poll /api/agents every 2.5s ──
-  useEffect(() => {
-    const fetchAgents = async () => {
-      try {
-        const res  = await fetch('/api/agents');
-        const data = await res.json();
-        if (data.agents?.length) setLiveAgents(data.agents);
-        setIsRunning(data.isRunning || false);
-      } catch {}
-    };
-    fetchAgents();
-    const iv = setInterval(fetchAgents, 2500);
-    return () => clearInterval(iv);
-  }, []);
+  const handleCopy = useCallback(async()=>{
+    if(!content) return;
+    await navigator.clipboard.writeText(content).catch(()=>{});
+  },[content]);
 
-  const handleSettingsChange = (s: Settings) => {
-    setSettings(s);
-    try { localStorage.setItem('ig_settings', JSON.stringify(s)); } catch {}
-  };
+  const handleOpenInRefine = useCallback(()=>{
+    if(selected) sessionStorage.setItem('ig_selected_artifact', selected);
+    if(quickIntent.trim()) sessionStorage.setItem('ig_quick_intent', quickIntent.trim());
+    window.location.href = '/improve';
+  },[selected, quickIntent]);
 
-  const parsed = state.selectedContent ? parseContent(state.selectedContent) : null;
-  const tc  = getTC(settings.brightness);
-  const fs  = getFS(settings.fontSize);
-  const pad = settings.density === 'compact' ? '8px' : '12px';
+  const handleSaveSnapshot = useCallback(()=>{
+    if(!snapName.trim()) return;
+    const s = { name:snapName.trim(), stage:currentStage, ts:new Date().toISOString() };
+    const next = [s,...snapshots].slice(0,10);
+    setSnapshots(next);
+    try{ localStorage.setItem('ig_snapshots',JSON.stringify(next)); }catch{}
+    setSnapName(''); setSnapSaved(true);
+    setTimeout(()=>setSnapSaved(false), 2000);
+  },[snapName, snapshots, currentStage]);
 
-  const stageOf = (name: string) => { const m = name.match(/^(\d+)-/); return m ? parseInt(m[1]) : -1; };
-  const curStage = state.selectedArtifact ? stageOf(state.selectedArtifact) : -1;
+  const handleTocClick = useCallback((id:string)=>{
+    const el = document.getElementById(id);
+    if(el && scrollRef.current) scrollRef.current.scrollTo({ top: el.offsetTop - 24, behavior:'smooth' });
+  },[]);
 
-  const previewSentence = () => {
-    if (!improveIntent) return 'Describe what to improve above.';
-    const tl = improveTarget==='block' ? 'selected block' : improveTarget==='stage' ? 'this stage' : 'full project';
-    const el = improveExtent==='light'  ? 'light polish'  : improveExtent==='medium' ? 'moderate refinement' : 'aggressive rewrite';
-    return `→ "${improveIntent}" · ${el} · ${tl}`;
-  };
-
-  const handleImprove = () => {
-    if (!improveIntent.trim()) return;
-    const fb: ImproveFeedback = {
-      id: Date.now().toString(), intent: improveIntent, extent: improveExtent,
-      target: improveTarget==='block' ? state.selectedArtifact||'selection' : improveTarget,
-      timestamp: new Date().toLocaleTimeString(), status: 'applying',
-    };
-    setImproveFeedbacks(p => [fb,...p]);
-    if (settings.showAnimations) { setPulseActive(true); setTimeout(()=>setPulseActive(false),1200); }
-    setImproveIntent('');
-    setTimeout(()=>{
-      setImproveFeedbacks(p => p.map(f => f.id===fb.id ? {...f,status:'applied'} : f));
-      setImproveAppliedBadge(`${fb.extent} · applied`);
-      setTimeout(()=>setImproveAppliedBadge(null),4000);
-    },2000);
-  };
-
-  const handleSaveSnapshot = () => {
-    if (!snapshotName.trim()) return;
-    const snap: Snapshot = {
-      id: Date.now().toString(), name: snapshotName.trim(), date: new Date().toLocaleString(),
-      stage: state.currentStage, artifacts: [...state.artifacts],
-      tag: state.currentStage>=12 ? 'Ready' : state.currentStage>=7 ? 'In Progress' : 'Early',
-      summary: parsed?.type==='json' ? parsed.summary.slice(0,120)+'…' : `Stage ${state.currentStage} snapshot`,
-    };
-    const updated = [snap,...snapshots];
-    setSnapshots(updated);
-    try { localStorage.setItem('ig_snapshots', JSON.stringify(updated)); } catch {}
-    setSnapshotName(''); setSavingSnapshot(false);
-    setSavedConfirm(true); setTimeout(()=>setSavedConfirm(false),3000);
-  };
-
-  const deleteSnapshot = (id: string) => {
-    const updated = snapshots.filter(s=>s.id!==id);
-    setSnapshots(updated);
-    try { localStorage.setItem('ig_snapshots', JSON.stringify(updated)); } catch {}
-  };
-
-  // Style helpers
-  const btn = (v: 'accent'|'dim'|'ghost'): React.CSSProperties => ({
-    padding:'4px 12px', fontSize:fs.xs, fontFamily:'inherit', borderRadius:'3px', cursor:'pointer',
-    border: v==='accent' ? '1px solid #4ade8044' : '1px solid #1e293b',
-    backgroundColor: v==='accent' ? '#0a1f0e' : v==='dim' ? '#0d1520' : 'transparent',
-    color: v==='accent' ? '#4ade80' : tc.muted, transition:'all 0.15s',
-  });
-  const tagS = (tag: string): React.CSSProperties => ({
-    display:'inline-block', padding:'1px 7px', borderRadius:'2px', fontSize:'9px',
-    backgroundColor: tag==='Ready'?'#0a1f0e':tag==='In Progress'?'#1a1206':'#0d1520',
-    color: tag==='Ready'?'#4ade80':tag==='In Progress'?'#f59e0b':'#818cf8',
-    border:'1px solid currentColor', opacity:0.85,
-  });
-  const sLabel: React.CSSProperties = {
-    fontSize:'9px', color:tc.dim, textTransform:'uppercase', letterSpacing:'0.12em', marginBottom:'6px',
-  };
-
-  const agents = liveAgents.length ? liveAgents : FALLBACK_AGENTS;
+  const B = (extra?:React.CSSProperties): React.CSSProperties => ({...MONO, cursor:'pointer', border:'none', borderRadius:'3px', ...(extra??{})});
 
   return (
-    <>
+    <div style={{display:'flex',flexDirection:'column',height:'100vh',backgroundColor:'#020609',overflow:'hidden',...MONO,color:'#cbd5e1'}}>
       <style>{`
-        @keyframes pulseOut { 0%{transform:translate(-50%,-50%) scale(0.3);opacity:1} 100%{transform:translate(-50%,-50%) scale(4);opacity:0} }
-        @keyframes fadeIn   { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
-        @keyframes blink    { 0%,100%{opacity:1} 50%{opacity:0.3} }
-        .rail-item:hover  { background-color:#0d1a10 !important; color:#4ade8099 !important; }
-        .preset-btn:hover { border-color:#4ade8044 !important; color:#4ade80 !important; background-color:#0a1f0e !important; }
-        .icon-btn:hover   { color:#94a3b8 !important; }
-        ::-webkit-scrollbar{width:3px} ::-webkit-scrollbar-thumb{background:#1e293b;border-radius:2px} ::-webkit-scrollbar-track{background:transparent}
+        ::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-thumb{background:#1e293b;border-radius:2px}
+        .art-row:hover{background:#0a1509!important} .toc-item:hover{color:#4ade80!important;cursor:pointer}
+        button:disabled{opacity:.4;cursor:not-allowed!important} textarea::placeholder,input::placeholder{color:#64748b}
       `}</style>
 
-      {pulseActive && <div style={{position:'fixed',top:'50%',left:'50%',width:'100px',height:'100px',borderRadius:'50%',border:'2px solid #4ade80',pointerEvents:'none',zIndex:999,animation:'pulseOut 1.2s ease-out forwards'}} />}
+      {/* Page header */}
+      <div style={{display:'flex',alignItems:'center',padding:'0 14px',height:'42px',backgroundColor:'#020c06',borderBottom:'1px solid #0a1a2e',flexShrink:0,gap:'10px'}}>
+        <div style={{fontSize:'12px',color:'#64748b',letterSpacing:'0.1em',fontWeight:700}}>DESK</div>
+        {selected && <>
+          <span style={{color:'#334155'}}>›</span>
+          <span style={{fontSize:'11px',color:'#cbd5e1'}}>Stage {selStage}</span>
+          <span style={{color:'#334155'}}>›</span>
+          <span style={{fontSize:'11px',color:selColor,fontWeight:700}}>{titleCase(humanName(selected))}</span>
+          {isStale && <div style={{fontSize:'9px',color:'#f59e0b',padding:'1px 6px',border:'1px solid #f59e0b33',borderRadius:'2px'}}>△ stale</div>}
+          {ver > 0 && <div style={{fontSize:'9px',color:'#4ade80',padding:'1px 6px',border:'1px solid #4ade8033',borderRadius:'2px'}}>v{ver}</div>}
+        </>}
+        <div style={{flex:1}}/>
+        {selected && content && (
+          <div style={{display:'flex',gap:'4px'}}>
+            <button onClick={handleCopy}     style={{...B(),padding:'4px 9px',fontSize:'10px',backgroundColor:'transparent',color:'#cbd5e1',outline:'1px solid #1e293b'}}>Copy</button>
+            <button onClick={handleDownload} style={{...B(),padding:'4px 9px',fontSize:'10px',backgroundColor:'#0a1509',color:'#4ade80',outline:'1px solid #1a3a20'}}>↓ MD</button>
+            <button onClick={handleOpenInRefine} style={{...B(),padding:'4px 9px',fontSize:'10px',backgroundColor:'#0a0f1e',color:'#818cf8',outline:'1px solid #818cf833'}}>Edit in Refine ↗</button>
+          </div>
+        )}
+        <button onClick={()=>setFocusMode(!focusMode)}
+          style={{...B(),padding:'4px 10px',fontSize:'10px',backgroundColor:focusMode?'#0a1f0e':'transparent',color:focusMode?'#4ade80':'#64748b',outline:'1px solid #1e293b'}}>
+          {focusMode ? '⇤ EXIT FOCUS' : '⇥ FOCUS'}
+        </button>
+      </div>
 
-      <div style={{display:'flex',flexDirection:'column',height:'100vh',backgroundColor:'#060a0f',fontFamily:"'JetBrains Mono','Fira Code',monospace",color:tc.secondary,overflow:'hidden',position:'relative'}}>
+      {/* Main layout */}
+      <div style={{flex:1,display:'flex',overflow:'hidden'}}>
 
-        {/* Agent Strip */}
-        {settings.showAgents && (
-          <div style={{display:'flex',alignItems:'center',gap:'5px',padding:'5px 16px',backgroundColor:'#080c12',borderBottom:'1px solid #0f1923',flexShrink:0}}>
-            <span style={{fontSize:'9px',color:tc.dim,marginRight:'4px',textTransform:'uppercase',letterSpacing:'0.1em'}}>Team</span>
-            {agents.map(a=>(
-              <div key={a.name} title={`${a.role}: ${a.status}`} style={{
-                display:'flex',alignItems:'center',gap:'4px',padding:'2px 8px',
-                borderRadius:'3px',backgroundColor:'#0d1520',
-                border:`1px solid ${STATUS_COLOR[a.status]}33`,
-                fontSize:'10px',color:STATUS_COLOR[a.status],
-              }}>
-                <span style={{fontWeight:700}}>{a.name}</span>
-                <span style={{fontSize:'8px',opacity:0.8}}>{a.message||a.status}</span>
-              </div>
-            ))}
-            <div style={{flex:1}} />
-            {isRunning && <span style={{fontSize:'9px',color:'#f59e0b',animation:'blink 1s infinite',marginRight:'8px'}}>⟳ running</span>}
-            <span style={{fontSize:'10px',color:tc.dim}}>
-              Stage <span style={{color:'#4ade80',fontWeight:700}}>{state.currentStage}</span> / 14
-            </span>
+        {/* Left rail */}
+        {!focusMode && (
+          <div style={{width:'196px',flexShrink:0,borderRight:'1px solid #0a1a2e',backgroundColor:'#020c06',overflowY:'auto',display:'flex',flexDirection:'column'}}>
+            <div style={{padding:'9px 13px 6px',fontSize:'12px',color:'#2a5a30',letterSpacing:'0.12em',fontWeight:700}}>ARTIFACTS · {artifacts.length}</div>
+            <div style={{padding:'4px 12px 8px',borderBottom:'1px solid #0a1a2e'}}>
+              <ModelDropdown compact />
+            </div>
+            {artifacts.map(f => {
+              const n=stageNum(f), col=STAGE_COLOR[n]??'#94a3b8', active=selected===f, stale=runtime.isStale(f), v=runtime.getVersion(f);
+              return (
+                <div key={f} className="art-row" onClick={()=>setSelected(f)}
+                  style={{display:'flex',alignItems:'center',gap:'7px',padding:'7px 12px',cursor:'pointer',borderLeft:`2px solid ${active?col:stale?'#f59e0b33':'transparent'}`,backgroundColor:active?'#0a1509':'transparent'}}>
+                  <div style={{width:'6px',height:'6px',borderRadius:'50%',backgroundColor:stale?'#f59e0b':v>0?'#4ade80':col,flexShrink:0}}/>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:'13px',color:active?col:stale?'#f59e0b':'#94a3b8',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{humanName(f)}</div>
+                    <div style={{fontSize:'9px',color:'#334155'}}>Stage {n}{v>0?` · v${v}`:''}{stale?' · △':''}</div>
+                  </div>
+                </div>
+              );
+            })}
+            {!artifacts.length && <div style={{padding:'12px',fontSize:'11px',color:'#64748b',lineHeight:1.8}}>No artifacts yet.<br/>Run an idea first.</div>}
           </div>
         )}
 
-        <div style={{display:'flex',flex:1,overflow:'hidden'}}>
-
-          {/* Left Rail */}
-          <div style={{width:'196px',flexShrink:0,backgroundColor:'#080c12',borderRight:'1px solid #0f1923',overflowY:'auto',padding:'8px 0'}}>
-            <div style={{fontSize:'9px',color:tc.dim,padding:`4px 12px 8px`,textTransform:'uppercase',letterSpacing:'0.12em'}}>
-              Artifacts · {state.artifacts.length}
-            </div>
-            {state.artifacts.length===0
-              ? <div style={{padding:'12px',fontSize:fs.xs,color:tc.dim}}>No artifacts yet</div>
-              : state.artifacts.map(file=>{
-                  const sn=stageOf(file), active=state.selectedArtifact===file, done=sn<state.currentStage;
-                  return (
-                    <div key={file} className="rail-item"
-                      style={{padding:`${pad} 12px`,cursor:'pointer',fontSize:fs.xs,backgroundColor:active?'#0f1f12':'transparent',color:active?'#4ade80':done?tc.muted:tc.dim,borderLeft:active?'2px solid #4ade80':'2px solid transparent',display:'flex',alignItems:'center',gap:'7px',transition:'all 0.12s'}}
-                      onClick={()=>setSelectedArtifact(file)}>
-                      <span style={{width:'5px',height:'5px',borderRadius:'50%',flexShrink:0,backgroundColor:active?'#4ade80':done?'#1a3a20':sn===state.currentStage?'#f59e0b':'#0f1923',boxShadow:active?'0 0 5px #4ade80':'none'}} />
-                      <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{file.replace('.md','')}</span>
-                      {done&&!active&&<span style={{marginLeft:'auto',color:'#1a3a20',fontSize:'8px'}}>✓</span>}
-                    </div>
-                  );
-                })
-            }
-          </div>
-
-          {/* Center */}
-          <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
-            <div style={{padding:'10px 20px',borderBottom:'1px solid #0f1923',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0,gap:'10px',position:'relative'}}>
-              <div style={{display:'flex',alignItems:'center',gap:'10px',minWidth:0}}>
-                {state.selectedArtifact && (
-                  <>
-                    <span style={{fontSize:'10px',color:'#4ade80',backgroundColor:'#0a1f0e',border:'1px solid #1a3a20',padding:'2px 8px',borderRadius:'3px',textTransform:'uppercase',letterSpacing:'0.1em',flexShrink:0}}>
-                      {curStage>=0 ? STAGE_LABELS[curStage] : 'Artifact'}
-                    </span>
-                    <span style={{fontSize:fs.xs,color:tc.muted,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{state.selectedArtifact}</span>
-                    {improveAppliedBadge && <span style={{fontSize:'9px',color:'#4ade80',backgroundColor:'#0a1f0e',border:'1px solid #4ade8044',padding:'2px 8px',borderRadius:'10px',animation:'fadeIn 0.3s ease'}}>✦ {improveAppliedBadge}</span>}
-                  </>
-                )}
+        {/* Centre */}
+        <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+          {!selected && (
+            <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:'18px',padding:'40px'}}>
+              <div style={{fontSize:'14px',color:'#64748b'}}>Select an artifact to read</div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'8px',maxWidth:'440px'}}>
+                {[{f:'1-discovery.md',h:'Market analysis · PESTEL · Porter'},{f:'7-prd.md',h:'Requirements · acceptance criteria'},{f:'14-prototype-prompt.md',h:'Prototype prompt · ready to build'}]
+                  .filter(s=>artifacts.includes(s.f)).map(s=>(
+                  <div key={s.f} onClick={()=>setSelected(s.f)}
+                    style={{padding:'12px',backgroundColor:'#040b14',border:'1px solid #0a1a2e',borderRadius:'4px',cursor:'pointer'}}
+                    onMouseOver={e=>(e.currentTarget.style.borderColor='#4ade8033')}
+                    onMouseOut={e=>(e.currentTarget.style.borderColor='#0a1a2e')}>
+                    <div style={{fontSize:'12px',color:'#4ade80',fontWeight:700,marginBottom:'4px'}}>{titleCase(humanName(s.f))}</div>
+                    <div style={{fontSize:'10px',color:'#64748b'}}>{s.h}</div>
+                  </div>
+                ))}
               </div>
-              <div style={{display:'flex',gap:'6px',alignItems:'center',flexShrink:0}}>
-                <button style={btn('dim')} onClick={()=>{setRightTab('improve');setRightOpen(true);}}>✦ Improve</button>
-                <button style={btn('dim')} onClick={()=>{setRightTab('snapshots');setRightOpen(true);setSavingSnapshot(true);}}>⊡ Save</button>
-                <button className="icon-btn" onClick={()=>setShowSettings(!showSettings)} style={{background:'none',border:'none',cursor:'pointer',color:tc.dim,fontSize:'14px',fontFamily:'inherit',padding:'2px 4px'}}>⚙</button>
+              <div style={{fontSize:'11px',color:'#334155'}}>Stage {currentStage}/14 · {artifacts.length} artifacts</div>
+            </div>
+          )}
+
+          {selected && loading && <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',color:'#cbd5e1'}}>Loading artifact…</div>}
+
+          {selected && !loading && content && (
+            <>
+              {/* Article header */}
+              <div style={{padding:'18px 36px 10px',borderBottom:'1px solid #0a1a2e',flexShrink:0}}>
+                <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'3px'}}>
+                  <div style={{width:'8px',height:'8px',borderRadius:'50%',backgroundColor:selColor}}/>
+                  <div style={{fontSize:'11px',color:selColor,fontWeight:700,letterSpacing:'0.08em'}}>STAGE {selStage} · {STAGE_LABEL[selStage]}</div>
+                  {STAGE_INTEL[selStage] && <div style={{fontSize:'10px',color:'#64748b'}}>· {STAGE_INTEL[selStage].agentId}</div>}
+                </div>
+                <div style={{fontSize:'10px',color:'#64748b'}}>{wordCount(content).toLocaleString()} words · {readTime(content)} · {toc.length} sections</div>
               </div>
-              {showSettings && <SettingsPanel settings={settings} onChange={handleSettingsChange} onClose={()=>setShowSettings(false)} />}
+
+              {/* TOC bar */}
+              {toc.length > 2 && (
+                <div style={{padding:'7px 36px',backgroundColor:'#020c06',borderBottom:'1px solid #0a1a2e',flexShrink:0,overflowX:'auto'}}>
+                  <div style={{display:'flex',gap:'4px',alignItems:'center',whiteSpace:'nowrap'}}>
+                    <span style={{fontSize:'9px',color:'#334155',marginRight:'5px',flexShrink:0}}>CONTENTS</span>
+                    {toc.map((e,i) => (
+                      <React.Fragment key={e.id}>
+                        {i > 0 && <span style={{color:'#334155'}}>·</span>}
+                        <span className="toc-item" onClick={()=>handleTocClick(e.id)}
+                          style={{fontSize:'10px',color:e.level===2?'#94a3b8':'#64748b',paddingLeft:e.level===3?'6px':'0'}}>
+                          {e.text.slice(0,28)}{e.text.length>28?'…':''}
+                        </span>
+                      </React.Fragment>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <ArtifactReader content={content} scrollRef={scrollRef}/>
+
+              {/* Footer */}
+              <div style={{padding:'7px 36px',borderTop:'1px solid #0a1a2e',flexShrink:0,display:'flex',gap:'12px',alignItems:'center',fontSize:'10px',color:'#64748b',backgroundColor:'#020c06'}}>
+                <span>{wordCount(content).toLocaleString()} words</span>
+                <span>·</span><span>{readTime(content)}</span>
+                <span>·</span><span>{toc.length} sections</span>
+                {ver > 0 && <><span>·</span><span style={{color:'#4ade80'}}>v{ver} improved</span></>}
+                <div style={{flex:1}}/>
+                <button onClick={handleDownload} style={{...B(),padding:'3px 8px',fontSize:'10px',backgroundColor:'transparent',color:'#64748b',outline:'1px solid #1e293b'}}>↓ Download</button>
+                <button onClick={handleOpenInRefine} style={{...B(),padding:'3px 8px',fontSize:'10px',backgroundColor:'#0a0f1e',color:'#818cf8',outline:'1px solid #818cf833'}}>Edit in Refine →</button>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Right panel */}
+        {!focusMode && (
+          <div style={{width:'256px',flexShrink:0,borderLeft:'1px solid #0a1a2e',backgroundColor:'#020c06',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+            <div style={{display:'flex',borderBottom:'1px solid #0a1a2e',flexShrink:0}}>
+              {(['overview','actions','history'] as const).map(t=>(
+                <button key={t} onClick={()=>setRightTab(t)}
+                  style={{...B(),flex:1,padding:'9px 0',fontSize:'9px',borderRadius:0,backgroundColor:'transparent',color:rightTab===t?'#4ade80':'#64748b',borderBottom:rightTab===t?'1px solid #4ade80':'1px solid transparent',letterSpacing:'0.08em',textTransform:'uppercase' as const}}>
+                  {t}
+                </button>
+              ))}
             </div>
 
-            <div style={{flex:1,overflowY:'auto',padding:settings.density==='compact'?'16px':'24px'}}>
-              {!state.selectedArtifact ? (
-                <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100%',gap:'12px'}}>
-                  <div style={{fontSize:'28px',opacity:0.2}}>◈</div>
-                  <div style={{fontSize:fs.sm,color:tc.dim}}>Select an artifact from the left rail</div>
-                </div>
-              ) : !parsed ? (
-                <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%'}}>
-                  <div style={{fontSize:fs.sm,color:tc.dim}}>Loading…</div>
-                </div>
-              ) : (
+            <div style={{flex:1,overflowY:'auto',padding:'12px'}}>
+
+              {rightTab==='overview' && (
                 <>
-                  {parsed.type==='json'&&parsed.summary&&(
-                    <div style={{backgroundColor:'#080c12',border:'1px solid #1e293b',borderRadius:'4px',padding:'14px 16px',marginBottom:'24px'}}>
-                      <div style={{...sLabel,marginBottom:'8px'}}>Summary</div>
-                      <div style={{fontSize:fs.sm,color:tc.secondary,lineHeight:1.7}}>{parsed.summary}</div>
-                    </div>
+                  {!selected && (
+                    <>
+                      <div style={{fontSize:'10px',color:'#2a5a30',fontWeight:700,letterSpacing:'0.1em',marginBottom:'9px'}}>PROJECT</div>
+                      <div style={{padding:'9px',backgroundColor:'#040b14',border:'1px solid #0a1a2e',borderRadius:'3px',marginBottom:'12px',fontSize:'10px',lineHeight:2}}>
+                        <div>Stage: <span style={{color:'#4ade80'}}>{currentStage}/14</span></div>
+                        <div>Artifacts: <span style={{color:'#cbd5e1'}}>{artifacts.length}</span></div>
+                        <div>Improved: <span style={{color:'#4ade80'}}>{runtime.state.improvementCount}</span></div>
+                        <div>Stale: <span style={{color:staleCount>0?'#f59e0b':'#64748b'}}>{staleCount}</span></div>
+                      </div>
+                      <div style={{fontSize:'10px',color:'#2a5a30',fontWeight:700,letterSpacing:'0.1em',marginBottom:'8px'}}>LIFECYCLE MAP</div>
+                      {Array.from({length:15},(_,i) => {
+                        const art=artifacts.find(a=>stageNum(a)===i);
+                        const stale=art?runtime.isStale(art):false, v=art?runtime.getVersion(art):0;
+                        const col=STAGE_COLOR[i]??'#94a3b8', done=i<=currentStage;
+                        return (
+                          <div key={i} onClick={()=>art&&setSelected(art)}
+                            style={{display:'flex',alignItems:'center',gap:'7px',padding:'4px 0',cursor:art?'pointer':'default',borderBottom:'1px solid #060e09'}}>
+                            <div style={{width:'5px',height:'5px',borderRadius:'50%',flexShrink:0,backgroundColor:stale?'#f59e0b':v>0?'#4ade80':done?col:'#334155'}}/>
+                            <div style={{fontSize:'12px',color:stale?'#f59e0b':done?col:'#64748b',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{STAGE_LABEL[i]}</div>
+                            <div style={{fontSize:'8px',color:'#334155'}}>{STAGE_INTEL[i]?.agentId}</div>
+                            {v > 0 && <div style={{fontSize:'8px',color:'#4ade8066'}}>v{v}</div>}
+                          </div>
+                        );
+                      })}
+                    </>
                   )}
-                  <div>{renderMd(parsed.output,tc,fs)}</div>
+                  {selected && content && (
+                    <PMIntelligence selected={selected} content={content} runtime={runtime} artifacts={artifacts}/>
+                  )}
                 </>
+              )}
+
+              {rightTab==='actions' && (
+                <div>
+                  <div style={{fontSize:'10px',color:'#2a5a30',fontWeight:700,letterSpacing:'0.1em',marginBottom:'9px'}}>QUICK IMPROVE</div>
+                  <div style={{fontSize:'11px',color:'#64748b',marginBottom:'8px',lineHeight:1.7}}>Describe what to improve, then open in the full Refine engine with this artifact pre-selected.</div>
+                  <textarea value={quickIntent} onChange={e=>setQuickIntent(e.target.value)} placeholder='e.g. "Sharpen the competitive moat section"'
+                    style={{width:'100%',minHeight:'60px',padding:'8px',...MONO,fontSize:'11px',color:'#64748b',backgroundColor:'#040b14',border:'1px solid #0f1923',borderRadius:'3px',resize:'vertical',outline:'none',lineHeight:1.6,boxSizing:'border-box' as const,marginBottom:'8px'}}/>
+                  <button onClick={handleOpenInRefine} disabled={!selected}
+                    style={{...B(),width:'100%',padding:'9px 0',fontSize:'11px',fontWeight:700,letterSpacing:'0.08em',backgroundColor:selected?'#0a0f1e':'#040b14',color:selected?'#818cf8':'#334155',outline:`1px solid ${selected?'#818cf833':'#334155'}`,marginBottom:'5px'}}>
+                    ↗ Open in Refine
+                  </button>
+                  <div style={{fontSize:'9px',color:'#334155',textAlign:'center' as const,marginBottom:'16px'}}>Full model selector · 8 providers · builder export</div>
+                  <div style={{fontSize:'10px',color:'#2a5a30',fontWeight:700,letterSpacing:'0.1em',marginBottom:'8px',paddingTop:'12px',borderTop:'1px solid #0a1a2e'}}>DOWNLOAD</div>
+                  <div style={{display:'flex',flexDirection:'column',gap:'4px',marginBottom:'16px'}}>
+                    <button onClick={handleDownload} disabled={!content} style={{...B(),padding:'7px 10px',fontSize:'11px',backgroundColor:'#0a1509',color:'#4ade80',outline:'1px solid #1a3a20',textAlign:'left' as const}}>↓ Download as Markdown</button>
+                    <button onClick={handleCopy} disabled={!content} style={{...B(),padding:'7px 10px',fontSize:'11px',backgroundColor:'transparent',color:'#cbd5e1',outline:'1px solid #1e293b',textAlign:'left' as const}}>◻ Copy to clipboard</button>
+                    <button onClick={()=>window.location.href='/improve'} style={{...B(),padding:'7px 10px',fontSize:'11px',backgroundColor:'#0a0800',color:'#f59e0b',outline:'1px solid #f59e0b22',textAlign:'left' as const}}>◈ Builder package (10 platforms)</button>
+                  </div>
+                  <div style={{fontSize:'10px',color:'#2a5a30',fontWeight:700,letterSpacing:'0.1em',marginBottom:'8px',paddingTop:'12px',borderTop:'1px solid #0a1a2e'}}>SNAPSHOT</div>
+                  <input value={snapName} onChange={e=>setSnapName(e.target.value)} placeholder="Name this snapshot…"
+                    style={{width:'100%',padding:'7px 9px',...MONO,fontSize:'11px',color:'#64748b',backgroundColor:'#040b14',border:'1px solid #0f1923',borderRadius:'3px',outline:'none',boxSizing:'border-box' as const,marginBottom:'6px'}}/>
+                  <button onClick={handleSaveSnapshot} disabled={!snapName.trim()}
+                    style={{...B(),width:'100%',padding:'7px 0',fontSize:'11px',backgroundColor:'#0a0f1e',color:snapSaved?'#4ade80':'#818cf8',outline:`1px solid ${snapSaved?'#4ade8033':'#818cf833'}`,marginBottom:'4px'}}>
+                    {snapSaved ? '✓ Saved!' : '◼ Save snapshot'}
+                  </button>
+                </div>
+              )}
+
+              {rightTab==='history' && (
+                <div>
+                  {runtime.state.reasoningChain.length > 0 && (
+                    <>
+                      <div style={{fontSize:'10px',color:'#2a5a30',fontWeight:700,letterSpacing:'0.1em',marginBottom:'8px'}}>IMPROVEMENT HISTORY · {runtime.state.reasoningChain.length}</div>
+                      {runtime.state.reasoningChain.slice(0,12).map((r,i) => (
+                        <div key={i} style={{padding:'8px 0',borderBottom:'1px solid #060e09'}}>
+                          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'3px'}}>
+                            <div style={{fontSize:'11px',color:'#4ade80',fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1}}>{titleCase(humanName(r.artifactName+'.md'))}</div>
+                            <div style={{fontSize:'8px',color:'#64748b',flexShrink:0,marginLeft:'6px'}}>{new Date(r.timestamp).toLocaleTimeString()}</div>
+                          </div>
+                          <div style={{fontSize:'10px',color:'#cbd5e1',marginBottom:'3px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.intent}</div>
+                          <div style={{fontSize:'9px',color:'#64748b',lineHeight:1.6}}>{r.reasoning.slice(0,100)}…</div>
+                          <div style={{fontSize:'9px',color:'#64748b',marginTop:'2px'}}>{r.model}</div>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                  {!runtime.state.reasoningChain.length && (
+                    <div style={{fontSize:'11px',color:'#64748b',lineHeight:1.8,padding:'6px 0'}}>No improvement history yet. Use REFINE to improve artifacts.</div>
+                  )}
+                  {snapshots.length > 0 && (
+                    <>
+                      <div style={{fontSize:'10px',color:'#2a5a30',fontWeight:700,letterSpacing:'0.1em',marginTop:'14px',paddingTop:'12px',borderTop:'1px solid #0a1a2e',marginBottom:'8px'}}>SNAPSHOTS · {snapshots.length}</div>
+                      {snapshots.map((s,i) => (
+                        <div key={i} style={{padding:'8px',backgroundColor:'#040b14',border:'1px solid #0a1a2e',borderRadius:'3px',marginBottom:'6px'}}>
+                          <div style={{fontSize:'11px',color:'#cbd5e1',fontWeight:700,marginBottom:'2px'}}>{s.name}</div>
+                          <div style={{fontSize:'9px',color:'#64748b'}}>{new Date(s.ts).toLocaleString()} · Stage {s.stage}/14</div>
+                          <button onClick={()=>{ const n=snapshots.filter((_,j)=>j!==i); setSnapshots(n); localStorage.setItem('ig_snapshots',JSON.stringify(n)); }}
+                            style={{...B(),marginTop:'5px',padding:'3px 7px',fontSize:'9px',backgroundColor:'transparent',color:'#cbd5e1',outline:'1px solid #1e293b'}}>Delete</button>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                  {runtime.state.events.length > 0 && (
+                    <>
+                      <div style={{fontSize:'10px',color:'#2a5a30',fontWeight:700,letterSpacing:'0.1em',marginTop:'14px',paddingTop:'12px',borderTop:'1px solid #0a1a2e',marginBottom:'8px'}}>RECENT EVENTS · {runtime.state.events.length}</div>
+                      {runtime.state.events.slice(0,10).map((ev,i) => (
+                        <div key={ev.id??i} style={{padding:'4px 0',borderBottom:'1px solid #060e09',display:'flex',gap:'7px'}}>
+                          <div style={{fontSize:'8px',color:'#1a3a20',flexShrink:0}}>{new Date(ev.timestamp).toLocaleTimeString('en',{hour12:false})}</div>
+                          <div style={{fontSize:'10px',color:ev.type==='ARTIFACT_IMPROVED'?'#4ade80':ev.type==='ARTIFACTS_STALE'?'#f59e0b':'#94a3b8'}}>{ev.type.replace(/_/g,' ')}</div>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                </div>
               )}
             </div>
           </div>
-
-          {/* Right Panel */}
-          <div style={{width:rightOpen?'276px':'36px',flexShrink:0,borderLeft:'1px solid #0f1923',backgroundColor:'#080c12',display:'flex',flexDirection:'column',transition:'width 0.2s ease',overflow:'hidden'}}>
-            <button onClick={()=>setRightOpen(!rightOpen)} style={{padding:'8px',cursor:'pointer',color:tc.dim,textAlign:'center',backgroundColor:'transparent',border:'none',borderBottom:'1px solid #0f1923',width:'100%',fontFamily:'inherit',fontSize:'14px',flexShrink:0}}>
-              {rightOpen?'›':'‹'}
-            </button>
-
-            {rightOpen&&(
-              <>
-                <div style={{display:'flex',borderBottom:'1px solid #0f1923',flexShrink:0}}>
-                  {(['improve','snapshots','context'] as RightTab[]).map(tab=>(
-                    <button key={tab} onClick={()=>setRightTab(tab)} style={{flex:1,padding:'8px 4px',fontSize:'9px',cursor:'pointer',color:rightTab===tab?'#4ade80':tc.dim,backgroundColor:'transparent',border:'none',borderBottom:rightTab===tab?'1px solid #4ade80':'1px solid transparent',fontFamily:'inherit',textTransform:'uppercase',letterSpacing:'0.1em'}}>
-                      {tab}
-                    </button>
-                  ))}
-                </div>
-
-                <div style={{flex:1,overflowY:'auto',padding:'12px',display:'flex',flexDirection:'column',gap:'12px'}}>
-
-                  {rightTab==='improve'&&(
-                    <>
-                      <div>
-                        <div style={sLabel}>Improve Snippet</div>
-                        <textarea style={{width:'100%',height:'64px',backgroundColor:'#060a0f',border:'1px solid #1e293b',borderRadius:'3px',padding:'8px',color:tc.primary,fontSize:fs.xs,fontFamily:'inherit',resize:'none',outline:'none',boxSizing:'border-box'}}
-                          placeholder='"more concise", "stronger PM framing"…' value={improveIntent} onChange={e=>setImproveIntent(e.target.value)} />
-                        <div style={{...sLabel,marginTop:'8px'}}>Extent</div>
-                        <div style={{display:'flex',gap:'3px'}}>
-                          {(['light','medium','strong'] as Extent[]).map(lvl=>{
-                            const c=lvl==='light'?'#818cf8':lvl==='medium'?'#f59e0b':'#f87171', active=improveExtent===lvl;
-                            return <button key={lvl} onClick={()=>setImproveExtent(lvl)} style={{flex:1,padding:'4px',fontSize:fs.xs,fontFamily:'inherit',borderRadius:'3px',cursor:'pointer',border:active?`1px solid ${c}66`:'1px solid #1e293b',backgroundColor:active?`${c}11`:'#060a0f',color:active?c:tc.dim}}>{lvl}</button>;
-                          })}
-                        </div>
-                        <div style={{...sLabel,marginTop:'8px'}}>Apply to</div>
-                        <div style={{display:'flex',gap:'3px'}}>
-                          {[{k:'block' as const,l:'Block'},{k:'stage' as const,l:'Stage'},{k:'project' as const,l:'Project'}].map(({k,l})=>(
-                            <button key={k} onClick={()=>setImproveTarget(k)} style={{flex:1,padding:'4px',fontSize:'9px',fontFamily:'inherit',borderRadius:'3px',cursor:'pointer',textTransform:'uppercase',letterSpacing:'0.05em',border:improveTarget===k?'1px solid #4ade8044':'1px solid #1e293b',backgroundColor:improveTarget===k?'#0a1f0e':'#060a0f',color:improveTarget===k?'#4ade80':tc.dim}}>{l}</button>
-                          ))}
-                        </div>
-                        <div style={{marginTop:'8px',padding:'8px',backgroundColor:'#060a0f',border:'1px solid #1e293b',borderRadius:'3px',fontSize:'10px',color:'#4ade8077',lineHeight:1.5,fontStyle:'italic'}}>{previewSentence()}</div>
-                        <div style={{display:'flex',gap:'4px',marginTop:'8px'}}>
-                          <button style={{...btn('accent'),flex:1,padding:'7px'}} onClick={handleImprove}>✦ Improve now</button>
-                          <button style={{...btn('dim'),flex:1,padding:'7px'}} onClick={()=>{
-                            if(!improveIntent.trim())return;
-                            setImproveFeedbacks(p=>[{id:Date.now().toString(),intent:improveIntent,extent:improveExtent,target:improveTarget,timestamp:new Date().toLocaleTimeString(),status:'queued'},...p]);
-                            setImproveIntent('');
-                          }}>Queue</button>
-                        </div>
-                      </div>
-                      <div>
-                        <div style={sLabel}>Quick presets</div>
-                        <div style={{display:'flex',flexWrap:'wrap',gap:'4px'}}>
-                          {IMPROVE_PRESETS.map(p=>(
-                            <button key={p} className="preset-btn" onClick={()=>setImproveIntent(p.toLowerCase())} style={{padding:'3px 8px',fontSize:'10px',fontFamily:'inherit',borderRadius:'2px',cursor:'pointer',border:'1px solid #1e293b',backgroundColor:'#060a0f',color:tc.muted}}>{p}</button>
-                          ))}
-                        </div>
-                      </div>
-                      {improveFeedbacks.length>0&&(
-                        <div>
-                          <div style={sLabel}>Recent · {improveFeedbacks.length}</div>
-                          {improveFeedbacks.slice(0,6).map(fb=>(
-                            <div key={fb.id} style={{padding:'8px',marginBottom:'4px',backgroundColor:'#060a0f',border:`1px solid ${fb.status==='applied'?'#1a3a20':fb.status==='applying'?'#1a1206':'#0f1923'}`,borderRadius:'3px',animation:'fadeIn 0.3s ease'}}>
-                              <div style={{color:tc.secondary,fontSize:fs.xs,marginBottom:'3px'}}>"{fb.intent}"</div>
-                              <div style={{color:tc.dim,fontSize:'9px',display:'flex',gap:'6px'}}>
-                                <span>{fb.extent}</span><span>·</span><span>{fb.target}</span><span>·</span>
-                                <span style={{color:fb.status==='applied'?'#4ade80':fb.status==='applying'?'#f59e0b':tc.dim}}>
-                                  {fb.status==='applying'?'⟳ applying…':fb.status==='applied'?'✓ applied':'queued'}
-                                </span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </>
-                  )}
-
-                  {rightTab==='snapshots'&&(
-                    <>
-                      <div>
-                        <div style={sLabel}>Save current run</div>
-                        {savingSnapshot?(
-                          <>
-                            <input autoFocus style={{width:'100%',backgroundColor:'#060a0f',border:'1px solid #4ade8044',borderRadius:'3px',padding:'7px 8px',color:tc.primary,fontSize:fs.xs,fontFamily:'inherit',outline:'none',boxSizing:'border-box',marginBottom:'6px'}}
-                              placeholder="Name this snapshot…" value={snapshotName} onChange={e=>setSnapshotName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleSaveSnapshot()} />
-                            <div style={{display:'flex',gap:'4px'}}>
-                              <button style={{...btn('accent'),flex:1,padding:'6px'}} onClick={handleSaveSnapshot}>⊡ Save</button>
-                              <button style={{...btn('dim'),padding:'6px 10px'}} onClick={()=>setSavingSnapshot(false)}>✕</button>
-                            </div>
-                          </>
-                        ):(
-                          <button style={{...btn('accent'),width:'100%',padding:'8px',fontSize:fs.xs}} onClick={()=>setSavingSnapshot(true)}>
-                            {savedConfirm?'✓ Saved!':'⊡ Save snapshot'}
-                          </button>
-                        )}
-                        {savedConfirm&&<div style={{fontSize:'10px',color:'#4ade80',textAlign:'center',marginTop:'5px',animation:'fadeIn 0.3s ease'}}>Persisted ✓</div>}
-                      </div>
-                      <div>
-                        <div style={sLabel}>Saved runs {snapshots.length>0&&`(${snapshots.length})`}</div>
-                        {snapshots.length===0
-                          ? <div style={{fontSize:fs.xs,color:tc.dim,padding:'8px 0'}}>No snapshots saved yet.</div>
-                          : snapshots.map(snap=>(
-                            <div key={snap.id} style={{padding:'10px',marginBottom:'6px',backgroundColor:'#060a0f',border:'1px solid #1e293b',borderRadius:'3px',fontSize:fs.xs}}>
-                              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'4px'}}>
-                                <span style={{color:tc.primary,fontWeight:600}}>{snap.name}</span>
-                                <span style={tagS(snap.tag)}>{snap.tag}</span>
-                              </div>
-                              <div style={{color:tc.dim,fontSize:'9px',marginBottom:'6px'}}>{snap.date} · Stage {snap.stage} · {snap.artifacts.length} artifacts</div>
-                              {snap.summary&&<div style={{color:tc.muted,fontSize:'9px',lineHeight:1.5,marginBottom:'8px',borderLeft:'2px solid #1e293b',paddingLeft:'6px'}}>{snap.summary.slice(0,100)}…</div>}
-                              <div style={{display:'flex',gap:'4px'}}>
-                                <button style={{...btn('dim'),fontSize:'9px',padding:'2px 8px'}}>Restore</button>
-                                <button style={{...btn('dim'),fontSize:'9px',padding:'2px 8px'}}>Compare</button>
-                                <button onClick={()=>deleteSnapshot(snap.id)} style={{...btn('dim'),fontSize:'9px',padding:'2px 6px',marginLeft:'auto',color:'#f87171'}}>✕</button>
-                              </div>
-                            </div>
-                          ))
-                        }
-                      </div>
-                    </>
-                  )}
-
-                  {rightTab==='context'&&(
-                    <>
-                      <div>
-                        <div style={sLabel}>Project</div>
-                        <div style={{padding:'10px',backgroundColor:'#060a0f',border:'1px solid #1e293b',borderRadius:'3px'}}>
-                          <div style={{color:tc.secondary,fontSize:fs.xs,marginBottom:'6px',fontWeight:600}}>Active workspace</div>
-                          <div style={{color:tc.muted,fontSize:'10px',lineHeight:1.8}}>
-                            Stage {state.currentStage} of 14<br/>
-                            {state.artifacts.length} artifacts generated<br/>
-                            {state.currentStage>=14?'✓ Lifecycle complete':`Next: ${STAGE_LABELS[state.currentStage+1]||'—'}`}
-                          </div>
-                        </div>
-                      </div>
-                      <div>
-                        <div style={sLabel}>Stage map</div>
-                        {Object.entries(STAGE_LABELS).map(([num,label])=>{
-                          const n=parseInt(num),done=n<state.currentStage,current=n===state.currentStage;
-                          return (
-                            <div key={num} style={{display:'flex',alignItems:'center',gap:'7px',padding:'3px 0',fontSize:'10px',color:current?'#4ade80':done?tc.muted:tc.dim}}>
-                              <span style={{width:'14px',textAlign:'right',flexShrink:0,color:tc.dim}}>{n}</span>
-                              <span style={{width:'4px',height:'4px',borderRadius:'50%',flexShrink:0,backgroundColor:current?'#4ade80':done?'#1a3a20':'#0f1923',boxShadow:current?'0 0 4px #4ade80':'none'}} />
-                              <span>{label}</span>
-                              {done&&<span style={{marginLeft:'auto',color:'#1a3a20'}}>✓</span>}
-                              {current&&<span style={{marginLeft:'auto',fontSize:'8px',color:'#f59e0b'}}>← now</span>}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </>
-                  )}
-
-                </div>
-              </>
-            )}
-          </div>
-        </div>
+        )}
       </div>
-    </>
+    </div>
   );
 }

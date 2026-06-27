@@ -55,6 +55,24 @@ export class CoordinatorV2 {
         context
       );
 
+      // ── LIGHTWEIGHT QUALITY GATE ──────────────────────────────────────────
+      // If the merged output is very short AND marked low confidence, the stage
+      // likely produced degraded output (agent 429, merge 429, or empty fallback).
+      // In this case, force one iterate before advancing — UNLESS we have already
+      // iterated on this stage (hasNotIteratedYet guard prevents double-iterate).
+      // MAX_ITERATIONS_PER_STAGE is the hard ceiling so this can never loop.
+      const outputWords = (merged.output ?? '').trim().split(/\s+/).filter(Boolean).length;
+      const isLowQuality = outputWords < 150 && merged.confidence === 'low';
+      const hasNotIteratedYet = (stageIterations[currentStage] ?? 0) === 0;
+
+      if (isLowQuality && hasNotIteratedYet) {
+        console.log(`[QUALITY] Stage ${currentStage} output has ${outputWords} words and low confidence — marking iterate`);
+        merged.decision = 'iterate';
+        merged.reasoning = (merged.reasoning || '') +
+          ` [Quality gate: ${outputWords} words below 150-word minimum — retrying stage]`;
+      }
+      // ── END QUALITY GATE ──────────────────────────────────────────────────
+
       const filePath = this.persistArtifacts(currentStage, stageDef, merged);
 
       merged.outputFile = filePath;
@@ -359,6 +377,11 @@ Return STRICT JSON:
       ? merged.output
       : JSON.stringify(merged.output, null, 2);
 
+    const outputWords = outputStr.trim().split(/\s+/).filter(Boolean).length;
+    const qualityNote = outputWords < 150 && merged.confidence === 'low'
+      ? `> ⚠️ This artifact was generated under degraded conditions (${outputWords} words, low confidence). Re-run for better quality.\n\n`
+      : '';
+
     const content = `
 # ${stageDef.name}
 
@@ -367,7 +390,7 @@ ${merged.summary}
 
 ---
 
-${outputStr}
+${qualityNote}${outputStr}
 
 ---
 

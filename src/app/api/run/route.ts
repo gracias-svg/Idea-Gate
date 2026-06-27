@@ -38,10 +38,10 @@ const MODEL_IDS: Record<string, string> = {
   qwen:     'qwen/qwen-2.5-72b-instruct',
   mistral:  'mistralai/mistral-large-2411',
   gpt4o:    'openai/gpt-4o',
-  gemini:   'google/gemini-flash-1.5',
+  // gemini removed: google/gemini-flash-1.5 → OpenRouter 404 "no endpoints" (confirmed 2026-06-27)
   owlalpha: 'openrouter/owl-alpha',
   nemotron: 'nvidia/nemotron-3-super-120b-a12b:free',
-  ring:     'inclusionai/ring-2.6-1t:free',
+  // ring removed: inclusionai/ring-2.6-1t:free → OpenRouter 404 "no longer free" (confirmed 2026-06-27)
   gptoss:   'openai/gpt-oss-120b:free',
 };
 

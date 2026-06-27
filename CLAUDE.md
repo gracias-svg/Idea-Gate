@@ -77,3 +77,37 @@ Never modify workspace artifacts.
 Never modify generated markdown files.
 
 Never touch runtime output folders.
+
+## MISSIONS COMPLETED (June 2026)
+
+Mission 1: Forensic audit — identified Modes B/C in coordinator-v2.js,
+           confirmed rendering pipeline, produced failure-mode evidence table
+Mission 2: coordinator-v2.js — eliminated [object Object] (Mode B) via outputStr
+           coercion; eliminated raw JSON dumps (Mode C) via char-by-char extraction
+Mission 3: parseContent.ts indexOf → lastIndexOf — full content extraction
+           (was 70–150 words per stage, now 1,000–2,500 words);
+           desk/page.tsx 4-second polling (new artifacts appear without tab switch)
+Mission 4: Acceptance testing — all 10 programmatic checks passed
+Mission 5: Production readiness audit — 12-item roadmap, architecture analysis
+Mission 6A: Repository secured — TypeScript clean, 10 uncommitted files committed,
+            v3.3-stable tagged and pushed, ENGINEERING_STATUS.md created
+Mission 6B: Run persistence — this session (fix/run-persistence branch)
+
+## STABLE BASELINE
+Tag: v3.3-stable (2026-06-27)
+GitHub: https://github.com/gracias-svg/Idea-Gate
+
+## NEXT SESSIONS
+Mission 6B (current): fix/run-persistence
+  write .current-run.json on lifecycle start
+  restore isRunning + idea on browser refresh via GET /api/run
+  files: src/app/api/run/route.ts, src/components/TopBar.tsx
+
+Mission 7: fix/stop-button
+  write .current-run.pid, DELETE /api/run, Stop UI button in TopBar
+
+Mission 8: fix/live-stage-indicator
+  stage name + active agent in TopBar banner while lifecycle runs
+
+DO NOT touch coordinator, lifecycle engine, llm.js, parseContent, desk
+unless that mission's explicit goal names those files.

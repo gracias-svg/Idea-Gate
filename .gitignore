@@ -8,3 +8,6 @@ coverage
 dist
 build
 *.log
+workspace/
+*.backup
+tsconfig.tsbuildinfo

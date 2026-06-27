@@ -1,6 +1,6 @@
 # IdeaGate PMOS — Engineering Status
-Last updated: 2026-06-27
-Stable tag: v3.3-stable
+Last updated: 2026-06-28
+Stable tag: v3.5-stable
 
 ## Architecture Overview
 
@@ -101,8 +101,71 @@ Path:     Railway (simplest)
 
 | Track | Focus | Status |
 |-------|-------|--------|
-| A — Stabilization | run-persistence, stop button, refresh recovery | Next (Mission 6B) |
+| A — Stabilization | run-persistence, stop button, refresh recovery | COMPLETE (v3.5-stable) |
 | B — Product Experience | live stage indicator, progress UX, polling improvements | Planned |
 | C — Portfolio | 10 PM documents, Loom demo, README rewrite | High ROI, unstarted |
 | D — SaaS | Supabase auth, user accounts, persistent storage (schema.sql ready) | Designed, not built |
 | E — AI Quality | DataAgent fix, output evaluator, quality scoring | Planned |
+
+---
+
+## STABLE BASELINE — v3.5-stable (June 2026)
+
+### What Is Confirmed Working (do not regress)
+- 14-stage lifecycle execution via coordinator-v2.js
+- OpenRouter model routing — UI selection reaches agents and merge
+- Agent-level model fallback — if primary model fails (404/429), agents retry with openrouter/owl-alpha automatically
+- Merge-level model fallback — 3-model sequence before agent-output fallback
+- Artifact generation — 15 markdown files per run
+- Desk rendering — full content (lastIndexOf fix, no truncation)
+- Desk polling — 4-second auto-refresh
+- JSON artifact recovery — data/route.ts detects and recovers raw JSON
+- Coordinator output contract — no [object Object], no raw JSON dumps
+- Coordinator crash fix — typeof check prevents .trim() on non-string output
+- Quality gate — iterates once if < 150 words + low confidence
+- Run persistence — .current-run.json written on spawn, restored on refresh
+- Stop button — DELETE /api/run sends SIGTERM to lifecycle process
+- New Idea button — dispatches ideagate:refresh event, clears artifact list
+- Agent attribution suppression — merge prompt suppresses "Produced by PM Office"
+
+### Known Dead Models (removed from catalog)
+- inclusionai/ring-2.6-1t:free → paid tier (404)
+- google/gemini-flash-1.5 → no endpoints (404)
+
+### Current Model Catalog (active)
+- openrouter/owl-alpha — CONFIRMED WORKING (appears in all successful fallbacks)
+- nvidia/nemotron-3-super-120b-a12b:free — in fallback list
+- openai/gpt-oss-120b:free — in catalog (has been rate-limited in past)
+- anthropic/claude-haiku-4-5 — paid, reliable
+- anthropic/claude-sonnet-4-5 — paid, reliable
+- meta-llama/llama-3.3-70b-instruct — paid
+- openai/gpt-4o — paid
+- deepseek/deepseek-r1 — paid
+- qwen/qwen-2.5-72b-instruct — paid
+- mistralai/mistral-large-2411 — paid
+
+### Known Weak Point (flagged, not fixed)
+- QA-Agent.js has a custom buildPrompt() with ~15 words of instruction and JSON.stringify(context) dump.
+  All other agents use base-agent.js's buildPrompt() which is substantially stronger.
+  Rewrite of QA-Agent prompt requires user approval before Mission 10C.
+
+### PENDING VALIDATION (user must confirm)
+- Full 14-stage lifecycle with Owl Alpha produces real PM content
+- Stage 0 shows genuine product brief (not BLOCKED)
+- Agent fallback fires correctly when user selects unavailable model
+- Stop button actually terminates the lifecycle process
+- New Idea button clears artifacts and shows clean Desk
+
+### Next Engineering Sessions
+- Mission 10C: Fix specific quality issues found in validation run
+- Mission 11: UX polish (milestone map, agent visualization, artifact metadata)
+- Mission 12: PM portfolio documents (10-document set)
+- Mission 13: Cloud deployment (Railway + Supabase)
+
+## Release History
+
+| Tag | Date | Description |
+|-----|------|-------------|
+| v3.5-stable | 2026-06-28 | Stop button, agent fallback, New Idea refresh, model catalog cleanup |
+| v3.3-stable | 2026-06-27 | First full-stack stable release — rendering fixed, model routing fixed, 10/10 checks |
+| (pre-v3) | pre-June 2026 | V1/V2 prototype work before June 2026 sessions |

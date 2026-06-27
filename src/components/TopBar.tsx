@@ -41,6 +41,8 @@ export default function TopBar() {
       }).catch(()=>{});
       fetch('/api/run').then(r=>r.json()).then(d=>{
         setIsRunning(d.isRunning ?? false);
+        // Restore idea text after browser refresh — GET now returns it from .current-run.json
+        if (d.isRunning && d.idea && !idea) setIdea(d.idea);
       }).catch(()=>{});
     };
     refresh();

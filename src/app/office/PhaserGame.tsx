@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import type { LiveAgent } from './types';
+import type { AgentData } from '../../game/OfficeScene';
 
 interface Props {
-  agents:       LiveAgent[];
+  agents:       AgentData[];
   currentStage: number;
 }
 
@@ -25,19 +25,26 @@ export default function PhaserGame({ agents, currentStage }: Props) {
       }
 
       import('../../game/OfficeScene').then(({ createOfficeScene }) => {
-        if (gameRef.current) return;
+        // ── NULL GUARD (CRITICAL) ──────────────────────────────────────────
+        // Both import() calls are async. Between the first useEffect check
+        // (line 16 above) and this callback executing, the component may have
+        // unmounted (React 18 StrictMode double-invoke, route navigation, etc.)
+        // making containerRef.current null. The ! non-null assertion on lines
+        // that follow would throw "Cannot read properties of null (clientWidth)".
+        // This guard prevents that crash.
+        if (gameRef.current || !containerRef.current) return;
 
         const OfficeScene = createOfficeScene(Phaser);
 
-        const w = containerRef.current!.clientWidth  || 900;
-        const h = containerRef.current!.clientHeight || 500;
+        const w = containerRef.current.clientWidth  || 900;
+        const h = containerRef.current.clientHeight || 500;
 
         const config = {
           type:            Phaser.CANVAS,
           width:           w,
           height:          h,
           backgroundColor: '#020609',
-          parent:          containerRef.current!,
+          parent:          containerRef.current,
           scene:           [OfficeScene],
           antialias:       false,
           roundPixels:     true,

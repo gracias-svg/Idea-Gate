@@ -1,18 +1,20 @@
 // src/app/layout.tsx
-// Root layout — wraps all pages with providers.
-// Providers (innermost to outermost):
-//   GlobalStore   → shared settings, improvement history, ref docs
-//   DataProvider  → artifact list and polling state
+// Provider hierarchy (inner to outer):
+//   RuntimeContext  → shared event bus, artifact graph, stale tracking, telemetry
+//   GlobalStore     → settings, improvement history, ref docs (localStorage)
+//   DataProvider    → artifact list polling, agent state polling
+//   TopBar          → global navigation
 
 import type { Metadata } from 'next';
 import './globals.css';
 import TopBar from '@/components/TopBar';
 import { DataProvider } from '@/lib/DataProvider';
 import { GlobalStore } from '@/lib/GlobalStore';
+import { RuntimeContext } from '@/lib/RuntimeContext';
 
 export const metadata: Metadata = {
   title:       'IdeaGate — AI-Native PM Operating System',
-  description: 'Multi-agent product lifecycle orchestration from idea to prototype',
+  description: 'Multi-agent product lifecycle orchestration. Idea to prototype in 14 enforced stages.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -25,15 +27,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         fontFamily:      "'JetBrains Mono','Fira Code',monospace",
         overflowX:       'hidden',
       }}>
-        {/* GlobalStore must be outermost — provides settings, history, ref docs to all pages */}
-        <GlobalStore>
-          {/* DataProvider — polls /api/data and /api/agents, exposes artifact list */}
-          <DataProvider>
-            {/* TopBar is global navigation — reads from both providers */}
-            <TopBar />
-            {children}
-          </DataProvider>
-        </GlobalStore>
+        <RuntimeContext>
+          <GlobalStore>
+            <DataProvider>
+              <TopBar />
+              {children}
+            </DataProvider>
+          </GlobalStore>
+        </RuntimeContext>
       </body>
     </html>
   );

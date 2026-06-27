@@ -31,3 +31,49 @@ DO NOT move files between these two locations.
 - Journey timing tracking (durationMs now accurate)
 - Coordinator iteration guard (lifecycle no longer deadlocks)
 - API key routing (hardened run-route.ts reads CLI .env directly)
+
+## HARD SAFETY RULES
+
+NEVER RUN:
+
+rm -rf
+git reset --hard
+git clean -fd
+git push --force
+git checkout -- .
+git restore .
+
+WITHOUT EXPLICIT USER APPROVAL.
+
+Before deleting, moving, renaming, replacing, or overwriting files:
+
+1. Explain why.
+2. Show affected files.
+3. Wait for approval.
+
+Before every commit:
+
+1. Show git status
+2. Show git diff
+3. Explain change
+
+Never modify more than one subsystem per session.
+
+Never create:
+- IdeaGate_v2
+- IdeaGate_new
+- IdeaGate_fixed
+- IdeaGate_copy
+- alternative runtimes
+
+Work only inside:
+
+/Users/apple/idea-gate-ui-safe
+
+/Users/apple/agent-zero-data/workdir/ui-layer
+
+Never modify workspace artifacts.
+
+Never modify generated markdown files.
+
+Never touch runtime output folders.

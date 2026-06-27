@@ -314,7 +314,14 @@ Return STRICT JSON:
       }
 
       const parsed = this.safeParse(response);
-      if (parsed.output && parsed.output.trim().length > 100) {
+      // Type-safe output coercion: parsed.output may be object/null/array when
+      // the model returns malformed JSON. .trim() on a non-string throws TypeError
+      // which crashes the lifecycle. JSON.stringify preserves content; String()
+      // would hide objects as "[object Object]".
+      const safeOutput = typeof parsed.output === 'string'
+        ? parsed.output
+        : JSON.stringify(parsed.output ?? '');
+      if (safeOutput.trim().length > 100) {
         if (attempt > 0) {
           console.log(`[MERGE] ✅ Fallback model ${modelForThisAttempt} succeeded at attempt ${attempt + 1}`);
         }
@@ -322,7 +329,7 @@ Return STRICT JSON:
       }
 
       // Output present but too short — treat as soft failure, try next model
-      console.log(`⚠️ Merge attempt ${attempt + 1} output too short (${parsed.output?.length ?? 0} chars) — trying next model`);
+      console.log(`⚠️ Merge attempt ${attempt + 1} output too short (${safeOutput.length} chars) — trying next model`);
     }
 
     // ── All model attempts failed — extract agent output content ────────────

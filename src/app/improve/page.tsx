@@ -30,14 +30,14 @@ const MODELS = [
   { key:'qwen',     label:'Qwen 2.5',          tier:'paid', provider:'Alibaba',      color:'#fde047', cost:'$0.13/M',  speed:2, use:'Low-cost'                      },
   { key:'mistral',  label:'Mistral',           tier:'paid', provider:'Mistral',      color:'#f472b6', cost:'$2/M',     speed:2, use:'Structured output'             },
   { key:'gpt4o',    label:'GPT-4o',            tier:'paid', provider:'OpenAI',       color:'#4ade80', cost:'$2.5/M',   speed:2, use:'PM evaluation'                },
-  { key:'gemini',   label:'Gemini Flash',      tier:'paid', provider:'Google',       color:'#fb923c', cost:'$0.075/M', speed:3, use:'Long context'                 },
+  // gemini removed: google/gemini-flash-1.5 → OpenRouter 404 (confirmed 2026-06-27)
   // ── Free tier models (OpenRouter :free suffix) ────────────────────────────
   { key:'nemotron', label:'Nemotron 3 Super',  tier:'free', provider:'NVIDIA',       color:'#84cc16', cost:'Free',     speed:2, use:'Large doc generation · 1M ctx' },
-  { key:'ring',     label:'Ring 2.6 1T',       tier:'free', provider:'InclusionAI',  color:'#c084fc', cost:'Free',     speed:1, use:'Deep reasoning · 262K ctx'    },
+  // ring removed: inclusionai/ring-2.6-1t:free → OpenRouter 404 "no longer free" (confirmed 2026-06-27)
   { key:'gptoss',   label:'GPT-OSS 120B',      tier:'free', provider:'OpenAI',       color:'#22d3ee', cost:'Free',     speed:2, use:'PRD drafting · structured PM'  },
   { key:'owlalpha', label:'Owl Alpha',          tier:'free', provider:'OpenRouter',   color:'#a78bfa', cost:'Free',     speed:2, use:'Agentic · tool use · 1M ctx'    },
 ] as const;
-type ModelKey = typeof MODELS[number]['key']; // 12 models: 8 paid + 4 free
+type ModelKey = typeof MODELS[number]['key']; // 10 models: 7 paid + 3 free
 
 const STAGE_LABELS: Record<number,string> = {
    0:'Idea Intake',1:'Discovery',2:'Problem Def',3:'Solution Design',4:'MVP Hypothesis',

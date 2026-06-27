@@ -10,4 +10,7 @@ build
 *.log
 workspace/
 *.backup
+*old.ts
+*older*.ts
 tsconfig.tsbuildinfo
+ui-layer@*

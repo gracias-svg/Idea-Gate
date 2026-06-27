@@ -246,57 +246,96 @@ Return STRICT JSON:
 
     const prompt = buildPrompt();
 
-    // ✅ SAFE RETRY (NO BREAKAGE)
-    for (let attempt = 1; attempt <= 2; attempt++) {
+    // ── Model fallback list for merge retries ──────────────────────────────
+    // On 429 or too-short output, try each model in sequence before falling
+    // back to the Mission 7 agent-output extraction path.
+    // Primary is whatever the user selected (OPENROUTER_MODEL env var).
+    // Fallbacks are free-tier models from different providers so a rate-limit
+    // on one provider doesn't block the others.
+    //
+    // llm.js reads process.env.OPENROUTER_MODEL directly and has no parameter
+    // override (protected file — cannot add one). Option A: temporarily set
+    // the env var before each call, restore with try/finally to guarantee
+    // the original value is always put back regardless of error or success.
+    const MERGE_FALLBACK_MODELS = [
+      process.env.OPENROUTER_MODEL,              // primary (user-selected)
+      'openrouter/owl-alpha',                    // fallback 1: IdeaGate default
+      'nvidia/nemotron-3-super-120b-a12b:free',  // fallback 2: different provider
+    ].filter(Boolean);
+    const uniqueModels = [...new Set(MERGE_FALLBACK_MODELS)];
+
+    for (let attempt = 0; attempt < uniqueModels.length; attempt++) {
+      const modelForThisAttempt = uniqueModels[attempt];
+
+      if (attempt > 0) {
+        // Progressive delay before switching providers: 3s, 6s, ...
+        // Gives the rate limiter headroom and signals a real retry, not a spam.
+        const delayMs = attempt * 3000;
+        console.log(`[MERGE] Switching to fallback model: ${modelForThisAttempt} (waiting ${delayMs}ms)`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+
+      // Temporarily override the model env var for this single call.
+      // try/finally guarantees restore on success, error, or short-output path.
+      const originalModel = process.env.OPENROUTER_MODEL;
+      let response;
       try {
-        const response = await this.llm.generate({
+        process.env.OPENROUTER_MODEL = modelForThisAttempt;
+        response = await this.llm.generate({
           prompt,
           taskType: stageDef.taskType || "heavy"
         });
-
-        return this.safeParse(response);
-
       } catch (err) {
-        console.log(`⚠️ Merge failed (attempt ${attempt}):`, err.message);
-
-        if (attempt === 2) {
-          // ── Both merge attempts failed — use agent output content ────────
-          // Previously this returned JSON.stringify(agentData.outputs) which
-          // caused raw JSON objects to appear in the Desk. Now we extract the
-          // actual text content from each agent and use that directly.
-          console.log("❌ Merge failed — using agent output fallback");
-
-          const agentContents = [];
-          for (const [agentName, result] of Object.entries(agentData.outputs)) {
-            if (result && result.output && result.output.trim().length > 50) {
-              agentContents.push(`## ${agentName} Analysis\n\n${result.output}`);
-            }
-          }
-
-          if (agentContents.length > 0) {
-            return {
-              summary: `Draft output (merge unavailable — ${agentContents.length} agent(s) contributed)`,
-              output: agentContents.join('\n\n---\n\n'),
-              decision: 'go',
-              reasoning: 'Merge failed due to provider rate limit. Using raw agent output as fallback.',
-              confidence: 'low',
-              conflicts: ''
-            };
-          } else {
-            return {
-              summary: 'Stage incomplete — provider rate limit prevented output generation',
-              output: `# ${stageDef.name} — Incomplete\n\nThis stage could not be completed because the AI provider was rate-limited during this run.\n\n**To resolve:** Re-run this idea with a different model or try again in a few minutes.\n\n**Stage:** ${stageDef.name}\n**Reason:** Provider 429 (rate limit) on all attempts`,
-              decision: 'go',
-              reasoning: 'Forced advance with placeholder — no agent output available.',
-              confidence: 'low',
-              conflicts: ''
-            };
-          }
+        console.log(`⚠️ Merge attempt ${attempt + 1} failed (${modelForThisAttempt}): ${err.message?.slice(0, 80)}`);
+        if (attempt === uniqueModels.length - 1) {
+          break; // all models exhausted — fall through to agent output fallback
         }
-
-        // 2-second backoff before retry — gives rate limiter time to reset
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        continue; // try next model
+      } finally {
+        process.env.OPENROUTER_MODEL = originalModel; // always restore
       }
+
+      const parsed = this.safeParse(response);
+      if (parsed.output && parsed.output.trim().length > 100) {
+        if (attempt > 0) {
+          console.log(`[MERGE] ✅ Fallback model ${modelForThisAttempt} succeeded at attempt ${attempt + 1}`);
+        }
+        return parsed;
+      }
+
+      // Output present but too short — treat as soft failure, try next model
+      console.log(`⚠️ Merge attempt ${attempt + 1} output too short (${parsed.output?.length ?? 0} chars) — trying next model`);
+    }
+
+    // ── All model attempts failed — extract agent output content ────────────
+    // (Mission 7 fallback: instead of raw JSON, use agent text directly)
+    console.log("❌ All merge models exhausted — using agent output fallback");
+
+    const agentContents = [];
+    for (const [agentName, result] of Object.entries(agentData.outputs)) {
+      if (result && result.output && result.output.trim().length > 50) {
+        agentContents.push(`## ${agentName} Analysis\n\n${result.output}`);
+      }
+    }
+
+    if (agentContents.length > 0) {
+      return {
+        summary: `Draft output (merge unavailable — ${agentContents.length} agent(s) contributed)`,
+        output: agentContents.join('\n\n---\n\n'),
+        decision: 'go',
+        reasoning: 'All merge models exhausted (rate limit). Using raw agent output as fallback.',
+        confidence: 'low',
+        conflicts: ''
+      };
+    } else {
+      return {
+        summary: 'Stage incomplete — provider rate limit prevented output generation',
+        output: `# ${stageDef.name} — Incomplete\n\nThis stage could not be completed because the AI provider was rate-limited during this run.\n\n**To resolve:** Re-run this idea with a different model or try again in a few minutes.\n\n**Stage:** ${stageDef.name}\n**Reason:** Provider 429 (rate limit) on all attempts across all fallback models`,
+        decision: 'go',
+        reasoning: 'Forced advance with placeholder — no agent output available from any model.',
+        confidence: 'low',
+        conflicts: ''
+      };
     }
   }
 

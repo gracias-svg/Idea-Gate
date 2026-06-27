@@ -43,6 +43,52 @@ export async function GET(req: Request) {
     }
     try {
       const content = fs.readFileSync(filePath, 'utf-8');
+
+      // ── Detect JSON-fallback artifacts from failed merge calls ───────────
+      // Artifacts are structured as:
+      //   # Stage Name
+      //   ## Summary
+      //   ...
+      //   ---           ← first separator
+      //   <output zone> ← may be raw JSON if merge failed
+      //   ---           ← last separator
+      //   ## Decision
+      //   ...
+      //
+      // If the output zone starts with '{' or '[', this was a failed-merge
+      // artifact from a rate-limited run. Try to recover agent output text,
+      // or return a human-readable 'incomplete' message.
+      const sepFirst = content.indexOf('\n---\n');
+      const sepLast  = content.lastIndexOf('\n---\n');
+      if (sepFirst !== -1 && sepLast !== -1 && sepFirst !== sepLast) {
+        const zone = content.slice(sepFirst + 5, sepLast).trim();
+        if (zone.startsWith('{') || zone.startsWith('[')) {
+          try {
+            const parsed = JSON.parse(zone);
+            const agentKeys = Object.keys(parsed);
+            const firstAgent = agentKeys.length > 0 ? parsed[agentKeys[0]] : null;
+
+            if (firstAgent && typeof firstAgent.output === 'string' &&
+                firstAgent.output.trim().length > 50) {
+              // Recoverable: return the agent output text directly
+              return NextResponse.json({
+                content: firstAgent.output,
+                warning: 'This artifact was recovered from a failed merge. Re-run for better quality.'
+              });
+            } else {
+              // Not recoverable: return a clear error state
+              return NextResponse.json({
+                content: null,
+                error: 'incomplete',
+                message: 'This stage did not complete successfully. Re-run this idea to regenerate.'
+              });
+            }
+          } catch {
+            // Not valid JSON despite starting with { — fall through and render as-is
+          }
+        }
+      }
+
       return NextResponse.json({ content });
     } catch {
       return NextResponse.json({ error: 'Read error', content: '' }, { status: 500 });

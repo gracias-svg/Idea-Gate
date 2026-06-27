@@ -25,17 +25,17 @@ const MODEL_IDS: Record<string, string> = {
   qwen:     'qwen/qwen-2.5-72b-instruct',
   mistral:  'mistralai/mistral-large-2411',
   gpt4o:    'openai/gpt-4o',
-  gemini:   'google/gemini-flash-1.5',
+  // gemini removed: google/gemini-flash-1.5 → OpenRouter 404 "no endpoints" (confirmed 2026-06-27)
   // ── Free tier (OpenRouter :free suffix or openrouter/ prefix) ─────────────
-  // Recommended priority: owlalpha → nemotron → ring → gptoss
+  // Recommended priority: owlalpha → nemotron → gptoss
   owlalpha: 'openrouter/owl-alpha',                          // 1M ctx · agentic · $0
   nemotron: 'nvidia/nemotron-3-super-120b-a12b:free',        // 1M ctx · document gen · $0
-  ring:     'inclusionai/ring-2.6-1t:free',                  // 262K ctx · deep reasoning · $0
+  // ring removed: inclusionai/ring-2.6-1t:free → OpenRouter 404 "no longer free" (confirmed 2026-06-27)
   gptoss:   'openai/gpt-oss-120b:free',                      // 128K ctx · structured output · $0
 };
 
 // Free model keys — used to set appropriate max_tokens cap
-const FREE_MODEL_KEYS = new Set(['owlalpha', 'nemotron', 'ring', 'gptoss']);
+const FREE_MODEL_KEYS = new Set(['owlalpha', 'nemotron', 'gptoss']);
 
 // ── Resolve artifact path ──────────────────────────────────────────────────────
 function resolveArtifactPath(fileName: string): string | null {

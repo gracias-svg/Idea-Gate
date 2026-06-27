@@ -13,9 +13,11 @@ import React, { createContext, useContext, useReducer, useEffect, ReactNode } fr
 export type ModelKey =
   // Paid models — billed per token via OpenRouter
   | 'haiku' | 'sonnet' | 'deepseek' | 'llama'
-  | 'qwen'  | 'mistral' | 'gpt4o'   | 'gemini'
+  | 'qwen'  | 'mistral' | 'gpt4o'
   // Free tier models — OpenRouter free tier (rate-limited, no billing)
-  | 'nemotron' | 'ring' | 'gptoss' | 'owlalpha';
+  // gemini (google/gemini-flash-1.5) — removed: OpenRouter 404 "no endpoints" (confirmed 2026-06-27)
+  // ring (inclusionai/ring-2.6-1t:free) — removed: OpenRouter 404 "no longer free" (confirmed 2026-06-27)
+  | 'nemotron' | 'gptoss' | 'owlalpha';
 
 // Value shape — `free` flag enables UI grouping and "(Free)" labels
 export interface ModelMeta {
@@ -36,13 +38,12 @@ export const MODEL_LABELS: Record<ModelKey, ModelMeta> = {
   qwen:     { label: 'Qwen 2.5 72B',    provider: 'Alibaba',     cost: '$0.13/M',  best: 'Low-cost, repetitive tasks'       },
   mistral:  { label: 'Mistral Large',   provider: 'Mistral',     cost: '$2.00/M',  best: 'Structured output, formatting'    },
   gpt4o:    { label: 'GPT-4o',          provider: 'OpenAI',      cost: '$2.50/M',  best: 'PM evaluation, balanced'          },
-  gemini:   { label: 'Gemini Flash',    provider: 'Google',      cost: '$0.075/M', best: 'Long context (1M tokens)'         },
+  // gemini removed: google/gemini-flash-1.5 → OpenRouter 404 "no endpoints" (confirmed 2026-06-27)
   // ── Free tier models (OpenRouter free tier) ──────────────────────────────
-  // Recommended priority order: nemotron → ring → gptoss
+  // Recommended priority order: owlalpha → nemotron → gptoss
+  // ring removed: inclusionai/ring-2.6-1t:free → OpenRouter 404 "no longer free" (confirmed 2026-06-27)
   nemotron: { label: 'Nemotron 3 Super (Free)', provider: 'NVIDIA',      cost: 'Free', contextK: 1000, free: true,
               best: 'Large document generation, long-horizon PM workflows'              },
-  ring:     { label: 'Ring 2.6 1T (Free)',      provider: 'InclusionAI', cost: 'Free', contextK: 262,  free: true,
-              best: 'Deep reasoning, validation, architecture, compliance analysis'     },
   gptoss:   { label: 'GPT-OSS 120B (Free)',     provider: 'OpenAI',      cost: 'Free', contextK: 128,  free: true,
               best: 'PRD drafting, case studies, structured PM artifact generation'    },
   owlalpha: { label: 'Owl Alpha (Free)',          provider: 'OpenRouter',  cost: 'Free', contextK: 1048, free: true,
@@ -50,11 +51,11 @@ export const MODEL_LABELS: Record<ModelKey, ModelMeta> = {
 };
 
 // ── Free model utilities ──────────────────────────────────────────────────────
-// Ordered by recommended priority: owlalpha → nemotron → ring → gptoss
-export const FREE_MODEL_KEYS: ModelKey[] = ['owlalpha', 'nemotron', 'ring', 'gptoss'] as const;
+// Ordered by recommended priority: owlalpha → nemotron → gptoss
+export const FREE_MODEL_KEYS: ModelKey[] = ['owlalpha', 'nemotron', 'gptoss'] as const;
 
 // Free model fallback chain for UI and future coordinator use
-// Primary: owlalpha · Fallback 1: nemotron · Fallback 2: ring · Fallback 3: gptoss
+// Primary: owlalpha · Fallback 1: nemotron · Fallback 2: gptoss
 export const FREE_MODEL_FALLBACK_CHAIN: ModelKey[] = FREE_MODEL_KEYS;
 
 // ── Builder IDs ───────────────────────────────────────────────────────────────

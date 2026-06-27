@@ -72,8 +72,43 @@ function readDotEnvFile(): Record<string, string> {
 // Module-level guard — prevents concurrent CLI processes
 let isRunning = false;
 
+// Path to the run-persistence file written on POST and deleted on close/error.
+// Reading this on GET allows the UI to restore running state after a browser
+// refresh, even if the Next.js module was reloaded (resetting isRunning to false).
+const runFilePath = () => CLI_DIR ? path.join(CLI_DIR, '.current-run.json') : '';
+
 export async function GET() {
-  return NextResponse.json({ isRunning });
+  // Prefer the in-memory flag when it's set (no disk read needed while running
+  // in the same server process). On browser refresh the module may have reloaded,
+  // clearing isRunning to false — fall through to the file in that case.
+  if (isRunning) return NextResponse.json({ isRunning: true });
+
+  try {
+    const runFile = runFilePath();
+    if (runFile && fs.existsSync(runFile)) {
+      const data = JSON.parse(fs.readFileSync(runFile, 'utf-8'));
+      // Stale check: if the run is >30 min old, verify the PID is still alive.
+      const ageMinutes = (Date.now() - new Date(data.startedAt).getTime()) / 60000;
+      if (ageMinutes > 30) {
+        let stillRunning = true;
+        try { process.kill(data.pid, 0); } catch { stillRunning = false; }
+        if (!stillRunning) {
+          try { fs.unlinkSync(runFile); } catch {}
+          return NextResponse.json({ isRunning: false });
+        }
+      }
+      // File exists and PID is alive (or run is < 30 min old) — restore state
+      isRunning = true;
+      return NextResponse.json({
+        isRunning: true,
+        idea:      data.idea      ?? '',
+        model:     data.model     ?? '',
+        startedAt: data.startedAt ?? '',
+      });
+    }
+  } catch { /* file missing or corrupt — treat as not running */ }
+
+  return NextResponse.json({ isRunning: false });
 }
 
 export async function POST(req: Request) {
@@ -156,15 +191,34 @@ export async function POST(req: Request) {
     },
   });
 
+  // Write persistence file immediately after spawn so GET can restore state
+  // on browser refresh or server hot-reload.
+  const runFile = runFilePath();
+  if (runFile) {
+    try {
+      fs.writeFileSync(runFile, JSON.stringify({
+        isRunning: true,
+        idea:      idea.trim(),
+        model:     resolvedModel,
+        startedAt: new Date().toISOString(),
+        pid:       proc.pid,
+      }));
+    } catch (err) {
+      console.error('[RUN] Could not write .current-run.json —', (err as Error).message);
+    }
+  }
+
   proc.on('close', (code) => {
     isRunning = false;
     if (logFd >= 0) try { fs.closeSync(logFd); } catch { /* already closed */ }
+    if (runFile) try { fs.unlinkSync(runFile); } catch { /* already deleted */ }
     console.log(`[RUN] Lifecycle process exited with code ${code}. Log: ${logPath}`);
   });
 
   proc.on('error', (err) => {
     isRunning = false;
     if (logFd >= 0) try { fs.closeSync(logFd); } catch { /* already closed */ }
+    if (runFile) try { fs.unlinkSync(runFile); } catch { /* already deleted */ }
     console.error('[RUN] CLI spawn error:', err.message);
   });
 

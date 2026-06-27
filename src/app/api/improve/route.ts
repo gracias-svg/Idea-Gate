@@ -1,182 +1,203 @@
 // src/app/api/improve/route.ts
-// Multi-model improvement API. Supports 8 OpenRouter providers.
-// GET  ?file=name        → read artifact content
-// POST action:preview   → LLM call, returns improved + reasoning + tokens + cost
-// POST action:accept    → write to disk
+// GET  ?file=<filename>  → returns artifact content from filesystem
+// POST { artifactName, intent, extent, scope, model, maxTokens, apiKey } → improves via OpenRouter
+// Priority 1: maxTokens is now read from request body and passed to LLM max_tokens.
+// Priority 1: defaultModel from GlobalStore is passed as `model` in the POST body by the Improve page.
 
-import { NextRequest, NextResponse } from 'next/server';
-import { readFileSync, writeFileSync, readdirSync, statSync } from 'fs';
-import { join } from 'path';
+import { NextResponse } from 'next/server';
+import path from 'path';
+import fs from 'fs';
 
-const PROJECT_PATH   = process.env.PROJECT_PATH!;
-const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY!;
+const BASE_PATH   = process.env.PROJECT_PATH  ?? '';
+const OPENROUTER  = 'https://openrouter.ai/api/v1/chat/completions';
+const OR_KEY      = process.env.OPENROUTER_API_KEY ?? '';
 
-// ── Full model catalog ────────────────────────────────────────────────────────
-const MODELS: Record<string, { id: string; inputCost: number; outputCost: number }> = {
-  'haiku':      { id: 'anthropic/claude-haiku-4-5',            inputCost: 0.25,   outputCost: 1.25  },
-  'sonnet':     { id: 'anthropic/claude-sonnet-4-5',           inputCost: 3.00,   outputCost: 15.00 },
-  'deepseek':   { id: 'deepseek/deepseek-r1',                  inputCost: 0.55,   outputCost: 2.19  },
-  'llama':      { id: 'meta-llama/llama-3.3-70b-instruct',    inputCost: 0.59,   outputCost: 0.79  },
-  'qwen':       { id: 'qwen/qwen-2.5-72b-instruct',           inputCost: 0.13,   outputCost: 0.40  },
-  'mistral':    { id: 'mistralai/mistral-large-2411',          inputCost: 2.00,   outputCost: 6.00  },
-  'gpt4o':      { id: 'openai/gpt-4o',                        inputCost: 2.50,   outputCost: 10.00 },
-  'gemini':     { id: 'google/gemini-flash-1.5',              inputCost: 0.075,  outputCost: 0.30  },
+// ── Model ID map (ModelKey → OpenRouter model string) ─────────────────────────
+// Paid models — billed per token
+// Free tier models — OpenRouter free tier (rate-limited, $0 cost)
+// Fallback: if a key is unrecognised, resolves to MODEL_IDS.owlalpha (free default)
+const MODEL_IDS: Record<string, string> = {
+  // ── Paid ──────────────────────────────────────────────────────────────────
+  haiku:    'anthropic/claude-haiku-4-5',
+  sonnet:   'anthropic/claude-sonnet-4-5',
+  deepseek: 'deepseek/deepseek-r1',
+  llama:    'meta-llama/llama-3.3-70b-instruct',
+  qwen:     'qwen/qwen-2.5-72b-instruct',
+  mistral:  'mistralai/mistral-large-2411',
+  gpt4o:    'openai/gpt-4o',
+  gemini:   'google/gemini-flash-1.5',
+  // ── Free tier (OpenRouter :free suffix or openrouter/ prefix) ─────────────
+  // Recommended priority: owlalpha → nemotron → ring → gptoss
+  owlalpha: 'openrouter/owl-alpha',                          // 1M ctx · agentic · $0
+  nemotron: 'nvidia/nemotron-3-super-120b-a12b:free',        // 1M ctx · document gen · $0
+  ring:     'inclusionai/ring-2.6-1t:free',                  // 262K ctx · deep reasoning · $0
+  gptoss:   'openai/gpt-oss-120b:free',                      // 128K ctx · structured output · $0
 };
 
-const DEFAULT_MODEL = 'haiku';
+// Free model keys — used to set appropriate max_tokens cap
+const FREE_MODEL_KEYS = new Set(['owlalpha', 'nemotron', 'ring', 'gptoss']);
 
-function getModelConfig(modelKey: string) {
-  return MODELS[modelKey] ?? MODELS[DEFAULT_MODEL];
-}
-
-function estimateCost(modelKey: string, inputT: number, outputT: number): number {
-  const m = getModelConfig(modelKey);
-  return (inputT / 1_000_000) * m.inputCost + (outputT / 1_000_000) * m.outputCost;
-}
-
-// ── Workspace ─────────────────────────────────────────────────────────────────
-function getLatestProjectDir(): string {
-  if (!PROJECT_PATH) throw new Error('PROJECT_PATH not set in .env.local');
-  const dirs = readdirSync(PROJECT_PATH)
-    .filter(n => !n.startsWith('.') && statSync(join(PROJECT_PATH, n)).isDirectory())
-    .sort((a, b) => parseInt(b.split('-').pop()??'0',10) - parseInt(a.split('-').pop()??'0',10));
-  if (!dirs.length) throw new Error('No project directories found');
-  return join(PROJECT_PATH, dirs[0]);
-}
-
-// ── Prompt ────────────────────────────────────────────────────────────────────
-function buildPrompt(intent: string, extent: string, scope: string, content: string, refDocs?: string[] | null): string {
-  const extentGuide: Record<string,string> = {
-    light:  'Minor edits — improve clarity and wording only. Preserve all structure.',
-    medium: 'Rewrite weak sections. Add depth. Improve frameworks. Keep overall structure.',
-    strong: 'Restructure and deepen substantially. Apply PM frameworks rigorously.',
-  };
-  const scopeGuide: Record<string,string> = {
-    block:   'Focus only on the most relevant section.',
-    stage:   'Improve the full artifact for this lifecycle stage.',
-    project: 'Improve with cross-artifact PM consistency in mind.',
-  };
-  const refSection = refDocs?.length
-    ? `\nREFERENCE DOCUMENTS:\n${refDocs.map((d,i)=>`--- Ref ${i+1} ---\n${d}`).join('\n')}\n`
-    : '';
-
-  return `You are a senior PM improving a product lifecycle artifact.
-
-INTENT: ${intent}
-EXTENT (${extent}): ${extentGuide[extent]??extentGuide.medium}
-SCOPE (${scope}): ${scopeGuide[scope]??scopeGuide.stage}
-${refSection}
-CURRENT ARTIFACT:
----
-${content}
----
-
-Return ONLY raw JSON (no markdown fences, no preamble):
-{
-  "improved": "complete improved artifact text in well-structured Markdown",
-  "reasoning": "2-4 sentences: what PM judgment was applied, what framework, what was strengthened/removed and why",
-  "impactWarnings": ["0-3 downstream lifecycle stages this change may affect and why"]
-}`;
-}
-
-// ── GET: read artifact ────────────────────────────────────────────────────────
-export async function GET(req: NextRequest) {
+// ── Resolve artifact path ──────────────────────────────────────────────────────
+function resolveArtifactPath(fileName: string): string | null {
+  if (!BASE_PATH) return null;
   try {
-    const file = new URL(req.url).searchParams.get('file');
-    if (!file) return NextResponse.json({ error: 'file param required' }, { status: 400 });
-    const dir     = getLatestProjectDir();
-    const content = readFileSync(join(dir, 'artifacts', file), 'utf-8');
-    return NextResponse.json({ content, fileName: file });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    const projects = fs.readdirSync(BASE_PATH)
+      .filter(n => !n.startsWith('.') && fs.statSync(path.join(BASE_PATH, n)).isDirectory())
+      .sort((a, b) => {
+        const ta = parseInt(a.split('-').pop() ?? '0', 10);
+        const tb = parseInt(b.split('-').pop() ?? '0', 10);
+        return tb - ta;
+      });
+    if (!projects.length) return null;
+    const artifactPath = path.join(BASE_PATH, projects[0], 'artifacts', fileName);
+    return fs.existsSync(artifactPath) ? artifactPath : null;
+  } catch { return null; }
+}
+
+// ── Strip DeepSeek <think>…</think> blocks ────────────────────────────────────
+function stripThinkBlocks(text: string): string {
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+}
+
+// ── GET — fetch artifact content ──────────────────────────────────────────────
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const file = searchParams.get('file');
+  if (!file) return NextResponse.json({ error: 'file param required' }, { status: 400 });
+
+  const filePath = resolveArtifactPath(file);
+  if (!filePath) return NextResponse.json({ error: 'File not found', content: '' }, { status: 404 });
+
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    return NextResponse.json({ content });
+  } catch {
+    return NextResponse.json({ error: 'Read error', content: '' }, { status: 500 });
   }
 }
 
-// ── POST: preview or accept ───────────────────────────────────────────────────
-export async function POST(req: NextRequest) {
+// ── POST — improve artifact ───────────────────────────────────────────────────
+export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { action } = body;
+    const {
+      artifactName,
+      intent,
+      extent        = 'medium',
+      scope         = 'stage',
+      model         = 'owlalpha',   // key from MODEL_IDS lookup
+      customModelId = '',          // raw OpenRouter model ID — overrides model key when set
+      maxTokens     = 4000,
+      apiKey        = '',           // from settings.openRouterApiKey (overrides env var)
+    } = body as {
+      artifactName: string;
+      intent:       string;
+      extent?:      'light' | 'medium' | 'strong';
+      scope?:       'block' | 'stage' | 'project';
+      model?:       string;
+      maxTokens?:   number;
+      apiKey?:      string;        // user-supplied key from Settings UI
+      customModelId?: string;       // raw OpenRouter model string e.g. 'deepseek/deepseek-r1'
+    };
 
-    // Accept: write to disk
-    if (action === 'accept') {
-      const { artifactName, content } = body;
-      if (!artifactName || !content) return NextResponse.json({ error: 'artifactName and content required' }, { status: 400 });
-      const dir = getLatestProjectDir();
-      writeFileSync(join(dir, 'artifacts', artifactName), content, 'utf-8');
-      console.log(`[improve/accept] saved ${artifactName}`);
-      return NextResponse.json({ success: true, artifactName });
+    if (!artifactName || !intent) {
+      return NextResponse.json({ error: 'artifactName and intent required' }, { status: 400 });
     }
 
-    // Preview: call LLM
-    const { artifactName, intent, extent='medium', scope='stage', modelKey='haiku', extractedDocuments=null } = body;
-    if (!artifactName)    return NextResponse.json({ error: 'artifactName required' }, { status: 400 });
-    if (!intent?.trim()) return NextResponse.json({ error: 'intent required' }, { status: 400 });
-    if (!OPENROUTER_KEY) return NextResponse.json({ error: 'OPENROUTER_API_KEY not in .env.local' }, { status: 500 });
+    // Read current content
+    const filePath = resolveArtifactPath(artifactName);
+    if (!filePath) {
+      return NextResponse.json({ error: `Artifact not found: ${artifactName}` }, { status: 404 });
+    }
+    const currentContent = fs.readFileSync(filePath, 'utf-8');
 
-    const dir     = getLatestProjectDir();
-    const content = readFileSync(join(dir, 'artifacts', artifactName), 'utf-8');
-    const model   = getModelConfig(modelKey);
-    const prompt  = buildPrompt(intent, extent, scope, content, extractedDocuments);
+    // Map extent to instruction language
+    const extentMap = {
+      light:  'Make only minor, targeted improvements. Preserve structure and most wording.',
+      medium: 'Rewrite relevant sections with stronger PM reasoning, frameworks, and specificity. Keep overall structure.',
+      strong: 'Restructure and substantially rewrite to maximize PM depth, strategic clarity, and defensibility.',
+    };
+    const scopeMap = {
+      block:   'Improve only the specific section or paragraph most relevant to the intent.',
+      stage:   'Improve the full artifact for this lifecycle stage.',
+      project: 'Improve considering the full product strategy and all lifecycle stages.',
+    };
 
-    console.log(`[improve] ${artifactName} | ${extent}/${scope} | ${modelKey} (${model.id})`);
+    // Build prompt
+    const systemPrompt = `You are a senior Product Manager improving a PM lifecycle artifact.
+Extent of improvement: ${extentMap[extent as keyof typeof extentMap] || extentMap.medium}
+Scope: ${scopeMap[scope as keyof typeof scopeMap] || scopeMap.stage}
+Return ONLY the complete improved artifact. No preamble, no explanation, no markdown wrapper.
+Preserve all section headers and existing structure unless the extent requires restructuring.`;
 
-    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
+    const userPrompt = `Improvement intent: ${intent}
+
+Current artifact:
+${currentContent}
+
+Return the complete improved artifact.`;
+
+    // Resolve auth key: Settings UI key takes priority over .env.local
+    const authKey = (apiKey && apiKey.trim()) ? apiKey.trim() : OR_KEY;
+    if (!authKey) {
+      return NextResponse.json({
+        error: 'No API key. Add your OpenRouter key in Settings → AI Models → API Keys, or set OPENROUTER_API_KEY in .env.local',
+      }, { status: 500 });
+    }
+
+    // Custom model ID (pasted in Settings) takes priority over dropdown selection
+    const modelId = (customModelId && customModelId.trim())
+      ? customModelId.trim()
+      : (MODEL_IDS[model] ?? MODEL_IDS.owlalpha);
+
+    // ── LLM call — max_tokens from settings.tokenBudgetPerCall ──────────────
+    const llmRes = await fetch(OPENROUTER, {
+      method:  'POST',
       headers: {
-        'Authorization': `Bearer ${OPENROUTER_KEY}`,
         'Content-Type':  'application/json',
+        'Authorization': `Bearer ${authKey}`,
         'HTTP-Referer':  'https://ideagate.site',
-        'X-Title':       'IdeaGate',
+        'X-Title':       'IdeaGate PMOS',
       },
       body: JSON.stringify({
-        model:      model.id,
-        max_tokens: 4000,
-        messages:   [{ role: 'user', content: prompt }],
+        model:      modelId,
+        max_tokens: Math.max(500, Math.min(maxTokens, FREE_MODEL_KEYS.has(model) ? 8000 : 16000)),
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user',   content: userPrompt   },
+        ],
       }),
     });
 
-    if (!res.ok) {
-      const err = await res.text();
-      console.error('[improve] OpenRouter error:', err.slice(0, 300));
-      return NextResponse.json({ error: `OpenRouter ${res.status}: ${err.slice(0, 200)}` }, { status: 502 });
+    if (!llmRes.ok) {
+      const errText = await llmRes.text().catch(() => 'unknown');
+      return NextResponse.json({ error: `LLM error: ${llmRes.status} ${errText}` }, { status: 502 });
     }
 
-    const data        = await res.json();
-    let   raw         = data.choices?.[0]?.message?.content ?? '';
-    const usage       = data.usage ?? {};
-    const inputTokens = usage.prompt_tokens     ?? 0;
-    const outTokens   = usage.completion_tokens ?? 0;
-    const totalTokens = usage.total_tokens      ?? (inputTokens + outTokens);
-    const cost        = estimateCost(modelKey, inputTokens, outTokens);
+    const llmData = await llmRes.json();
+    const rawContent = llmData.choices?.[0]?.message?.content ?? '';
+    const improved   = stripThinkBlocks(rawContent); // strips <think> blocks from any model
 
-    // Strip DeepSeek / o1-style thinking blocks before parsing
-    raw = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-    // Strip markdown fences
-    raw = raw.replace(/^```json\s*/m,'').replace(/^```\s*/m,'').replace(/\s*```\s*$/m,'').trim();
-
-    let parsed: { improved: string; reasoning: string; impactWarnings: string[] };
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      parsed = { improved: raw, reasoning: 'Artifact improved per intent and extent.', impactWarnings: [] };
+    if (!improved.trim()) {
+      return NextResponse.json({ error: 'LLM returned empty content' }, { status: 502 });
     }
 
+    // Write improved content back to filesystem
+    fs.writeFileSync(filePath, improved, 'utf-8');
+
+    // Return improvement metadata alongside content
     return NextResponse.json({
-      success: true, artifactName,
-      original: content,
-      improved: parsed.improved ?? raw,
-      reasoning: parsed.reasoning ?? '',
-      impactWarnings: parsed.impactWarnings ?? [],
-      modelKey,
-      modelId: model.id,
-      tokens: { input: inputTokens, output: outTokens, total: totalTokens },
-      cost: parseFloat(cost.toFixed(6)),
-      refDocs: Array.isArray(extractedDocuments) ? extractedDocuments.length : 0,
+      success:      true,
+      content:      improved,
+      model:        modelId,
+      tokensUsed:   llmData.usage?.total_tokens   ?? 0,
+      inputTokens:  llmData.usage?.prompt_tokens  ?? 0,
+      outputTokens: llmData.usage?.completion_tokens ?? 0,
+      maxTokensUsed:maxTokens,
     });
 
-  } catch (e: any) {
-    console.error('[improve] error:', e.message);
-    return NextResponse.json({ error: e.message }, { status: 500 });
+  } catch (err) {
+    console.error('[improve/route] Error:', err);
+    return NextResponse.json({ error: String(err) }, { status: 500 });
   }
 }

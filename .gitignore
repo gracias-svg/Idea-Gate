@@ -8,3 +8,8 @@ coverage
 dist
 build
 *.log
+*.backup
+*old.ts
+*older*.ts
+tsconfig.tsbuildinfo
+ui-layer@*

@@ -41,11 +41,6 @@ export class CoordinatorV2 {
 
       const context = this.buildContext(initialInput);
 
-      // ── TIMING FIX: record start time BEFORE agents execute ──────────────
-      // Previously startedAt was set inside journeyEngine.updateStage() which
-      // always ran AFTER completion, making durationMs permanently 0.
-      const stageStartedAt = new Date().toISOString();
-
       const agentData = await this.runStageAgents(stageDef, context);
 
       const merged = await this.mergeOutputs(
@@ -62,7 +57,6 @@ export class CoordinatorV2 {
 
       this.logDecision(currentStage, stageDef, agentData, merged);
 
-      merged.startedAt = stageStartedAt;  // carry the pre-execution timestamp
       this.journey.updateStage(currentStage, merged);
 
       const decision = merged.decision || "go";

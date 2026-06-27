@@ -1,0 +1,46 @@
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+// ── BUG FIX: override: true ───────────────────────────────────────────────
+// dotenv.config() WITHOUT override:true silently ignores keys that are
+// already set in the shell environment (e.g. from a ~/.zshrc export or a
+// leftover `export OPENROUTER_API_KEY=...` in the terminal session).
+// That meant editing .env had no effect when the old (now disabled)
+// OpenRouter key was still set at the shell level.
+// override: true forces dotenv to always use the values from .env.
+dotenv.config({ override: true });
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+export const config = {
+
+  // Model (used by agents)
+  model: process.env.MODEL || "qwen3:8b",
+
+  // ── BUG FIX: 2000 → 4000 ────────────────────────────────────────────
+  // At 2000 tokens the output limit was too tight for full PM stage
+  // documents (PRD, Architecture, Discovery etc. all exceed 2000 tokens
+  // when formatted as markdown inside a JSON string). The JSON would be
+  // cut mid-sentence, JSON.parse would fail in safeParse, and the
+  // coordinator would fall through to the raw-text fallback path.
+  // 4000 tokens is sufficient for every stage in the 14-stage lifecycle.
+  maxTokens: 4000,
+
+  temperature: 0.4,
+
+  // Paths
+  rootDir: join(__dirname, '..'),
+  promptsDir: join(__dirname, 'prompts'),
+  templatesDir: join(__dirname, 'templates'),
+  workspaceDir: process.env.WORKSPACE_DIR || join(__dirname, '../workspace'),
+
+  debug: process.env.DEBUG === 'true',
+
+  validate() {
+    // No API validation needed because OpenRouter key is global
+    return true;
+  }
+
+};

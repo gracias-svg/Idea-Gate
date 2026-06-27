@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+// ✅ LOAD ENV (CRITICAL — DO NOT REMOVE)
+import 'dotenv/config';
+
 import { ProductBuilderOrchestrator } from './orchestrator.js';
 import { runMultiAgent } from './run-multi-agent.js';
 import { CoordinatorV2 } from './core/coordinator-v2.js';

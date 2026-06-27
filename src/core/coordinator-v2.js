@@ -293,6 +293,10 @@ Return STRICT JSON:
     const fileName = `${stage}-${stageDef.name.replace(/\s+/g, '-').toLowerCase()}`;
     const filePath = path.join(this.artifactDir, `${fileName}.md`);
 
+    const outputStr = typeof merged.output === 'string'
+      ? merged.output
+      : JSON.stringify(merged.output, null, 2);
+
     const content = `
 # ${stageDef.name}
 
@@ -301,7 +305,7 @@ ${merged.summary}
 
 ---
 
-${merged.output}
+${outputStr}
 
 ---
 
@@ -351,6 +355,48 @@ ${merged.confidence}
         const match = response.match(/\{[\s\S]*\}/);
         if (match) {
           return JSON.parse(match[0]);
+        }
+      } catch {}
+
+      // Both JSON.parse attempts failed (e.g. unescaped control characters).
+      // Try to extract just the "output" field value character-by-character
+      // so the disk artifact contains the intended content, not the raw JSON wrapper.
+      try {
+        const keyIdx = response.indexOf('"output"');
+        if (keyIdx !== -1) {
+          let i = keyIdx + 8; // skip past '"output"'
+          while (i < response.length && /[\s:]/.test(response[i])) i++;
+          if (response[i] === '"') {
+            i++;
+            let extracted = '';
+            let esc = false;
+            while (i < response.length) {
+              const ch = response[i];
+              if (esc) {
+                if (ch === 'n')      extracted += '\n';
+                else if (ch === 't') extracted += '\t';
+                else if (ch === 'r') extracted += '\r';
+                else if (ch === '"') extracted += '"';
+                else if (ch === '\\') extracted += '\\';
+                else                 extracted += ch;
+                esc = false;
+              } else if (ch === '\\') {
+                esc = true;
+              } else if (ch === '"') {
+                break;
+              } else {
+                extracted += ch;
+              }
+              i++;
+            }
+            if (extracted.trim().length > 20) {
+              return {
+                summary: "parse recovered",
+                output: extracted.trim(),
+                confidence: "low"
+              };
+            }
+          }
         }
       } catch {}
 

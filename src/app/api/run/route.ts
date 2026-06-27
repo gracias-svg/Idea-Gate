@@ -208,19 +208,22 @@ export async function POST(req: Request) {
     }
   }
 
-  proc.on('close', (code) => {
-    isRunning = false;
-    if (logFd >= 0) try { fs.closeSync(logFd); } catch { /* already closed */ }
-    if (runFile) try { fs.unlinkSync(runFile); } catch { /* already deleted */ }
-    console.log(`[RUN] Lifecycle process exited with code ${code}. Log: ${logPath}`);
-  });
+  // Write PID file so DELETE handler can send SIGTERM
+  const pidFile = CLI_DIR ? path.join(CLI_DIR, '.current-run.pid') : '';
+  if (pidFile && proc.pid) {
+    try { fs.writeFileSync(pidFile, String(proc.pid)); } catch { /* non-fatal */ }
+  }
 
-  proc.on('error', (err) => {
+  const cleanup = (label: string) => {
     isRunning = false;
     if (logFd >= 0) try { fs.closeSync(logFd); } catch { /* already closed */ }
-    if (runFile) try { fs.unlinkSync(runFile); } catch { /* already deleted */ }
-    console.error('[RUN] CLI spawn error:', err.message);
-  });
+    if (runFile)  try { fs.unlinkSync(runFile);  } catch { /* already deleted */ }
+    if (pidFile)  try { fs.unlinkSync(pidFile);  } catch { /* already deleted */ }
+    console.log(`[RUN] ${label}`);
+  };
+
+  proc.on('close', (code) => cleanup(`Lifecycle process exited with code ${code}. Log: ${logPath}`));
+  proc.on('error', (err)  => { console.error('[RUN] CLI spawn error:', err.message); cleanup('spawn error'); });
 
   proc.unref();
 
@@ -230,4 +233,37 @@ export async function POST(req: Request) {
     keyUsed:  `${resolvedOpenRouterKey.slice(0, 14)}…${resolvedOpenRouterKey.slice(-4)}`,
     logPath,
   });
+}
+
+// ── DELETE — stop a running lifecycle ─────────────────────────────────────────
+export async function DELETE() {
+  const pidFile = CLI_DIR ? path.join(CLI_DIR, '.current-run.pid') : '';
+  const runFile = runFilePath();
+
+  if (!pidFile) {
+    return NextResponse.json({ error: 'CLI_DIR not set' }, { status: 500 });
+  }
+
+  let pid: number | null = null;
+  try {
+    pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
+  } catch {
+    // No PID file — already stopped
+  }
+
+  if (pid && !isNaN(pid)) {
+    try {
+      process.kill(pid, 'SIGTERM');
+      // Give process 2s to exit gracefully, then SIGKILL
+      await new Promise(r => setTimeout(r, 2000));
+      try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ }
+    } catch { /* process already exited */ }
+  }
+
+  isRunning = false;
+  try { fs.unlinkSync(pidFile); } catch { /* already gone */ }
+  try { if (runFile) fs.unlinkSync(runFile); } catch { /* already gone */ }
+
+  console.log(`[RUN] Lifecycle stopped by user. PID was: ${pid}`);
+  return NextResponse.json({ stopped: true });
 }

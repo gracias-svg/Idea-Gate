@@ -96,6 +96,14 @@ export default function TopBar() {
     }
   }, [idea, isRunning, runtime, settings]);
 
+  const handleStop = useCallback(async () => {
+    try {
+      await fetch('/api/run', { method: 'DELETE' });
+    } catch { /* ignore network errors */ }
+    setIsRunning(false);
+    setRunError('Run stopped.');
+  }, []);
+
   // Manual refresh — forces immediate data poll on all three tabs
   const handleRefresh = useCallback(() => {
     fetch('/api/data').then(r=>r.json()).then(d=>{
@@ -207,9 +215,12 @@ export default function TopBar() {
           <button
             onClick={() => {
               setIdea('');
+              setRunningIdea('');
+              setRunError('');
               setCurrentStage(0);
               setArtifactCount(0);
-              router.push('/desk');
+              window.dispatchEvent(new Event('ideagate:refresh'));
+              setTimeout(() => router.push('/desk'), 50);
             }}
             style={{
               background: 'transparent',
@@ -337,6 +348,17 @@ export default function TopBar() {
           <span style={{ fontSize:'10px', color:'#4ade8044', marginLeft:'auto', flexShrink:0 }}>
             this can take a minute or two on free models
           </span>
+          <button
+            onClick={handleStop}
+            title="Stop lifecycle"
+            style={{
+              fontSize:'11px', color:'#f87171', cursor:'pointer', flexShrink:0,
+              border:'1px solid #f8717144', borderRadius:'3px', padding:'2px 8px',
+              background:'transparent', ...MONO,
+            }}
+          >
+            ✕ Stop
+          </button>
         </div>
       )}
 

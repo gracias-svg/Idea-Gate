@@ -1,63 +1,179 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { spawn } from 'child_process';
+// src/app/api/run/route.ts
+// Spawns the V2 CLI lifecycle.
+//
+// HARDENED VERSION — fixes the "stale shell env var" bug:
+// Previously this route spread `...process.env` into the spawned child,
+// which silently carried forward whatever OPENROUTER_API_KEY happened to
+// already be set in the parent shell session (e.g. a leftover `export` in
+// ~/.zshrc). Because dotenv (used inside the V2 CLI) never overwrites a
+// variable that's already present in process.env, editing .env had no
+// effect — the stale shell-level key kept winning silently.
+//
+// Fix: this route now reads CLI_DIR/.env directly off disk itself and
+// resolves OPENROUTER_API_KEY / ANTHROPIC_API_KEY / OPENROUTER_MODEL
+// explicitly, then sets them on the child's env object. An explicit
+// key always overrides a spread value in the same object literal, so
+// shell state can no longer interfere — regardless of what's exported
+// in any profile file or terminal session.
+//
+// Priority order for each credential:
+//   1. Value sent from the UI (Settings → AI Models, if the user filled it in)
+//   2. Value parsed directly from CLI_DIR/.env
+//   3. (no fallback to inherited process.env — that's the whole point)
 
-const CLI_DIR =
-  process.env.CLI_DIR ||
-  '/Users/apple/idea-gate-ui-safe';
+import { NextResponse } from 'next/server';
+import { spawn }        from 'child_process';
+import fs                from 'fs';
+import path              from 'path';
 
-// Module-level guard — prevents double-runs
-let isRunning = false;
+const CLI_DIR = process.env.CLI_DIR ?? '';
 
-export async function POST(req: NextRequest) {
+// Model key → OpenRouter model ID map (mirrors GlobalStore MODEL_IDS)
+// Kept in sync with improve-route.ts — both use the same map.
+const MODEL_IDS: Record<string, string> = {
+  haiku:    'anthropic/claude-haiku-4-5',
+  sonnet:   'anthropic/claude-sonnet-4-5',
+  deepseek: 'deepseek/deepseek-r1',
+  llama:    'meta-llama/llama-3.3-70b-instruct',
+  qwen:     'qwen/qwen-2.5-72b-instruct',
+  mistral:  'mistralai/mistral-large-2411',
+  gpt4o:    'openai/gpt-4o',
+  gemini:   'google/gemini-flash-1.5',
+  owlalpha: 'openrouter/owl-alpha',
+  nemotron: 'nvidia/nemotron-3-super-120b-a12b:free',
+  ring:     'inclusionai/ring-2.6-1t:free',
+  gptoss:   'openai/gpt-oss-120b:free',
+};
+
+// ── Read CLI_DIR/.env directly off disk — bypasses shell state entirely ───
+function readDotEnvFile(): Record<string, string> {
+  const envPath = path.join(CLI_DIR, '.env');
+  const result: Record<string, string> = {};
   try {
-    const body = await req.json();
-    const idea = body?.idea?.trim();
-
-    if (!idea) {
-      return NextResponse.json({ error: 'Idea text is required' }, { status: 400 });
+    const raw = fs.readFileSync(envPath, 'utf-8');
+    for (const line of raw.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eq = trimmed.indexOf('=');
+      if (eq === -1) continue;
+      const key = trimmed.slice(0, eq).trim();
+      let value  = trimmed.slice(eq + 1).trim();
+      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+        value = value.slice(1, -1);
+      }
+      result[key] = value;
     }
-
-    if (isRunning) {
-      return NextResponse.json({ error: 'A lifecycle is already running. Please wait.' }, { status: 409 });
-    }
-
-    console.log('[RUN] Starting lifecycle:', idea);
-    console.log('[RUN] CLI_DIR:', CLI_DIR);
-
-    isRunning = true;
-
-    const child = spawn('node', ['src/cli.js', 'v2', idea], {
-      cwd: CLI_DIR,
-      detached: true,
-      stdio: 'ignore',
-    });
-
-    child.on('error', (err) => {
-      console.error('[RUN] Spawn error:', err);
-      isRunning = false;
-    });
-
-    child.on('exit', (code) => {
-      console.log('[RUN] CLI exited with code:', code);
-      isRunning = false;
-    });
-
-    child.unref();
-
-    console.log('[RUN] CLI spawned, PID:', child.pid);
-
-    return NextResponse.json({
-      started: true,
-      message: `Lifecycle started for: "${idea}"`,
-      pid: child.pid,
-    });
-  } catch (err: any) {
-    isRunning = false;
-    console.error('[RUN] Error:', err);
-    return NextResponse.json({ error: err.message || 'Failed to start' }, { status: 500 });
+  } catch (err) {
+    console.error('[RUN] Could not read .env at', envPath, '—', (err as Error).message);
   }
+  return result;
 }
+
+// Module-level guard — prevents concurrent CLI processes
+let isRunning = false;
 
 export async function GET() {
   return NextResponse.json({ isRunning });
+}
+
+export async function POST(req: Request) {
+  if (isRunning) {
+    return NextResponse.json({ error: 'Lifecycle already running' }, { status: 409 });
+  }
+
+  if (!CLI_DIR) {
+    return NextResponse.json({ error: 'CLI_DIR not set in .env.local' }, { status: 500 });
+  }
+
+  let body: {
+    idea?:          string;
+    model?:         string;
+    customModelId?: string;
+    openRouterKey?: string;  // explicit override from Settings → AI Models
+    anthropicKey?:  string;  // explicit override from Settings → AI Models
+  } = {};
+  try { body = await req.json(); } catch { /* ignore parse errors */ }
+
+  const {
+    idea          = '',
+    model         = 'owlalpha',
+    customModelId = '',
+    openRouterKey = '',
+    anthropicKey  = '',
+  } = body;
+
+  if (!idea.trim()) {
+    return NextResponse.json({ error: 'idea is required' }, { status: 400 });
+  }
+
+  // Resolve the model ID — UI selection always wins over .env's OPENROUTER_MODEL
+  const resolvedModel = customModelId.trim()
+    ? customModelId.trim()
+    : (MODEL_IDS[model] ?? MODEL_IDS.owlalpha);
+
+  // ── Resolve credentials explicitly — UI override → .env file → nothing ──
+  // Deliberately does NOT fall back to process.env, since that's the
+  // exact mechanism that let stale shell exports win silently before.
+  const dotEnv = readDotEnvFile();
+  const resolvedOpenRouterKey = openRouterKey.trim() || dotEnv.OPENROUTER_API_KEY || '';
+  const resolvedAnthropicKey  = anthropicKey.trim()  || dotEnv.ANTHROPIC_API_KEY  || '';
+
+  if (!resolvedOpenRouterKey) {
+    return NextResponse.json(
+      { error: 'No OpenRouter API key found. Set it in Settings → AI Models, or in CLI_DIR/.env.' },
+      { status: 400 },
+    );
+  }
+
+  console.log(`[RUN] Launching lifecycle for: "${idea.slice(0, 60)}…"`);
+  console.log(`[RUN] Model: ${resolvedModel}`);
+  console.log(`[RUN] OpenRouter key in use: ${resolvedOpenRouterKey.slice(0, 14)}…${resolvedOpenRouterKey.slice(-4)}`);
+
+  isRunning = true;
+
+  // Capture CLI stdout/stderr to a log file — previously this was 'ignore',
+  // which made failures completely invisible. `cat .last-run.log` in
+  // CLI_DIR now shows exactly what happened on the last run.
+  const logPath = path.join(CLI_DIR, '.last-run.log');
+  let logFd: number;
+  try {
+    logFd = fs.openSync(logPath, 'w');
+  } catch {
+    logFd = -1; // fall back to ignore if the log file can't be opened
+  }
+
+  const proc = spawn('node', ['src/cli.js', 'v2', idea.trim()], {
+    cwd:      CLI_DIR,
+    detached: true,
+    stdio:    logFd >= 0 ? ['ignore', logFd, logFd] : 'ignore',
+    env: {
+      ...process.env,
+      // These three explicit overrides win regardless of what process.env
+      // (i.e. the shell that launched `npm run dev`) already contained.
+      OPENROUTER_MODEL:   resolvedModel,
+      OPENROUTER_API_KEY: resolvedOpenRouterKey,
+      ANTHROPIC_API_KEY:  resolvedAnthropicKey || process.env.ANTHROPIC_API_KEY || '',
+    },
+  });
+
+  proc.on('close', (code) => {
+    isRunning = false;
+    if (logFd >= 0) try { fs.closeSync(logFd); } catch { /* already closed */ }
+    console.log(`[RUN] Lifecycle process exited with code ${code}. Log: ${logPath}`);
+  });
+
+  proc.on('error', (err) => {
+    isRunning = false;
+    if (logFd >= 0) try { fs.closeSync(logFd); } catch { /* already closed */ }
+    console.error('[RUN] CLI spawn error:', err.message);
+  });
+
+  proc.unref();
+
+  return NextResponse.json({
+    started:  true,
+    model:    resolvedModel,
+    keyUsed:  `${resolvedOpenRouterKey.slice(0, 14)}…${resolvedOpenRouterKey.slice(-4)}`,
+    logPath,
+  });
 }

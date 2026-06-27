@@ -256,23 +256,42 @@ Return STRICT JSON:
         console.log(`⚠️ Merge failed (attempt ${attempt}):`, err.message);
 
         if (attempt === 2) {
-          console.log("❌ Merge failed — using fallback");
+          // ── Both merge attempts failed — use agent output content ────────
+          // Previously this returned JSON.stringify(agentData.outputs) which
+          // caused raw JSON objects to appear in the Desk. Now we extract the
+          // actual text content from each agent and use that directly.
+          console.log("❌ Merge failed — using agent output fallback");
 
-          // ── BUG FIX: 'iterate' → 'go' ──────────────────────────────────
-          // The old fallback set decision:"iterate", which fed straight into
-          // the infinite-loop bug. When the merge LLM call itself is what
-          // failed (network error, auth error, timeout), retrying the same
-          // call immediately produces the same failure. 'go' keeps the
-          // lifecycle moving so remaining stages can still be generated.
-          return {
-            summary: "fallback merge",
-            output: JSON.stringify(agentData.outputs, null, 2),
-            confidence: "low",
-            decision: "go",
-            reasoning: "LLM merge failed after 2 attempts — advancing with raw agent output",
-            conflicts: ""
-          };
+          const agentContents = [];
+          for (const [agentName, result] of Object.entries(agentData.outputs)) {
+            if (result && result.output && result.output.trim().length > 50) {
+              agentContents.push(`## ${agentName} Analysis\n\n${result.output}`);
+            }
+          }
+
+          if (agentContents.length > 0) {
+            return {
+              summary: `Draft output (merge unavailable — ${agentContents.length} agent(s) contributed)`,
+              output: agentContents.join('\n\n---\n\n'),
+              decision: 'go',
+              reasoning: 'Merge failed due to provider rate limit. Using raw agent output as fallback.',
+              confidence: 'low',
+              conflicts: ''
+            };
+          } else {
+            return {
+              summary: 'Stage incomplete — provider rate limit prevented output generation',
+              output: `# ${stageDef.name} — Incomplete\n\nThis stage could not be completed because the AI provider was rate-limited during this run.\n\n**To resolve:** Re-run this idea with a different model or try again in a few minutes.\n\n**Stage:** ${stageDef.name}\n**Reason:** Provider 429 (rate limit) on all attempts`,
+              decision: 'go',
+              reasoning: 'Forced advance with placeholder — no agent output available.',
+              confidence: 'low',
+              conflicts: ''
+            };
+          }
         }
+
+        // 2-second backoff before retry — gives rate limiter time to reset
+        await new Promise(resolve => setTimeout(resolve, 2000));
       }
     }
   }

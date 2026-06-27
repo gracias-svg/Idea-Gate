@@ -154,23 +154,49 @@ export class CoordinatorV2 {
         jobDone: stageDef.jobDone
       });
 
-      let parsed;
+      // Agent-level model fallback — mirrors the merge fallback pattern.
+      // If the user-selected model returns 404/429, retry with owl-alpha
+      // before falling through to empty output. Uses process.env + try/finally
+      // (Option A) so llm.js is not modified.
+      const AGENT_FALLBACKS = [
+        process.env.OPENROUTER_MODEL,  // user-selected (primary)
+        'openrouter/owl-alpha',        // fallback
+      ].filter(Boolean);
+      const uniqueAgentModels = [...new Set(AGENT_FALLBACKS)];
+
+      let parsed = { summary: "failed", output: "", confidence: "low" };
       let success = false;
 
-      try {
-        const response = await this.llm.generate({
-          prompt,
-          taskType: stageDef.taskType || "heavy"
-        });
-
-        parsed = this.safeParse(response);
-        success = !!parsed.output;
-      } catch (err) {
-        parsed = {
-          summary: "failed",
-          output: "",
-          confidence: "low"
-        };
+      for (let attempt = 0; attempt < uniqueAgentModels.length; attempt++) {
+        const agentModel = uniqueAgentModels[attempt];
+        const originalModel = process.env.OPENROUTER_MODEL;
+        try {
+          process.env.OPENROUTER_MODEL = agentModel;
+          if (attempt > 0) {
+            console.log(`[AGENT] Fallback to ${agentModel} for ${agentName}`);
+            await new Promise(r => setTimeout(r, 2000));
+          }
+          const response = await this.llm.generate({
+            prompt,
+            taskType: stageDef.taskType || "heavy"
+          });
+          const candidate = this.safeParse(response);
+          const safeOut = typeof candidate.output === 'string'
+            ? candidate.output
+            : JSON.stringify(candidate.output ?? '');
+          if (safeOut.trim().length > 30) {
+            parsed = candidate;
+            success = true;
+            if (attempt > 0) {
+              console.log(`[AGENT] ✅ ${agentName} recovered with ${agentModel}`);
+            }
+            break;
+          }
+        } catch (err) {
+          console.log(`[AGENT] ${agentName} attempt ${attempt + 1} failed: ${err.message?.slice(0, 60)}`);
+        } finally {
+          process.env.OPENROUTER_MODEL = originalModel; // always restore
+        }
       }
 
       outputs[agentName] = parsed;

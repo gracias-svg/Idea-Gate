@@ -202,6 +202,32 @@ export default function TopBar() {
           {isRunning ? '⟳ Running…' : '▶ Run'}
         </button>
 
+        {/* New Idea button — only visible after a run completes */}
+        {!isRunning && artifactCount > 0 && (
+          <button
+            onClick={() => {
+              setIdea('');
+              setCurrentStage(0);
+              setArtifactCount(0);
+              router.push('/desk');
+            }}
+            style={{
+              background: 'transparent',
+              border: '1px solid rgba(255,255,255,0.12)',
+              color: 'rgba(255,255,255,0.4)',
+              padding: '4px 10px',
+              borderRadius: '3px',
+              cursor: 'pointer',
+              fontSize: '11px',
+              flexShrink: 0,
+              ...MONO,
+            }}
+            title="Clear current run and start a new idea"
+          >
+            + New Idea
+          </button>
+        )}
+
         {/* Active run model indicator — shows which model the lifecycle will use */}
         {(() => {
           const label = settings.customModelId?.trim()

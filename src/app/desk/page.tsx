@@ -335,7 +335,7 @@ export default function DeskPage() {
     try{ const s=localStorage.getItem('ig_snapshots'); if(s) setSnapshots(JSON.parse(s)); }catch{}
     const poll = setInterval(loadData, 4000);
     // Triggered by TopBar's "New Idea" and manual refresh buttons
-    const clearArtifact = () => setSelected(null);
+    const clearArtifact = () => { setSelected(null); setArtifacts([]); };
     window.addEventListener('ideagate:refresh', loadData);
     window.addEventListener('ideagate:clearArtifact', clearArtifact);
     return () => {

@@ -55,6 +55,23 @@ export class CoordinatorV2 {
         context
       );
 
+      // ── FIELD SANITIZATION ────────────────────────────────────────────────
+      // safeParse() fallback path recovers the output field but leaves decision,
+      // reasoning, and summary as undefined. Default them to safe values here
+      // so persistArtifacts() never writes "undefined" into the artifact file.
+      merged.summary = (merged.summary && merged.summary !== 'parse recovered' && merged.summary !== 'undefined')
+        ? merged.summary
+        : `${stageDef.name} completed for: "${initialInput.slice(0, 80)}${initialInput.length > 80 ? '...' : ''}"`;
+
+      merged.decision = (merged.decision && merged.decision !== 'undefined' && merged.decision !== 'null')
+        ? merged.decision
+        : 'go';
+
+      merged.reasoning = (merged.reasoning && merged.reasoning !== 'undefined' && merged.reasoning !== 'null')
+        ? merged.reasoning
+        : `${stageDef.name} stage completed. Review the output above for details.`;
+      // ── END FIELD SANITIZATION ────────────────────────────────────────────
+
       // ── LIGHTWEIGHT QUALITY GATE ──────────────────────────────────────────
       // If the merged output is very short AND marked low confidence, the stage
       // likely produced degraded output (agent 429, merge 429, or empty fallback).

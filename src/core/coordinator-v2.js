@@ -88,6 +88,29 @@ export class CoordinatorV2 {
         merged.reasoning = (merged.reasoning || '') +
           ` [Quality gate: ${outputWords} words below 150-word minimum — retrying stage]`;
       }
+      // ── PLACEHOLDER DETECTION ─────────────────────────────────────────────
+      const PLACEHOLDER_PATTERNS = ['[product idea]', '[to be defined]', '[placeholder', '[product name]'];
+      const hasPlaceholders = PLACEHOLDER_PATTERNS.some(p =>
+        (merged.output || '').toLowerCase().includes(p)
+      );
+      if (hasPlaceholders && hasNotIteratedYet) {
+        console.log(`[QUALITY] Stage ${currentStage} contains placeholder text — marking iterate`);
+        merged.decision = 'iterate';
+        merged.reasoning = (merged.reasoning || '') + ' [Quality gate: placeholder content detected — retrying]';
+      }
+      // ── END PLACEHOLDER DETECTION ─────────────────────────────────────────
+
+      // ── OFF-TOPIC DETECTION ───────────────────────────────────────────────
+      const ideaWords = initialInput.toLowerCase().split(/\s+/).filter(w => w.length > 5).slice(0, 5);
+      const outputLower = (merged.output || '').toLowerCase();
+      const isOffTopic = ideaWords.length > 0 && !ideaWords.some(w => outputLower.includes(w));
+      if (isOffTopic && hasNotIteratedYet && outputWords > 50) {
+        console.log(`[QUALITY] Stage ${currentStage} appears off-topic — none of [${ideaWords.join(', ')}] found in output — marking iterate`);
+        merged.decision = 'iterate';
+        merged.reasoning = (merged.reasoning || '') + ' [Quality gate: off-topic content detected — retrying with idea context]';
+      }
+      // ── END OFF-TOPIC DETECTION ───────────────────────────────────────────
+
       // ── END QUALITY GATE ──────────────────────────────────────────────────
 
       const filePath = this.persistArtifacts(currentStage, stageDef, merged, agentData);

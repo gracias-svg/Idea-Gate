@@ -55,6 +55,23 @@ export class CoordinatorV2 {
         context
       );
 
+      // ── FIELD SANITIZATION ────────────────────────────────────────────────
+      // safeParse() fallback path recovers the output field but leaves decision,
+      // reasoning, and summary as undefined. Default them to safe values here
+      // so persistArtifacts() never writes "undefined" into the artifact file.
+      merged.summary = (merged.summary && merged.summary !== 'parse recovered' && merged.summary !== 'undefined')
+        ? merged.summary
+        : `${stageDef.name} completed for: "${initialInput.slice(0, 80)}${initialInput.length > 80 ? '...' : ''}"`;
+
+      merged.decision = (merged.decision && merged.decision !== 'undefined' && merged.decision !== 'null')
+        ? merged.decision
+        : 'go';
+
+      merged.reasoning = (merged.reasoning && merged.reasoning !== 'undefined' && merged.reasoning !== 'null')
+        ? merged.reasoning
+        : `${stageDef.name} stage completed. Review the output above for details.`;
+      // ── END FIELD SANITIZATION ────────────────────────────────────────────
+
       // ── LIGHTWEIGHT QUALITY GATE ──────────────────────────────────────────
       // If the merged output is very short AND marked low confidence, the stage
       // likely produced degraded output (agent 429, merge 429, or empty fallback).
@@ -71,6 +88,29 @@ export class CoordinatorV2 {
         merged.reasoning = (merged.reasoning || '') +
           ` [Quality gate: ${outputWords} words below 150-word minimum — retrying stage]`;
       }
+      // ── PLACEHOLDER DETECTION ─────────────────────────────────────────────
+      const PLACEHOLDER_PATTERNS = ['[product idea]', '[to be defined]', '[placeholder', '[product name]'];
+      const hasPlaceholders = PLACEHOLDER_PATTERNS.some(p =>
+        (merged.output || '').toLowerCase().includes(p)
+      );
+      if (hasPlaceholders && hasNotIteratedYet) {
+        console.log(`[QUALITY] Stage ${currentStage} contains placeholder text — marking iterate`);
+        merged.decision = 'iterate';
+        merged.reasoning = (merged.reasoning || '') + ' [Quality gate: placeholder content detected — retrying]';
+      }
+      // ── END PLACEHOLDER DETECTION ─────────────────────────────────────────
+
+      // ── OFF-TOPIC DETECTION ───────────────────────────────────────────────
+      const ideaWords = initialInput.toLowerCase().split(/\s+/).filter(w => w.length > 5).slice(0, 5);
+      const outputLower = (merged.output || '').toLowerCase();
+      const isOffTopic = ideaWords.length > 0 && !ideaWords.some(w => outputLower.includes(w));
+      if (isOffTopic && hasNotIteratedYet && outputWords > 50) {
+        console.log(`[QUALITY] Stage ${currentStage} appears off-topic — none of [${ideaWords.join(', ')}] found in output — marking iterate`);
+        merged.decision = 'iterate';
+        merged.reasoning = (merged.reasoning || '') + ' [Quality gate: off-topic content detected — retrying with idea context]';
+      }
+      // ── END OFF-TOPIC DETECTION ───────────────────────────────────────────
+
       // ── END QUALITY GATE ──────────────────────────────────────────────────
 
       const filePath = this.persistArtifacts(currentStage, stageDef, merged, agentData);
@@ -127,6 +167,16 @@ export class CoordinatorV2 {
       previousStages: this.journey.state.stages,
       decisions: this.journey.state.decisions
     };
+  }
+
+  buildPriorContext(context) {
+    const completed = Object.entries(context.journey?.stages || {})
+      .filter(([, stage]) => stage.summary && stage.summary !== 'parse recovered')
+      .slice(-3);
+    if (completed.length === 0) return '';
+    return completed
+      .map(([id, stage]) => `Stage ${id}: ${String(stage.summary).slice(0, 100)}`)
+      .join('\n');
   }
 
   async runStageAgents(stageDef, context) {
@@ -255,9 +305,24 @@ Return STRICT JSON:
         agentJson = agentJson.substring(0, 10000) + "\n...[truncated]";
       }
 
+      // If some agents returned empty output, reinforce the idea in the agent block
+      const agentJsonWithContext = agentJson.includes('"output": ""')
+        ? agentJson + `\n\nNOTE: Some agents failed to produce output. Generate ${stageDef.name} content specifically for: "${context.idea}".`
+        : agentJson;
+
+      const priorContext = this.buildPriorContext(context);
+
       return `
 You are a Senior Product Manager.
 
+PRODUCT IDEA BEING EVALUATED:
+"${context.idea || 'the product idea'}"
+
+You are generating the ${stageDef.name} document FOR THIS SPECIFIC IDEA ONLY.
+Do not generate documents for any other product, company, or idea.
+Do not use generic placeholders like [Product Idea] or [To Be Defined].
+Every section of your output must specifically address this idea.
+${priorContext ? `\nPRIOR STAGE CONTEXT (use this to maintain consistency):\n${priorContext}\n` : ''}
 Stage: ${stageDef.name}
 
 Frameworks:
@@ -270,7 +335,7 @@ Job Done:
 ${stageDef.jobDone}
 
 Agent Outputs:
-${agentJson}
+${agentJsonWithContext}
 
 Important: Do NOT include attribution lines, footers, sign-offs, or phrases like
 "Produced by PM Office" or "Generated by [name]" in the output field.
@@ -438,6 +503,9 @@ ${merged.summary}
 
 ${qualityNote}${outputStr}
 
+## Generated By
+${agentAttribution}
+
 ---
 
 ## Decision
@@ -448,9 +516,6 @@ ${merged.reasoning}
 
 ## Confidence
 ${merged.confidence}
-
-## Generated By
-${agentAttribution}
 `;
 
     fs.writeFileSync(filePath, content);

@@ -419,8 +419,12 @@ export default function DeskPage() {
         <div style={{flex:1}}/>
         {selected && content && (
           <div style={{display:'flex',gap:'4px'}}>
-            <button onClick={handleCopy}     style={{...B(),padding:'4px 9px',fontSize:'10px',backgroundColor:'transparent',color:'#cbd5e1',outline:'1px solid #1e293b'}}>Copy</button>
-            <button onClick={handleDownload} style={{...B(),padding:'4px 9px',fontSize:'10px',backgroundColor:'#0a1509',color:'#4ade80',outline:'1px solid #1a3a20'}}>↓ MD</button>
+            {(() => { const kb = (new Blob([content]).size / 1024).toFixed(1); return (
+              <>
+                <button onClick={handleCopy}     style={{...B(),padding:'4px 9px',fontSize:'10px',backgroundColor:'transparent',color:'#cbd5e1',outline:'1px solid #1e293b'}}>Copy</button>
+                <button onClick={handleDownload} style={{...B(),padding:'4px 9px',fontSize:'10px',backgroundColor:'#0a1509',color:'#4ade80',outline:'1px solid #1a3a20'}}>⬇ MD ({kb}KB)</button>
+              </>
+            ); })()}
             <button onClick={handleOpenInRefine} style={{...B(),padding:'4px 9px',fontSize:'10px',backgroundColor:'#0a0f1e',color:'#818cf8',outline:'1px solid #818cf833'}}>Edit in Refine ↗</button>
           </div>
         )}

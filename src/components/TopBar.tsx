@@ -219,6 +219,7 @@ export default function TopBar() {
               setRunError('');
               setCurrentStage(0);
               setArtifactCount(0);
+              window.dispatchEvent(new Event('ideagate:clearArtifact'));
               window.dispatchEvent(new Event('ideagate:refresh'));
               setTimeout(() => router.push('/desk'), 50);
             }}

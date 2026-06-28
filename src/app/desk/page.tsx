@@ -335,8 +335,14 @@ export default function DeskPage() {
     try{ const s=localStorage.getItem('ig_snapshots'); if(s) setSnapshots(JSON.parse(s)); }catch{}
     const poll = setInterval(loadData, 4000);
     // Triggered by TopBar's "New Idea" and manual refresh buttons
+    const clearArtifact = () => setSelected(null);
     window.addEventListener('ideagate:refresh', loadData);
-    return () => { clearInterval(poll); window.removeEventListener('ideagate:refresh', loadData); };
+    window.addEventListener('ideagate:clearArtifact', clearArtifact);
+    return () => {
+      clearInterval(poll);
+      window.removeEventListener('ideagate:refresh', loadData);
+      window.removeEventListener('ideagate:clearArtifact', clearArtifact);
+    };
   },[]);
 
   useEffect(()=>{

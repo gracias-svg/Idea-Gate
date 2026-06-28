@@ -16,6 +16,13 @@ const SettingsModal = lazy(() => import('./SettingsModal'));
 
 const MONO: React.CSSProperties = { fontFamily: "'JetBrains Mono','Fira Code',monospace" };
 
+const STAGE_LABELS: Record<number, string> = {
+  0: 'Idea Intake', 1: 'Discovery', 2: 'Problem Definition', 3: 'Solution Design',
+  4: 'MVP Hypothesis', 5: 'Validation', 6: 'Prioritization', 7: 'PRD',
+  8: 'UX Design', 9: 'Usability Planning', 10: 'Architecture',
+  11: 'Backlog & Release', 12: 'Implementation', 13: 'QA & Readiness', 14: 'Prototype Prompt',
+};
+
 export default function TopBar() {
   const pathname  = usePathname();
   const router    = useRouter();
@@ -333,7 +340,7 @@ export default function TopBar() {
             ⟳ Generating
           </span>
           <span style={{ fontSize:'11px', color:'#4ade8088', flexShrink:0 }}>
-            · Stage {currentStage}/14
+            · Stage {currentStage}/14 · {STAGE_LABELS[currentStage] ?? `Stage ${currentStage}`}
           </span>
           <span style={{ fontSize:'11px', color:'#4ade8088', flexShrink:0 }}>
             · {artifactCount} artifact{artifactCount === 1 ? '' : 's'} so far

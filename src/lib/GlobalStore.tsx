@@ -8,6 +8,7 @@
 // Storage: localStorage (V3.1). Migrates to Supabase in V3.4.
 
 import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
+import { MODEL_REGISTRY, LEGACY_KEY_MAP } from '@/lib/model-registry';
 
 // ── Model keys ────────────────────────────────────────────────────────────────
 export type ModelKey =
@@ -51,6 +52,7 @@ export const MODEL_LABELS: Record<ModelKey, ModelMeta> = {
 };
 
 // ── Free model utilities ──────────────────────────────────────────────────────
+// Derived from registry — ModelKeys whose resolved modelId is marked isFree in MODEL_REGISTRY
 // Ordered by recommended priority: owlalpha → nemotron → gptoss
 export const FREE_MODEL_KEYS: ModelKey[] = ['owlalpha', 'nemotron', 'gptoss'] as const;
 

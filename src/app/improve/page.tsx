@@ -16,6 +16,7 @@ import { useGlobalStore } from '@/lib/GlobalStore';
 import { ModelDropdown } from '@/components/ModelDropdown';
 import { parseContent, parseContentDetailed } from '@/lib/parseContent';
 import { useRuntime, getTransitiveDownstream } from '@/lib/RuntimeContext';
+import { MODEL_REGISTRY } from '@/lib/model-registry';
 
 // ── Model catalog ─────────────────────────────────────────────────────────────
 // tier: 'paid'  = billed per token via OpenRouter
@@ -38,6 +39,10 @@ const MODELS = [
   { key:'owlalpha', label:'Owl Alpha',          tier:'free', provider:'OpenRouter',   color:'#a78bfa', cost:'Free',     speed:2, use:'Agentic · tool use · 1M ctx'    },
 ] as const;
 type ModelKey = typeof MODELS[number]['key']; // 10 models: 7 paid + 3 free
+
+// Registry-derived model list — available for Mission 12 dropdown components
+// Original MODELS constant kept unchanged for backward compatibility
+const REGISTRY_MODELS = MODEL_REGISTRY.filter(m => m.enabled && !m.comingSoon);
 
 const STAGE_LABELS: Record<number,string> = {
    0:'Idea Intake',1:'Discovery',2:'Problem Def',3:'Solution Design',4:'MVP Hypothesis',

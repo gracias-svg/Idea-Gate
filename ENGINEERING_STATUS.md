@@ -1,6 +1,49 @@
 # IdeaGate PMOS — Engineering Status
-Last updated: 2026-06-28
-Stable tag: v3.5-stable
+Last updated: 2026-06-30
+Stable tag: v4.0-registry-foundation
+
+## Mission 11 — Model Registry Foundation (COMPLETE — 2026-06-30)
+
+### Mission 11A — Registry Data Layer
+Commit (ui-layer): 56b5553
+- Created src/lib/model-registry.ts — 22 active models, full capability matrix
+- TypeScript interfaces: ModelEntry, ProviderId, ModelCategory, CostTier, Rating
+- LEGACY_KEY_MAP: backward-compatible key resolution (haiku, owlalpha, etc.)
+- Access functions: resolveModelId, validateModelId, getModelById, getEnabledModels
+- validateRegistry(): startup consistency check
+- Status: COMPLETE ✅
+
+### Mission 11B — Backend Route Migration
+Commit (ui-layer): 3470e8f
+- run/route.ts: MODEL_IDS removed, resolveModelId() + validateModelId() added
+- improve/route.ts: same pattern; FREE_MODEL_KEYS replaced with isFree registry field
+- Validation run (meal planning app, Owl Alpha): ALL 15 stages complete, $0.00 cost
+- 33 API calls | 191,325 tokens | 62.5 minutes | cross-stage coherence confirmed
+- Stage 14 synthesis produced "FamilyFork" — named product from lifecycle
+- B4 lifecycle test: PASS (run manually by user after Claude Code skipped step)
+- Status: COMPLETE ✅
+
+### Mission 11C — Frontend State Migration
+Commits (ui-layer): 0a90ea6 | (CLI repo): 0be012d
+- GlobalStore.tsx: MODEL_REGISTRY + LEGACY_KEY_MAP imported; registry import added
+- GlobalStore.tsx: FREE_MODEL_KEYS kept hardcoded (gemini/ring deprecated keys in
+  LEGACY_KEY_MAP are isFree but not in ModelKey union — caused runtime crash when
+  filtered dynamically; fixed by reverting to hardcoded array)
+- improve/page.tsx: Strategy B — REGISTRY_MODELS added alongside MODELS (as const
+  constraint + derived ModelKey type made Strategy A unsafe)
+- C4 smoke test: PASS — dropdown renders correctly, no runtime errors
+- IDEAGATE-MASTER-TODO.md: P-NEW-1 (max_tokens 4K→8K) and P-NEW-2 (Stage 10 prompt)
+  added as tracked items for post-Mission-11D implementation
+- Status: COMPLETE ✅
+
+### What Changed Across Mission 11
+Before: Model IDs hardcoded in 3+ files. 8 models in dropdown. No capability metadata.
+After:  model-registry.ts is canonical source. 22 models registered. Full capability
+        matrix per model. Adding a new model = edit one file only. Backward compatible.
+
+### Next: Mission 12 — Premium Model Selector Dropdown UI
+
+---
 
 ## Architecture Overview
 

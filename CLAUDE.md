@@ -9,6 +9,26 @@ DO NOT create files outside these two locations.
 DO NOT duplicate any file you are modifying.
 DO NOT move files between these two locations.
 
+## MODEL REGISTRY — CANONICAL SOURCE (added Mission 11D)
+
+Location:  /Users/apple/agent-zero-data/workdir/ui-layer/src/lib/model-registry.ts
+Spec:      /Users/apple/idea-gate-ui-safe/IDEAGATE-MODEL-PLATFORM-SPECIFICATION.md
+
+RULES — NEVER VIOLATE:
+- Model IDs are defined ONLY in model-registry.ts
+- NEVER hardcode a model ID anywhere else in the codebase
+- NEVER add MODEL_IDS or MODEL_LABELS constants to any new file
+- Use resolveModelId() for all model key/ID resolution
+- Use validateModelId() at every API boundary before resolveModelId()
+- LEGACY_KEY_MAP ensures backward compatibility — never remove entries from it
+
+ADDING A NEW MODEL: edit model-registry.ts only. No other file changes needed.
+DEPRECATING A MODEL: set enabled:false and status:'deprecated'. No other changes.
+
+QUALITY FINDINGS FROM VALIDATION RUN (Mission 11B):
+- 52% truncation rate observed with Owl Alpha (4,000 token max_tokens cap)
+- Fix tracked as P-NEW-1 in IDEAGATE-MASTER-TODO.md — implement after Mission 11D
+
 ## PROTECTED FILES — DO NOT MODIFY UNLESS SESSION GOAL IS EXPLICITLY THIS FILE
 /Users/apple/idea-gate-ui-safe/src/config.js
 /Users/apple/idea-gate-ui-safe/src/utils/llm.js
@@ -91,23 +111,26 @@ Mission 4: Acceptance testing — all 10 programmatic checks passed
 Mission 5: Production readiness audit — 12-item roadmap, architecture analysis
 Mission 6A: Repository secured — TypeScript clean, 10 uncommitted files committed,
             v3.3-stable tagged and pushed, ENGINEERING_STATUS.md created
-Mission 6B: Run persistence — this session (fix/run-persistence branch)
+Mission 6B: Run persistence (.current-run.json, GET /api/run restore)
+Mission 7:  Stop button (DELETE /api/run, SIGTERM/SIGKILL, PID file)
+Mission 8:  Live stage indicator (TopBar banner, STAGE_LABELS map)
+Mission 9:  Coordinator stability (type-safe output, quality gate, model fallback)
+Mission 10: Content quality (context injection, field sanitization, off-topic detection)
+Mission 11: Model Registry Foundation
+  11A: model-registry.ts created (22 models, full capability matrix) — 56b5553
+  11B: run/route.ts + improve/route.ts migrated to registry — 3470e8f
+  11C: GlobalStore.tsx + improve/page.tsx migrated to registry — 0a90ea6
+  11D: Documentation + validation + v4.0-registry-foundation tag
 
 ## STABLE BASELINE
-Tag: v3.3-stable (2026-06-27)
+Tag: v4.0-registry-foundation (2026-06-30)
 GitHub: https://github.com/gracias-svg/Idea-Gate
 
 ## NEXT SESSIONS
-Mission 6B (current): fix/run-persistence
-  write .current-run.json on lifecycle start
-  restore isRunning + idea on browser refresh via GET /api/run
-  files: src/app/api/run/route.ts, src/components/TopBar.tsx
-
-Mission 7: fix/stop-button
-  write .current-run.pid, DELETE /api/run, Stop UI button in TopBar
-
-Mission 8: fix/live-stage-indicator
-  stage name + active agent in TopBar banner while lifecycle runs
+Mission 12: Premium Model Selector Dropdown UI
+  - Replace current ModelDropdown with registry-driven 22-model categorized dropdown
+  - 7 tier groupings, search/filter, model metadata badges
+  - REGISTRY_MODELS already available in improve/page.tsx for this work
 
 DO NOT touch coordinator, lifecycle engine, llm.js, parseContent, desk
 unless that mission's explicit goal names those files.

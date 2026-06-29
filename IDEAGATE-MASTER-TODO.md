@@ -42,6 +42,40 @@ Update the COMPLETED section after each mission.
 
 ---
 
+## P-NEW-1 — PRIORITY HIGH — Increase max_tokens (52% truncation rate confirmed)
+
+**Discovery:** During Mission 11B validation run (meal planning app, Owl Alpha, 33 API calls),
+17 of 33 calls (52%) returned finish_reason: length instead of stop. Every truncated call
+maxed out at exactly 4,000 completion tokens and was cut off mid-generation. This is the
+root cause of 7/15 stages showing low confidence and "Exit criteria weak" in the run log.
+
+**Fix required (DO NOT IMPLEMENT until after Mission 11D):**
+- Increase max_tokens for agent calls: 4,000 → 8,000
+- Increase max_tokens for merge calls: 4,000 → 12,000
+- File to change: /Users/apple/idea-gate-ui-safe/src/utils/llm.js (or coordinator-v2.js)
+- Expected impact: truncation rate drops from 52% to near 0%, all 7 low-confidence stages
+  become high confidence
+
+**Do not implement during Mission 11. Implement as a standalone mission after 11D.**
+
+---
+
+## P-NEW-2 — PRIORITY MEDIUM — Strengthen Stage 10 Architecture prompt
+
+**Discovery:** Stage 10 (Architecture) produced only 924 words in the validation run —
+the thinnest artifact of all 15 stages. This is partly due to truncation (P-NEW-1) and
+partly due to the prompt not requiring a minimum structure.
+
+**Fix required (DO NOT IMPLEMENT until P-NEW-1 is done):**
+- Add explicit minimum structure requirements to the Architecture agent prompt
+- Must include: API design, data model, deployment architecture, tech stack, scalability
+- File to change: lifecycle stage definition for Stage 10 in lifecycle-engine.js or similar
+- Expected impact: Architecture stage produces 2,000+ words with consistent structure
+
+**Do not implement during Mission 11. Implement after P-NEW-1.**
+
+---
+
 ## PRIORITY 0 — IMMEDIATE (next mission)
 
 - [ ] Raise quality gate word threshold from 150 to 300 words for standard stages

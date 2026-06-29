@@ -7,35 +7,11 @@
 import { NextResponse } from 'next/server';
 import path from 'path';
 import fs from 'fs';
+import { resolveModelId, validateModelId, getValidModelIds, getModelById } from '@/lib/model-registry';
 
 const BASE_PATH   = process.env.PROJECT_PATH  ?? '';
 const OPENROUTER  = 'https://openrouter.ai/api/v1/chat/completions';
 const OR_KEY      = process.env.OPENROUTER_API_KEY ?? '';
-
-// ── Model ID map (ModelKey → OpenRouter model string) ─────────────────────────
-// Paid models — billed per token
-// Free tier models — OpenRouter free tier (rate-limited, $0 cost)
-// Fallback: if a key is unrecognised, resolves to MODEL_IDS.owlalpha (free default)
-const MODEL_IDS: Record<string, string> = {
-  // ── Paid ──────────────────────────────────────────────────────────────────
-  haiku:    'anthropic/claude-haiku-4-5',
-  sonnet:   'anthropic/claude-sonnet-4-5',
-  deepseek: 'deepseek/deepseek-r1',
-  llama:    'meta-llama/llama-3.3-70b-instruct',
-  qwen:     'qwen/qwen-2.5-72b-instruct',
-  mistral:  'mistralai/mistral-large-2411',
-  gpt4o:    'openai/gpt-4o',
-  // gemini removed: google/gemini-flash-1.5 → OpenRouter 404 "no endpoints" (confirmed 2026-06-27)
-  // ── Free tier (OpenRouter :free suffix or openrouter/ prefix) ─────────────
-  // Recommended priority: owlalpha → nemotron → gptoss
-  owlalpha: 'openrouter/owl-alpha',                          // 1M ctx · agentic · $0
-  nemotron: 'nvidia/nemotron-3-super-120b-a12b:free',        // 1M ctx · document gen · $0
-  // ring removed: inclusionai/ring-2.6-1t:free → OpenRouter 404 "no longer free" (confirmed 2026-06-27)
-  gptoss:   'openai/gpt-oss-120b:free',                      // 128K ctx · structured output · $0
-};
-
-// Free model keys — used to set appropriate max_tokens cap
-const FREE_MODEL_KEYS = new Set(['owlalpha', 'nemotron', 'gptoss']);
 
 // ── Resolve artifact path ──────────────────────────────────────────────────────
 function resolveArtifactPath(fileName: string): string | null {
@@ -85,7 +61,7 @@ export async function POST(req: Request) {
       intent,
       extent        = 'medium',
       scope         = 'stage',
-      model         = 'owlalpha',   // key from MODEL_IDS lookup
+      model         = 'owlalpha',   // short key or full model ID (resolved via registry)
       customModelId = '',          // raw OpenRouter model ID — overrides model key when set
       maxTokens     = 4000,
       apiKey        = '',           // from settings.openRouterApiKey (overrides env var)
@@ -145,10 +121,17 @@ Return the complete improved artifact.`;
       }, { status: 500 });
     }
 
-    // Custom model ID (pasted in Settings) takes priority over dropdown selection
-    const modelId = (customModelId && customModelId.trim())
+    // Validate model key against registry — customModelId (user-pasted raw ID) bypasses this
+    if (!customModelId.trim() && !validateModelId(model)) {
+      return NextResponse.json(
+        { error: 'Unknown or unavailable model', received: model, availableModels: getValidModelIds().slice(0, 8) },
+        { status: 400 },
+      );
+    }
+    // Resolve: customModelId wins if set (user's responsibility), otherwise use registry
+    const resolvedModelId = customModelId.trim()
       ? customModelId.trim()
-      : (MODEL_IDS[model] ?? MODEL_IDS.owlalpha);
+      : resolveModelId(model);
 
     // ── LLM call — max_tokens from settings.tokenBudgetPerCall ──────────────
     const llmRes = await fetch(OPENROUTER, {
@@ -160,8 +143,8 @@ Return the complete improved artifact.`;
         'X-Title':       'IdeaGate PMOS',
       },
       body: JSON.stringify({
-        model:      modelId,
-        max_tokens: Math.max(500, Math.min(maxTokens, FREE_MODEL_KEYS.has(model) ? 8000 : 16000)),
+        model:      resolvedModelId,
+        max_tokens: Math.max(500, Math.min(maxTokens, getModelById(resolvedModelId)?.isFree ? 8000 : 16000)),
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user',   content: userPrompt   },
@@ -189,7 +172,7 @@ Return the complete improved artifact.`;
     return NextResponse.json({
       success:      true,
       content:      improved,
-      model:        modelId,
+      model:        resolvedModelId,
       tokensUsed:   llmData.usage?.total_tokens   ?? 0,
       inputTokens:  llmData.usage?.prompt_tokens  ?? 0,
       outputTokens: llmData.usage?.completion_tokens ?? 0,

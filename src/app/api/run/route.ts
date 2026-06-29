@@ -25,25 +25,9 @@ import { NextResponse } from 'next/server';
 import { spawn }        from 'child_process';
 import fs                from 'fs';
 import path              from 'path';
+import { resolveModelId, validateModelId, getValidModelIds } from '@/lib/model-registry';
 
 const CLI_DIR = process.env.CLI_DIR ?? '';
-
-// Model key → OpenRouter model ID map (mirrors GlobalStore MODEL_IDS)
-// Kept in sync with improve-route.ts — both use the same map.
-const MODEL_IDS: Record<string, string> = {
-  haiku:    'anthropic/claude-haiku-4-5',
-  sonnet:   'anthropic/claude-sonnet-4-5',
-  deepseek: 'deepseek/deepseek-r1',
-  llama:    'meta-llama/llama-3.3-70b-instruct',
-  qwen:     'qwen/qwen-2.5-72b-instruct',
-  mistral:  'mistralai/mistral-large-2411',
-  gpt4o:    'openai/gpt-4o',
-  // gemini removed: google/gemini-flash-1.5 → OpenRouter 404 "no endpoints" (confirmed 2026-06-27)
-  owlalpha: 'openrouter/owl-alpha',
-  nemotron: 'nvidia/nemotron-3-super-120b-a12b:free',
-  // ring removed: inclusionai/ring-2.6-1t:free → OpenRouter 404 "no longer free" (confirmed 2026-06-27)
-  gptoss:   'openai/gpt-oss-120b:free',
-};
 
 // ── Read CLI_DIR/.env directly off disk — bypasses shell state entirely ───
 function readDotEnvFile(): Record<string, string> {
@@ -141,10 +125,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'idea is required' }, { status: 400 });
   }
 
-  // Resolve the model ID — UI selection always wins over .env's OPENROUTER_MODEL
+  // Validate model key against registry — customModelId (user-pasted raw ID) bypasses this
+  if (!customModelId.trim() && !validateModelId(model)) {
+    return NextResponse.json(
+      { error: 'Unknown or unavailable model', received: model, availableModels: getValidModelIds().slice(0, 8) },
+      { status: 400 }
+    );
+  }
+  // Resolve: customModelId wins if set (user's responsibility), otherwise use registry
   const resolvedModel = customModelId.trim()
     ? customModelId.trim()
-    : (MODEL_IDS[model] ?? MODEL_IDS.owlalpha);
+    : resolveModelId(model);
 
   // ── Resolve credentials explicitly — UI override → .env file → nothing ──
   // Deliberately does NOT fall back to process.env, since that's the

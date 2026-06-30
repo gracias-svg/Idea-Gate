@@ -302,6 +302,58 @@ Specific improvements needed:
 
 ---
 
+## P-NEW-11 — PRIORITY MEDIUM — Refresh button non-functional
+
+Discovery: User reports the refresh button (top-left, near Stage indicator) does
+not work on the live app. Not yet diagnosed — likely in TopBar.tsx's handleRefresh
+function or the /api/data and /api/run GET polling it triggers. Needs investigation
+before a fix mission is scoped. Do not diagnose or fix now — log only.
+
+---
+
+## P-NEW-12 — PRIORITY HIGH (Future Theme) — "Improve" page evolution into a full editing studio
+
+Discovery: User's product vision for the Improve page goes well beyond its current
+scope. Target experience: Notion/Figma/Cursor-style document studio where AI-generated
+artifacts can be directly edited inline, sections added/removed, diagrams manipulated,
+external documents uploaded and extracted into specific sections, and regeneration
+triggered from any edited checkpoint rather than only full-document regeneration.
+
+This is NOT a rename or small UI fix — it is a distinct future theme requiring its
+own specification document (similar in weight to IDEAGATE-MISSION-12-MODEL-SELECTOR-
+SPECIFICATION.md) before any implementation begins. Do not scope a mission for this
+without that specification first.
+
+Related smaller item bundled here: "Edit & Refine" button (visible on Desk, next to
+Download MD) currently links to a tab labeled "improve" — the two names don't match
+and should be reconciled once this page's identity is decided. Each of the three tabs
+(desk/improve/office) should also get a distinct icon for visual consistency.
+
+---
+
+## P-NEW-13 — PRIORITY MEDIUM (Future Theme) — Office page needs significant rework
+
+Discovery: User flagged that Office was the original core idea behind IdeaGate and
+currently needs substantial work to live up to that vision. No specific scope defined
+yet — flagged for a future planning session, not an implementation mission.
+
+---
+
+## P-NEW-14 — PRIORITY LOW (Long-term, ongoing) — Retire legacy ModelKey/MODEL_LABELS entirely
+
+Discovery: Mission 12B introduced getModelMeta()/isModelFree() as safe accessor
+functions that fall back to the registry when a key isn't a legacy ModelKey. This
+was a deliberate bridge, not a permanent architecture. Goal: over time, migrate
+every remaining ModelKey-typed field, MODEL_LABELS lookup, and legacy short-key
+usage to read directly from MODEL_REGISTRY via modelId, eliminating the need for
+the bridge functions and the dual-key system (legacy short keys + full registry IDs)
+entirely. This should happen gradually as each remaining surface (Settings Modal,
+Office page, Improve page, GlobalStore types) is touched by future missions — not as
+one large risky rewrite. Track completion by checking remaining grep hits for
+"ModelKey" and "MODEL_LABELS" across the codebase periodically.
+
+---
+
 ## P-NEW-10 — PRIORITY CRITICAL — Owl Alpha may be retiring; FALLBACK_MODEL_ID at risk
 
 Discovery: During Mission 12B verification run (Gemini 2.5 Flash selected, 36/37

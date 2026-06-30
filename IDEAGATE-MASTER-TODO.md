@@ -76,6 +76,38 @@ partly due to the prompt not requiring a minimum structure.
 
 ---
 
+## P-NEW-3 — PRIORITY HIGH — Add third recovery model to fallback chain
+
+**Discovery:** During Mission 11D validation run (StandupFlow idea, 35 API calls,
+11-hour run), Owl Alpha returned genuine errors (400 "Provider returned error",
+"Premature close") at 6 stages. Twice (Stage 8, Stage 13) BOTH fallback models
+(owl-alpha retry + nemotron-3-super) were exhausted simultaneously. Coordinator
+correctly degraded to raw agent output rather than crashing, but this is the
+resilience system at its limit.
+
+**Fix required (DO NOT IMPLEMENT now — implement with P-NEW-1):**
+- Add a third model to RECOVERY_MODEL_IDS in model-registry.ts
+- Recommended: 'openai/gpt-oss-120b:free' (already in registry, stable in testing)
+- File: ui-layer/src/lib/model-registry.ts (RECOVERY_MODEL_IDS array)
+- Coordinator change: extend merge fallback loop to try 3rd model before
+  falling back to raw agent output
+
+---
+
+## P-NEW-4 — PRIORITY MEDIUM — Document sleep prevention for long runs
+
+**Discovery:** Same validation run took 11 hours wall-clock vs 56 minutes actual
+generation time. Root cause: Mac slept overnight, pausing all network activity
+without crashing the process. Run completed successfully once machine resumed.
+
+**Fix required (documentation only):**
+- Add to DEMO_CHECKLIST.md: "Before starting a lifecycle run lasting more than
+  a few minutes, prevent sleep: run `caffeinate -d` in a separate terminal, or
+  disable sleep in System Settings while plugged in."
+- No code change needed.
+
+---
+
 ## PRIORITY 0 — IMMEDIATE (next mission)
 
 - [ ] Raise quality gate word threshold from 150 to 300 words for standard stages

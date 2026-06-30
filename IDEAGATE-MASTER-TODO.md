@@ -302,6 +302,37 @@ Specific improvements needed:
 
 ---
 
+## P-NEW-10 — PRIORITY CRITICAL — Owl Alpha may be retiring; FALLBACK_MODEL_ID at risk
+
+Discovery: During Mission 12B verification run (Gemini 2.5 Flash selected, 36/37
+calls confirmed matching via OpenRouter logs), a Stage 6 merge fallback attempt to
+openrouter/owl-alpha returned 'OpenRouter error 404: No endpoints found for
+openrouter/owl-alpha' — identical to the error signature already recorded for two
+other models now in DEPRECATED_MODELS (google/gemini-flash-1.5,
+inclusionai/ring-2.6-1t original free tier).
+
+Risk: model-registry.ts currently sets BOTH FALLBACK_MODEL_ID and DEFAULT_MODEL_ID
+to 'openrouter/owl-alpha'. If Owl Alpha is genuinely being retired, any code path
+relying on this safety-net constant (resolveModelId() fallthrough, first-run
+default in DEFAULT_SETTINGS, RECOVERY_MODEL_IDS[0]) would silently route to a dead
+model.
+
+Action required (DO NOT implement now — separate mission, not part of 12-series):
+1. Verify Owl Alpha's current status directly at openrouter.ai/models before
+   making any change — a single 404 could be transient, not confirmed retirement
+2. If confirmed retiring: update FALLBACK_MODEL_ID and DEFAULT_MODEL_ID to a
+   stable free model (nvidia/nemotron-3-ultra-253b or nemotron-3-super are strong
+   candidates per registry's own reliabilityScore field)
+3. Implement P-NEW-3 (third recovery model in chain) as a related, complementary fix
+4. Update DEFAULT_SETTINGS.defaultModel in GlobalStore.tsx if it still defaults to
+   'owlalpha' legacy key
+
+This is now CRITICAL priority, elevated from P-NEW-3's original HIGH, because it
+moved from theoretical risk (noted in IDEAGATE-MODEL-PLATFORM-SPECIFICATION.md
+Section 28.1) to an OBSERVED failure in production.
+
+---
+
 ## HIGH PRIORITY — MODEL SELECTION SYNCHRONIZATION
 
 P-NEW-9 — PRIORITY HIGH — Model selection synchronization audit

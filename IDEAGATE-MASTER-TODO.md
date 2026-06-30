@@ -302,6 +302,26 @@ Specific improvements needed:
 
 ---
 
+## HIGH PRIORITY — MODEL SELECTION SYNCHRONIZATION
+
+P-NEW-9 — PRIORITY HIGH — Model selection synchronization audit
+
+Discovery: Mission 12B's first wiring attempt produced a runtime crash when selecting
+any model not in the legacy 10-model set. The new ModelSelector writes full registry
+IDs (e.g. 'deepseek/deepseek-r1') while legacy components indexed MODEL_LABELS with
+those keys — MODEL_LABELS only has 10 short-key entries. Fixed via getModelMeta() /
+isModelFree() safe accessors with registry fallback in GlobalStore.tsx, applied to
+all three legacy read sites (office/page.tsx, ModelDropdown.tsx, SettingsModal.tsx).
+
+Backlog item: when Mission 12C retires remaining legacy ModelDropdown usages, verify
+EVERY model selector surface (Desk, Improve, Office, Settings) reflects the same
+GlobalStore.defaultModel with zero divergence. Explicitly checklist this — do not
+assume it from code inspection alone.
+
+Not implemented now. Tracked for 12C completion verification.
+
+---
+
 ## LOW PRIORITY — INFRASTRUCTURE CLEANUP
 
 P-NEW-8 — LOW — Stop button should delete .current-run.json on cleanup

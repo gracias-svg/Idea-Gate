@@ -108,6 +108,35 @@ without crashing the process. Run completed successfully once machine resumed.
 
 ---
 
+## P-NEW-5 — PRIORITY HIGH — Continue button (checkpoint-resume, opposite of Stop)
+
+**Concept:** When a lifecycle stalls with no active API call and no error shown,
+provide a "Continue" action that resumes from the exact last completed stage
+in journey.json — not a full restart. Mirrors the Stop button's behavior in
+reverse: Stop halts everything immediately, no tokens wasted; Continue fires
+one fresh probe call from the saved checkpoint state.
+
+Industry pattern reference: checkpoint-and-resume / circuit-breaker-resume,
+used in LangGraph, CrewAI Flows, Google ADK long-running agents (2026).
+
+**Implementation sketch (DO NOT implement now):**
+- New route: POST /api/run/continue
+- Reads journey.json for last incomplete/stalled stage
+- Resumes coordinator-v2.js loop from that stage, not Stage 0
+- UI: Continue button appears in TopBar when isRunning=false but
+  currentStage < 14 and no completion marker exists
+
+---
+
+## P-NEW-6 — PRIORITY MEDIUM — New Idea: audit for guaranteed blank canvas
+
+**Concept:** Confirm "+ New Idea" produces a fully empty state across ALL views
+simultaneously (Desk, Improve, Office) — not just the Desk artifact list.
+Audit for any stale cached state, leftover left-rail items, or cross-tab
+state bleed via BroadcastChannel.
+
+---
+
 ## PRIORITY 0 — IMMEDIATE (next mission)
 
 - [ ] Raise quality gate word threshold from 150 to 300 words for standard stages

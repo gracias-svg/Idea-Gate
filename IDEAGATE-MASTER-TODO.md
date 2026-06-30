@@ -302,6 +302,16 @@ Specific improvements needed:
 
 ---
 
+## LOW PRIORITY — INFRASTRUCTURE CLEANUP
+
+P-NEW-8 — LOW — Stop button should delete .current-run.json on cleanup
+  Discovery: Stop button (Mission 7) kills the process but does not remove
+  .current-run.json, leaving a stale lock file that can incorrectly signal an
+  active run to future checks. Fix: have DELETE /api/run handler unlink
+  .current-run.json (and .current-run.pid if present) after SIGTERM/SIGKILL.
+
+---
+
 ## POST-INTEGRATION UX POLISH (Future — after Mission 12 complete)
 
 P-NEW-7 — Polish backlog for ModelSelector, post-12D

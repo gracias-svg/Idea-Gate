@@ -10,6 +10,9 @@ import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useRuntime } from '@/lib/RuntimeContext';
 import { useGlobalStore } from '@/lib/GlobalStore';
+// DEPRECATED as of Mission 12B — TopBar now uses ModelSelector. ModelDropdown.tsx is
+// kept for SettingsModal.tsx and office/page.tsx, which still reference it directly.
+import { ModelSelector } from '@/components/ModelSelector';
 
 // Lazy-load the settings modal — it's heavy, only load when opened
 const SettingsModal = lazy(() => import('./SettingsModal'));
@@ -27,7 +30,7 @@ export default function TopBar() {
   const pathname  = usePathname();
   const router    = useRouter();
   const runtime   = useRuntime();
-  const { state:{ settings } } = useGlobalStore();
+  const { state:{ settings }, updateSettings } = useGlobalStore();
 
   const [idea,          setIdea]          = useState('');
   const [currentStage,  setCurrentStage]  = useState(0);
@@ -247,20 +250,12 @@ export default function TopBar() {
           </button>
         )}
 
-        {/* Active run model indicator — shows which model the lifecycle will use */}
-        {(() => {
-          const label = settings.customModelId?.trim()
-            ? settings.customModelId.split('/').pop() ?? settings.customModelId  // e.g. "claude-haiku-4-5"
-            : settings.defaultModel;
-          return (
-            <div
-              title={`Lifecycle will run using: ${settings.customModelId?.trim() || settings.defaultModel}. Change in Settings → AI Models.`}
-              style={{ fontSize:'9px', color:'#334155', flexShrink:0, cursor:'help', ...MONO }}
-            >
-              {label.length > 14 ? label.slice(0, 14) + '…' : label}
-            </div>
-          );
-        })()}
+        {/* Model selector — Mission 12B: replaced inline text indicator with full ModelSelector */}
+        <ModelSelector
+          selectedModelId={settings.defaultModel}
+          onSelectModel={(modelId) => updateSettings({ defaultModel: modelId })}
+          disabled={isRunning}
+        />
 
         {/* Runtime indicators */}
         {staleCount > 0 && (

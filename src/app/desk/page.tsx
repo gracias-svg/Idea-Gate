@@ -6,7 +6,6 @@
 // TSX parser cannot handle `elements.push(<jsx>)` followed by `continue` in a for loop.
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { ModelDropdown } from '@/components/ModelDropdown';
 import { useGlobalStore } from '@/lib/GlobalStore';
 import { useRuntime } from '@/lib/RuntimeContext';
 import { parseContent } from '@/lib/parseContent';
@@ -441,9 +440,7 @@ export default function DeskPage() {
         {!focusMode && (
           <div style={{width:'196px',flexShrink:0,borderRight:'1px solid #0a1a2e',backgroundColor:'#020c06',overflowY:'auto',display:'flex',flexDirection:'column'}}>
             <div style={{padding:'9px 13px 6px',fontSize:'12px',color:'#2a5a30',letterSpacing:'0.12em',fontWeight:700}}>ARTIFACTS · {artifacts.length}</div>
-            <div style={{padding:'4px 12px 8px',borderBottom:'1px solid #0a1a2e'}}>
-              <ModelDropdown compact />
-            </div>
+
             {artifacts.map(f => {
               const n=stageNum(f), col=STAGE_COLOR[n]??'#94a3b8', active=selected===f, stale=runtime.isStale(f), v=runtime.getVersion(f);
               return (

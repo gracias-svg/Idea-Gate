@@ -9,7 +9,7 @@
 import dynamic from 'next/dynamic';
 import { useState, useEffect, useRef } from 'react';
 import { useRuntime, ARTIFACT_DEPS } from '@/lib/RuntimeContext';
-import { useGlobalStore, MODEL_LABELS, FREE_MODEL_KEYS } from '@/lib/GlobalStore';
+import { useGlobalStore, getModelMeta, isModelFree } from '@/lib/GlobalStore';
 import type { AgentData, OfficeSceneConfig } from '../../game/OfficeScene';
 
 const PhaserGame = dynamic(() => import('./PhaserGame'), { ssr: false });
@@ -307,8 +307,8 @@ export default function OfficePage() {
               {/* Inline model display using component-level settings */}
               {(()=>{
                 const key = settings.defaultModel;
-                const meta = MODEL_LABELS[key];
-                const isFree = FREE_MODEL_KEYS.includes(key);
+                const meta = getModelMeta(key);
+                const isFree = isModelFree(key);
                 return (
                   <div style={{display:'flex',alignItems:'center',gap:'5px',fontSize:'10px',color:'#94a3b8'}}>
                     <div style={{width:'5px',height:'5px',borderRadius:'50%',backgroundColor:isFree?'#84cc16':'#4ade80',flexShrink:0}}/>

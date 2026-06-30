@@ -8,7 +8,7 @@
 // Storage: localStorage (V3.1). Migrates to Supabase in V3.4.
 
 import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
-import { MODEL_REGISTRY, LEGACY_KEY_MAP } from '@/lib/model-registry';
+import { MODEL_REGISTRY, LEGACY_KEY_MAP, getModelById } from '@/lib/model-registry';
 
 // ── Model keys ────────────────────────────────────────────────────────────────
 export type ModelKey =
@@ -59,6 +59,38 @@ export const FREE_MODEL_KEYS: ModelKey[] = ['owlalpha', 'nemotron', 'gptoss'] as
 // Free model fallback chain for UI and future coordinator use
 // Primary: owlalpha · Fallback 1: nemotron · Fallback 2: gptoss
 export const FREE_MODEL_FALLBACK_CHAIN: ModelKey[] = FREE_MODEL_KEYS;
+
+// ── Safe model metadata accessors (added post-12B crash fix) ─────────────────
+// defaultModel may now hold either a legacy ModelKey ('deepseek') OR a full
+// registry modelId ('deepseek/deepseek-r1') since ModelSelector writes full IDs.
+// These functions never throw — they fall back to the registry, then to a raw
+// display of the key itself, rather than crashing on an unrecognized key.
+
+export function getModelMeta(key: string): ModelMeta {
+  const legacyMeta = MODEL_LABELS[key as ModelKey];
+  if (legacyMeta) return legacyMeta;
+
+  const entry = getModelById(key);
+  if (entry) {
+    return {
+      label:    entry.displayName,
+      provider: entry.provider,
+      cost:     entry.isFree ? 'Free' : (entry.inputCostPerMillion ? `$${entry.inputCostPerMillion}/M` : 'Varies'),
+      best:     entry.bestUseCases[0] ?? '',
+      free:     entry.isFree,
+      contextK: Math.round(entry.contextWindow / 1000),
+    };
+  }
+
+  // Unknown key — display gracefully instead of crashing
+  return { label: key, provider: 'Unknown', cost: '—', best: '—' };
+}
+
+export function isModelFree(key: string): boolean {
+  if (FREE_MODEL_KEYS.includes(key as ModelKey)) return true;
+  const entry = getModelById(key);
+  return entry?.isFree ?? false;
+}
 
 // ── Builder IDs ───────────────────────────────────────────────────────────────
 export type BuilderId =
@@ -117,7 +149,10 @@ export interface GlobalSettings {
   crtIntensity:       'off' | 'subtle' | 'strong'; // [P] Office canvas scanlines
 
   // ── PERSONAL: AI MODELS ──────────────────────────── [P]
-  defaultModel:       ModelKey;                 // [P] Pre-selected model in Improve header
+  defaultModel:       string;                   // [P] Full registry modelId (e.g. 'anthropic/claude-sonnet-4-6').
+                                                  // Widened from ModelKey in Mission 12B to support full
+                                                  // registry IDs. ModelKey/MODEL_LABELS unchanged — still
+                                                  // used by legacy ModelDropdown/SettingsModal/office page.
   tokenBudgetPerCall: number;                   // [P] Hard max_tokens ceiling (1000–8000)
   openRouterApiKey:   string;                   // [P] OpenRouter API key — overrides OPENROUTER_API_KEY env var
   anthropicApiKey:    string;                   // [P] Anthropic API key — overrides ANTHROPIC_API_KEY env var

@@ -11,7 +11,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  useGlobalStore, MODEL_LABELS, FREE_MODEL_KEYS,
+  useGlobalStore, MODEL_LABELS, FREE_MODEL_KEYS, getModelMeta, isModelFree,
   type ModelKey,
 } from '@/lib/GlobalStore';
 
@@ -32,8 +32,8 @@ interface ModelDropdownProps {
 export function ModelDropdown({ onSelect, compact = false }: ModelDropdownProps) {
   const { state: { settings }, updateSettings } = useGlobalStore();
   const currentKey = settings.defaultModel;
-  const currentMeta = MODEL_LABELS[currentKey];
-  const isFreeModel = FREE_MODEL_KEYS.includes(currentKey);
+  const currentMeta = getModelMeta(currentKey);
+  const isFreeModel = isModelFree(currentKey);
 
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);

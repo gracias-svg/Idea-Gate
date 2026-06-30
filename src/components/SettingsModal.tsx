@@ -11,7 +11,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   useGlobalStore, DEFAULT_SETTINGS,
-  MODEL_LABELS, COMPRESSION_LABELS,
+  MODEL_LABELS, COMPRESSION_LABELS, getModelMeta,
   OPERATING_MODE_META, OPERATING_MODE_PRESETS,
   AUTONOMY_META,
   type OperatingMode, type CoordinatorAutonomy, type ModelKey,
@@ -184,7 +184,7 @@ function CAppearance(){
 
 function CAIModels(){
   const {state:{settings},updateSettings}=useGlobalStore();const s=settings;
-  const active=MODEL_LABELS[s.defaultModel];
+  const active=getModelMeta(s.defaultModel);
   const isFree = active.free === true;
   return(<div>
     <div style={{marginBottom:'12px',padding:'10px',backgroundColor:S.card,border:`1px solid ${isFree?'#84cc1633':S.indigo+'33'}`,borderRadius:'4px',fontSize:'11px',color:S.textDim,lineHeight:1.8}}>
@@ -362,7 +362,7 @@ function COperatingMode(){
           </div>
           <div style={{fontSize:'10px',color:S.textDim,lineHeight:1.5,marginBottom:'6px'}}>{meta.description}</div>
           <div style={{fontSize:'9px',color:S.textMute,display:'flex',gap:'8px',flexWrap:'wrap' as const}}>
-            <span>{MODEL_LABELS[preset.defaultModel!].label}</span><span>·</span>
+            <span>{getModelMeta(preset.defaultModel!).label}</span><span>·</span>
             <span>{((preset.tokenBudgetPerCall??4000)/1000).toFixed(1)}k tokens</span><span>·</span>
             <span>{COMPRESSION_LABELS[preset.defaultCompression!].label}</span>
           </div>

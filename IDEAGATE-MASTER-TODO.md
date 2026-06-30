@@ -302,6 +302,25 @@ Specific improvements needed:
 
 ---
 
+## POST-INTEGRATION UX POLISH (Future — after Mission 12 complete)
+
+P-NEW-7 — Polish backlog for ModelSelector, post-12D
+
+Items deferred from Mission 12A-D for later UX refinement:
+  - Rich hover states beyond current basic highlight
+  - Better selection indicator variations (beyond current checkmark)
+  - Model recommendation badges (isRecommended field already exists in registry)
+  - Favourites / pinned models (Spec Section 2, explicitly deferred to 12-Phase-2)
+  - Recently Used section (RecentlyUsed.tsx stub already exists, unwired)
+  - Keyboard shortcuts beyond Arrow/Enter/Escape
+  - Accessibility audit beyond the ARIA basics already implemented
+  - Responsive/mobile-specific layout (explicitly out of scope per Spec Section 10)
+  - Performance optimization if model count grows significantly beyond current 22
+
+None of these implemented now.
+
+---
+
 ## MODEL REGISTRY REFERENCE (memorize for future missions)
 
 Full IDEAGATE-AI-MODEL-REGISTRY.md has been drafted (24 models, 7 categories).

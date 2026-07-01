@@ -13,6 +13,7 @@ import { useGlobalStore } from '@/lib/GlobalStore';
 // DEPRECATED as of Mission 12B — TopBar now uses ModelSelector. ModelDropdown.tsx is
 // kept for SettingsModal.tsx and office/page.tsx, which still reference it directly.
 import { ModelSelector } from '@/components/ModelSelector';
+import { resolveModelId } from '@/lib/model-registry';
 
 // Lazy-load the settings modal — it's heavy, only load when opened
 const SettingsModal = lazy(() => import('./SettingsModal'));
@@ -252,7 +253,7 @@ export default function TopBar() {
 
         {/* Model selector — Mission 12B: replaced inline text indicator with full ModelSelector */}
         <ModelSelector
-          selectedModelId={settings.defaultModel}
+          selectedModelId={resolveModelId(settings.defaultModel)}
           onSelectModel={(modelId) => updateSettings({ defaultModel: modelId })}
           disabled={isRunning}
         />

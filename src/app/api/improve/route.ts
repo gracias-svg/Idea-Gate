@@ -11,7 +11,32 @@ import { resolveModelId, validateModelId, getValidModelIds, getModelById } from 
 
 const BASE_PATH   = process.env.PROJECT_PATH  ?? '';
 const OPENROUTER  = 'https://openrouter.ai/api/v1/chat/completions';
-const OR_KEY      = process.env.OPENROUTER_API_KEY ?? '';
+const CLI_DIR     = process.env.CLI_DIR ?? '';
+
+// ── Read CLI_DIR/.env directly off disk — bypasses shell state entirely ───
+// Identical to run/route.ts — see Mission 9 hardening notes there for context.
+function readDotEnvFile(): Record<string, string> {
+  const envPath = path.join(CLI_DIR, '.env');
+  const result: Record<string, string> = {};
+  try {
+    const raw = fs.readFileSync(envPath, 'utf-8');
+    for (const line of raw.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eq = trimmed.indexOf('=');
+      if (eq === -1) continue;
+      const key = trimmed.slice(0, eq).trim();
+      let value  = trimmed.slice(eq + 1).trim();
+      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+        value = value.slice(1, -1);
+      }
+      result[key] = value;
+    }
+  } catch (err) {
+    console.error('[IMPROVE] Could not read .env at', envPath, '—', (err as Error).message);
+  }
+  return result;
+}
 
 // ── Resolve artifact path ──────────────────────────────────────────────────────
 function resolveArtifactPath(fileName: string): string | null {
@@ -59,6 +84,7 @@ export async function POST(req: Request) {
     const {
       artifactName,
       intent,
+      action        = 'preview',
       extent        = 'medium',
       scope         = 'stage',
       model         = 'owlalpha',   // short key or full model ID (resolved via registry)
@@ -68,6 +94,7 @@ export async function POST(req: Request) {
     } = body as {
       artifactName: string;
       intent:       string;
+      action?:      string;
       extent?:      'light' | 'medium' | 'strong';
       scope?:       'block' | 'stage' | 'project';
       model?:       string;
@@ -75,6 +102,22 @@ export async function POST(req: Request) {
       apiKey?:      string;        // user-supplied key from Settings UI
       customModelId?: string;       // raw OpenRouter model string e.g. 'deepseek/deepseek-r1'
     };
+
+    if (action === 'accept') {
+      if (!artifactName || !body.content) {
+        return NextResponse.json({ error: 'artifactName and content required for accept' }, { status: 400 });
+      }
+      const acceptPath = resolveArtifactPath(artifactName);
+      if (!acceptPath) {
+        return NextResponse.json({ error: `Artifact not found: ${artifactName}` }, { status: 404 });
+      }
+      try {
+        fs.writeFileSync(acceptPath, body.content, 'utf-8');
+        return NextResponse.json({ success: true, saved: true });
+      } catch (err) {
+        return NextResponse.json({ error: 'Failed to write artifact: ' + (err as Error).message }, { status: 500 });
+      }
+    }
 
     if (!artifactName || !intent) {
       return NextResponse.json({ error: 'artifactName and intent required' }, { status: 400 });
@@ -113,8 +156,10 @@ ${currentContent}
 
 Return the complete improved artifact.`;
 
-    // Resolve auth key: Settings UI key takes priority over .env.local
-    const authKey = (apiKey && apiKey.trim()) ? apiKey.trim() : OR_KEY;
+    // Resolve auth key: Settings UI key takes priority over CLI .env file
+    // (same priority order as run/route.ts — fixed in this file post-Mission 9)
+    const dotEnv  = readDotEnvFile();
+    const authKey = (apiKey && apiKey.trim()) ? apiKey.trim() : (dotEnv.OPENROUTER_API_KEY || '');
     if (!authKey) {
       return NextResponse.json({
         error: 'No API key. Add your OpenRouter key in Settings → AI Models → API Keys, or set OPENROUTER_API_KEY in .env.local',
@@ -168,15 +213,35 @@ Return the complete improved artifact.`;
     // Write improved content back to filesystem
     fs.writeFileSync(filePath, improved, 'utf-8');
 
-    // Return improvement metadata alongside content
+    // Return improvement metadata alongside content.
+    // Legacy fields (content, model, tokensUsed, inputTokens, outputTokens, maxTokensUsed)
+    // preserved unchanged for backward compatibility.
+    // New fields added additively to match the client Result interface.
+    const inTokens  = llmData.usage?.prompt_tokens     ?? 0;
+    const outTokens = llmData.usage?.completion_tokens ?? 0;
+    const totTokens = llmData.usage?.total_tokens      ?? 0;
+    const modelEntry = getModelById(resolvedModelId);
+    const cost = ((modelEntry?.inputCostPerMillion  ?? 0) * inTokens
+                + (modelEntry?.outputCostPerMillion ?? 0) * outTokens) / 1_000_000;
     return NextResponse.json({
+      // ── Legacy fields (unchanged) ─────────────────────────────────────────
       success:      true,
       content:      improved,
       model:        resolvedModelId,
-      tokensUsed:   llmData.usage?.total_tokens   ?? 0,
-      inputTokens:  llmData.usage?.prompt_tokens  ?? 0,
-      outputTokens: llmData.usage?.completion_tokens ?? 0,
+      tokensUsed:   totTokens,
+      inputTokens:  inTokens,
+      outputTokens: outTokens,
       maxTokensUsed:maxTokens,
+      // ── New fields matching client Result interface ────────────────────────
+      original:       currentContent,
+      improved:       improved,
+      modelKey:       resolvedModelId,
+      modelId:        resolvedModelId,
+      tokens:         { input: inTokens, output: outTokens, total: totTokens },
+      cost,
+      reasoning:      '',      // route does not request COT — page handles '' gracefully
+      impactWarnings: [],      // route performs no impact analysis
+      refDocs:        0,       // extractedDocuments count not tracked server-side
     });
 
   } catch (err) {

@@ -12,8 +12,7 @@
 // - RuntimeContext integration preserved
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useGlobalStore } from '@/lib/GlobalStore';
-import { ModelDropdown } from '@/components/ModelDropdown';
+import { useGlobalStore, getModelMeta, isModelFree } from '@/lib/GlobalStore';
 import { parseContent, parseContentDetailed } from '@/lib/parseContent';
 import { useRuntime, getTransitiveDownstream } from '@/lib/RuntimeContext';
 import { MODEL_REGISTRY } from '@/lib/model-registry';
@@ -197,7 +196,19 @@ export default function ImprovePage() {
       .finally(() => setFileLoading(false));
   },[selected]);
 
-  const activeModel = MODELS.find(m=>m.key===modelKey)!;
+  const activeModel = MODELS.find(m => m.key === modelKey) ?? (() => {
+    const meta = getModelMeta(modelKey);
+    return {
+      key: modelKey,
+      label: meta.label,
+      tier: (isModelFree(modelKey) ? 'free' : 'paid') as 'free' | 'paid',
+      provider: meta.provider,
+      color: '#818cf8',
+      cost: meta.cost,
+      speed: 2,
+      use: meta.best,
+    };
+  })();
 
   // ── Improve ───────────────────────────────────────────────────────────────
   const handleImprove = useCallback(async()=>{
@@ -220,7 +231,9 @@ export default function ImprovePage() {
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error ?? 'LLM call failed');
       setResult(data); setUiState('previewed'); setView('split');
-    } catch(e:any){ setError(e.message); setUiState('idle'); }
+    } catch(e:any){
+      setError(e.message); setUiState('idle');
+    }
   },[selected,intent,extent,scope,modelKey,docs,runtime]);
 
   // ── Accept ────────────────────────────────────────────────────────────────
@@ -323,10 +336,9 @@ export default function ImprovePage() {
         </div>
         <div style={{width:'1px',height:'28px',backgroundColor:'#0a1a2e'}}/>
 
-        {/* Model selector — dropdown replaces horizontal scroll bar */}
+        {/* Local model picker removed Mission 12C — TopBar's ModelSelector is now the
+            single source of model selection across all pages. */}
         <div style={{display:'flex',alignItems:'center',gap:'6px',flex:1}}>
-          <span style={{fontSize:'11px',color:'#475569',flexShrink:0}}>MODEL</span>
-          <ModelDropdown />
           {/* Active model meta */}
           {(() => {
             const m = MODELS.find(x => x.key === modelKey);

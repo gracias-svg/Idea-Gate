@@ -354,6 +354,45 @@ one large risky rewrite. Track completion by checking remaining grep hits for
 
 ---
 
+## P-NEW-16 — MEDIUM — Stale artifact one-click re-improve
+
+Discovery: When an artifact is improved (e.g. QA & Readiness v1), downstream
+artifacts are correctly marked stale (prototype prompt △). But there is no UI
+action to re-improve a stale artifact with context-awareness of its now-updated
+parent. The user must manually navigate to the stale artifact and set intent.
+
+Proposed: add a 'Re-sync' or 'Improve with updated context' quick action to the
+stale indicator in the left rail or the artifact graph, that pre-populates the
+intent with "Update this artifact to align with the recently improved [parent]."
+
+Not implemented now. Candidate for the Improve Studio spec (P-NEW-12 spec phase).
+
+---
+
+## P-NEW-17 — HIGH (Future Theme) — Full SaaS product vision
+
+Discovery: User has shared a complete product vision for IdeaGate as a production
+SaaS. Key themes documented for future planning:
+
+Phase 1 — Auth + database: Clerk/NextAuth login, personal workspaces, filesystem
+  → Supabase migration (User → Workspace → Projects → Runs → Artifacts → Versions)
+Phase 2 — Studio: Improve page becomes document studio (P-NEW-12 evolution) with
+  inline editing, team comments, PDF/DOCX upload, section-level AI regeneration
+Phase 3 — Team + Admin: project sharing (like Notion/Figma), team workspaces,
+  /admin panel (user management, token usage, model management, system health)
+Phase 4 — SaaS packaging: billing (Stripe), cloud deployment (Railway backend +
+  Vercel frontend + custom domain ideagate.site), 24/7 availability
+
+Settings modal should use same ModelSelector dropdown as TopBar (tracked under
+P-NEW-14 transition path). Custom model ID paste field should propagate correctly.
+
+Rough estimate: 5–8 months full vision. 3–4 months for auth + premium UI only.
+
+Not scoped or specced. Requires specification documents before implementation.
+Each phase needs its own spec document before any code starts.
+
+---
+
 ## P-NEW-10 — PRIORITY CRITICAL — Owl Alpha may be retiring; FALLBACK_MODEL_ID at risk
 
 Discovery: During Mission 12B verification run (Gemini 2.5 Flash selected, 36/37

@@ -110,18 +110,31 @@ export const REGISTRY_LAST_UPDATED = '2026-06-29';
 /**
  * FALLBACK_MODEL_ID: Used ONLY when no model is selected yet (e.g., first load).
  * NOT used as a silent substitution. See PATTERN NOTE below.
+ *
+ * Mission 13 (P-NEW-10): openrouter/owl-alpha demoted from this role — confirmed
+ * removed from OpenRouter's catalog entirely (GET /api/v1/models, July 2026), was
+ * returning 404 on live calls. owl-alpha's ModelEntry below is UNCHANGED and still
+ * enabled — it remains deliberately selectable in the Zero-Cost dropdown. Only its
+ * role as the silent system default/fallback is removed.
  */
-export const FALLBACK_MODEL_ID = 'openrouter/owl-alpha';
-export const DEFAULT_MODEL_ID  = 'openrouter/owl-alpha';
+export const FALLBACK_MODEL_ID = 'nvidia/nemotron-3-super-120b-a12b:free';
+export const DEFAULT_MODEL_ID  = 'nvidia/nemotron-3-super-120b-a12b:free';
 
 /**
  * RECOVERY_MODEL_IDS: Ordered list for Transparent Recovery Mode (Mission 14).
  * When the primary model fails, these are tried in order and the fallback is
  * ALWAYS shown to the user — never hidden. See IDEAGATE-MODEL-PLATFORM-SPECIFICATION.md §20.
+ *
+ * Mission 13 (P-NEW-3): owl-alpha removed from this chain (see FALLBACK_MODEL_ID note).
+ * Third entry (nemotron-3-ultra-550b-a55b) has no ModelEntry below yet — confirmed
+ * present in OpenRouter's catalog but untested in this project. Since this constant is
+ * not yet consumed anywhere (Mission 14 scope), this is safe today; add a ModelEntry
+ * for it before Mission 14 wires Transparent Recovery Mode to this list.
  */
 export const RECOVERY_MODEL_IDS = [
-  'openrouter/owl-alpha',
-  'nvidia/nemotron-3-super-120b-a12b:free',
+  'nvidia/nemotron-3-super-120b-a12b:free',  // primary — production-proven (Mission 11D, 12C)
+  'openai/gpt-oss-120b:free',                // second — catalog-confirmed, has ModelEntry
+  'nvidia/nemotron-3-ultra-550b-a55b:free',  // third — catalog-confirmed, no ModelEntry yet
 ] as const;
 
 /**

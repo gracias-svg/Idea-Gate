@@ -59,12 +59,21 @@ grep -n "FALLBACK_MODEL_ID\|DEFAULT_MODEL_ID\|RECOVERY_MODEL_IDS\|owl-alpha\|nem
 
 **Changes to make:**
 
+> **CORRECTION (post-planning, pre-implementation):** Live OpenRouter API query
+> (`GET /api/v1/models`) confirmed `nvidia/nemotron-3-ultra-253b:free` does not exist in
+> the catalog — this ID was wrong in the original plan. The real Ultra variant is
+> `nvidia/nemotron-3-ultra-550b-a55b:free` (550B params, not 253B). Since Ultra has zero
+> production history in this project, `nvidia/nemotron-3-super-120b-a12b:free` (confirmed
+> working in Missions 11D and 12C) is used as the new primary/default instead, per the
+> Specification's own contingency (Section 6.1: "Fall back to nemotron-3-super as primary").
+> The steps below reflect the corrected values.
+
 1. Update `FALLBACK_MODEL_ID`:
    ```typescript
    // Before:
    export const FALLBACK_MODEL_ID = 'openrouter/owl-alpha';
-   // After (use confirmed-active free model from A0 check):
-   export const FALLBACK_MODEL_ID = 'nvidia/nemotron-3-ultra-253b:free';
+   // After (production-proven free model, confirmed active via OpenRouter API):
+   export const FALLBACK_MODEL_ID = 'nvidia/nemotron-3-super-120b-a12b:free';
    ```
 
 2. Update `DEFAULT_MODEL_ID`:
@@ -72,7 +81,7 @@ grep -n "FALLBACK_MODEL_ID\|DEFAULT_MODEL_ID\|RECOVERY_MODEL_IDS\|owl-alpha\|nem
    // Before:
    export const DEFAULT_MODEL_ID = 'openrouter/owl-alpha';
    // After:
-   export const DEFAULT_MODEL_ID = 'nvidia/nemotron-3-ultra-253b:free';
+   export const DEFAULT_MODEL_ID = 'nvidia/nemotron-3-super-120b-a12b:free';
    ```
 
 3. Update `RECOVERY_MODEL_IDS` to 3 entries:
@@ -84,16 +93,16 @@ grep -n "FALLBACK_MODEL_ID\|DEFAULT_MODEL_ID\|RECOVERY_MODEL_IDS\|owl-alpha\|nem
    ];
    // After:
    export const RECOVERY_MODEL_IDS = [
-     'nvidia/nemotron-3-ultra-253b:free',    // new primary (long-context, confirmed active)
-     'nvidia/nemotron-3-super-120b-a12b:free', // confirmed working (Mission 11D, 12C)
-     'openai/gpt-oss-120b:free',             // third slot (verify active in A0)
+     'nvidia/nemotron-3-super-120b-a12b:free',  // primary — production-proven (Mission 11D, 12C)
+     'openai/gpt-oss-120b:free',                // second — catalog-confirmed, verify before use
+     'nvidia/nemotron-3-ultra-550b-a55b:free',  // third — correct Ultra ID, catalog-confirmed, untested
    ];
    ```
 
 4. Add short key to LEGACY_KEY_MAP for the new default (so existing DEFAULT_SETTINGS works):
    ```typescript
    // In LEGACY_KEY_MAP, add:
-   'nemotron3ultra': 'nvidia/nemotron-3-ultra-253b:free',
+   'nemotron3super': 'nvidia/nemotron-3-super-120b-a12b:free',
    ```
 
 5. Update DEFAULT_SETTINGS in GlobalStore.tsx (if needed — check current value):
@@ -101,7 +110,7 @@ grep -n "FALLBACK_MODEL_ID\|DEFAULT_MODEL_ID\|RECOVERY_MODEL_IDS\|owl-alpha\|nem
    grep -n "defaultModel" \
      /Users/apple/agent-zero-data/workdir/ui-layer/src/lib/GlobalStore.tsx | head -5
    ```
-   If `DEFAULT_SETTINGS.defaultModel` is currently `'owlalpha'`, update to `'nemotron3ultra'`
+   If `DEFAULT_SETTINGS.defaultModel` is currently `'owlalpha'`, update to `'nemotron3super'`
    OR leave as `'owlalpha'` if LEGACY_KEY_MAP already maps it to owl-alpha and that model
    is still technically available (resolveModelId will handle it gracefully in either case).
    Prefer updating to the new key for clarity.
@@ -178,10 +187,11 @@ git add src/utils/llm.js src/lib/model-registry.ts 2>/dev/null || true && \
 git commit -m "fix(registry+llm): Owl Alpha retirement + max_tokens increase (Mission 13 Batch A)
 
 model-registry.ts:
-  - FALLBACK_MODEL_ID: openrouter/owl-alpha → nvidia/nemotron-3-ultra-253b:free
+  - FALLBACK_MODEL_ID: openrouter/owl-alpha → nvidia/nemotron-3-super-120b-a12b:free
   - DEFAULT_MODEL_ID: same
-  - RECOVERY_MODEL_IDS: now 3 entries (nemotron-ultra, nemotron-super, gpt-oss-120b)
-  - Added LEGACY_KEY_MAP entry: nemotron3ultra
+  - RECOVERY_MODEL_IDS: now 3 entries (nemotron-super, gpt-oss-120b, nemotron-ultra-550b)
+  - Added LEGACY_KEY_MAP entry: nemotron3super
+  - owl-alpha ModelEntry: unchanged, still enabled: true, still visible in dropdown (demotion, not removal)
 
 llm.js:
   - Agent calls: max_tokens 4000 → 8000
@@ -575,8 +585,9 @@ regression verification. Use this as the primary tracking artifact during implem
 □ No other constants or functions changed
 □ Diff: only the 4 constant blocks changed
 □ TypeScript: 0 errors after change
-□ Expected behavior: resolveModelId('owlalpha') → new fallback model ID
-□ Expected behavior: resolveModelId('nemotron3ultra') → nvidia/nemotron-3-ultra-253b:free
+□ Expected behavior: resolveModelId('owlalpha') → openrouter/owl-alpha (UNCHANGED — LEGACY_KEY_MAP
+   entry not touched; owl-alpha remains deliberately selectable, only demoted from default/fallback)
+□ Expected behavior: resolveModelId('nemotron3super') → nvidia/nemotron-3-super-120b-a12b:free
 □ Regression: resolveModelId('haiku') → anthropic/claude-haiku-4-5 (unchanged)
 □ Regression: resolveModelId('deepseek') → deepseek/deepseek-r1 (unchanged)
 □ Committed with message referencing P-NEW-10, P-NEW-3

@@ -100,15 +100,18 @@ Do NOT proceed to Batch A until 0D is reported and confirmed.
 **Paste into Claude Code:**
 
 ```
-USER-CONFIRMED MODEL AVAILABILITY:
-  openrouter/owl-alpha:                    [USER TO CONFIRM: ACTIVE/DEPRECATED/NOT FOUND]
-  nvidia/nemotron-3-ultra-253b:free:       [USER TO CONFIRM: ACTIVE/NOT FOUND]
-  nvidia/nemotron-3-super-120b-a12b:free:  [USER TO CONFIRM: ACTIVE/NOT FOUND]
-  openai/gpt-oss-120b:free:               [USER TO CONFIRM: ACTIVE/NOT FOUND]
+VERIFIED MODEL AVAILABILITY (live GET /api/v1/models query, supersedes the [USER TO CONFIRM]
+template that originally appeared here — this ID was also wrong: nemotron-3-ultra-253b:free
+does not exist; corrected below):
+  openrouter/owl-alpha:                    NOT FOUND (removed from catalog entirely)
+  nvidia/nemotron-3-ultra-253b:free:       NOT FOUND (wrong ID — never existed)
+  nvidia/nemotron-3-ultra-550b-a55b:free:  CONFIRMED ACTIVE (correct Ultra ID)
+  nvidia/nemotron-3-super-120b-a12b:free:  CONFIRMED ACTIVE (production-proven, M11D/M12C)
+  openai/gpt-oss-120b:free:                CONFIRMED ACTIVE
 
-Based on the above, determine the correct values for:
-  NEW_FALLBACK = [nemotron-3-ultra if active, else nemotron-3-super]
-  NEW_THIRD_RECOVERY = [gpt-oss-120b if active, else source an alternative free model]
+Based on the above:
+  NEW_FALLBACK = nvidia/nemotron-3-super-120b-a12b:free (only production-proven candidate)
+  NEW_RECOVERY_CHAIN = [nemotron-3-super, gpt-oss-120b, nemotron-3-ultra-550b-a55b]
 
 Then execute Batch A as specified in IDEAGATE-MISSION-13-IMPLEMENTATION-PLAN.md Section A.
 

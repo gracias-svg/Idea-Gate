@@ -224,14 +224,17 @@ GlobalStore.tsx     — already contains safe accessors, no changes needed
 ### 5.2 External Dependencies
 
 ```
-OpenRouter model availability:
-  Required check before A1/A2:
-  - nvidia/nemotron-3-ultra-253b:free  — verify ACTIVE on openrouter.ai
-  - nvidia/nemotron-3-super-120b-a12b:free — verify ACTIVE (was confirmed working in Mission 11D)
-  - openai/gpt-oss-120b:free — verify ACTIVE (new candidate for third recovery slot)
-  
-  If nemotron-3-ultra is also unavailable: use nvidia/nemotron-3-super as the new primary
-  and source an alternative third model.
+OpenRouter model availability (VERIFIED live via GET /api/v1/models, supersedes prior draft):
+  - openrouter/owl-alpha                     → NOT FOUND (removed from catalog entirely)
+  - nvidia/nemotron-3-ultra-253b:free        → NOT FOUND (this ID never existed — wrong in original plan)
+  - nvidia/nemotron-3-ultra-550b-a55b:free   → CONFIRMED ACTIVE (correct Ultra ID, catalog-confirmed, untested in this project)
+  - nvidia/nemotron-3-super-120b-a12b:free   → CONFIRMED ACTIVE (production-proven, Mission 11D + 12C)
+  - openai/gpt-oss-120b:free                 → CONFIRMED ACTIVE (catalog-confirmed, untested in this project)
+
+  Per the contingency below (nemotron-3-ultra unavailable under its planned ID): using
+  nvidia/nemotron-3-super-120b-a12b:free as the new primary/default, since it is the only
+  candidate with production history. gpt-oss-120b:free and the corrected nemotron-3-ultra-550b
+  ID fill the second and third recovery slots.
 ```
 
 ### 5.3 Internal Dependencies

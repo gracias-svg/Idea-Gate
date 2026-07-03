@@ -35,8 +35,9 @@ export const config = {
   // OPENROUTER_MODEL in process.env controls the actual model.
   model: process.env.MODEL || "qwen3:8b",
 
-  // Token limit per LLM call. 4000 is sufficient for full PM stage documents.
-  maxTokens: 4000,
+  // Token limit per LLM call. Raised from 4000 → 8000 (Mission 13, P-NEW-1):
+  // 4000 caused a 52% truncation rate observed in Mission 11B validation.
+  maxTokens: 8000,
 
   temperature: 0.4,
 

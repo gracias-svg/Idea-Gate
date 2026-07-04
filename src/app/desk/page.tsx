@@ -327,14 +327,33 @@ export default function DeskPage() {
   const [snapSaved,    setSnapSaved]    = useState(false);
   const [quickIntent,  setQuickIntent]  = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
+  // P-NEW-6: dismissal latch — keeps the artifact rail cleared after "+ New Idea"
+  // until a genuinely new lifecycle (different projectPath) appears.
+  const dismissedRef        = useRef(false);
+  const dismissedProjectRef = useRef<string|null>(null);
+  const latestProjectRef    = useRef<string|null>(null);
 
   useEffect(()=>{
-    const loadData = () => fetch('/api/data').then(r=>r.json()).then(d=>{ setArtifacts(d.artifacts??[]); setCurrentStage(d.currentStage??0); }).catch(()=>{});
+    const loadData = () => fetch('/api/data').then(r=>r.json()).then(d=>{
+      const proj = d.projectPath ?? null;
+      if (dismissedRef.current) {
+        // Stay cleared until a NEW lifecycle (different project) starts.
+        if (proj !== dismissedProjectRef.current) dismissedRef.current = false;
+        else return;
+      }
+      latestProjectRef.current = proj;
+      setArtifacts(d.artifacts??[]);
+      setCurrentStage(d.currentStage??0);
+    }).catch(()=>{});
     loadData();
     try{ const s=localStorage.getItem('ig_snapshots'); if(s) setSnapshots(JSON.parse(s)); }catch{}
     const poll = setInterval(loadData, 4000);
     // Triggered by TopBar's "New Idea" and manual refresh buttons
-    const clearArtifact = () => { setSelected(null); setArtifacts([]); };
+    const clearArtifact = () => {
+      dismissedRef.current = true;
+      dismissedProjectRef.current = latestProjectRef.current;
+      setSelected(null); setArtifacts([]);
+    };
     window.addEventListener('ideagate:refresh', loadData);
     window.addEventListener('ideagate:clearArtifact', clearArtifact);
     return () => {

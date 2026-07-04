@@ -116,6 +116,7 @@ export default function TopBar() {
   }, []);
 
   // Manual refresh — forces immediate data poll on all three tabs
+  // TODO P-NEW-11: Refresh root cause requires improve/page.tsx and office/page.tsx — deferred Mission 14
   const handleRefresh = useCallback(() => {
     fetch('/api/data').then(r=>r.json()).then(d=>{
       setCurrentStage(d.currentStage ?? 0);
@@ -230,6 +231,7 @@ export default function TopBar() {
               setRunError('');
               setCurrentStage(0);
               setArtifactCount(0);
+              runtime.resetWorkspace();
               window.dispatchEvent(new Event('ideagate:clearArtifact'));
               window.dispatchEvent(new Event('ideagate:refresh'));
               setTimeout(() => router.push('/desk'), 50);

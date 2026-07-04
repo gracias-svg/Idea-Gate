@@ -129,7 +129,8 @@ type RuntimeAction =
   | { type: 'CLEAR_STALE';       artifacts?: string[] }       // clear specific or all
   | { type: 'SET_AGENT_STATE';   agent: string; state: 'idle'|'working'|'done'|'blocked' }
   | { type: 'SET_STAGE';         stage: number }
-  | { type: 'HYDRATE';           state: Partial<RuntimeState> };
+  | { type: 'HYDRATE';           state: Partial<RuntimeState> }
+  | { type: 'RESET_WORKSPACE' };   // Mission 13 (P-NEW-6): full reset for "New Idea"
 
 const DEFAULT_STATE: RuntimeState = {
   staleArtifacts:      new Set(),
@@ -226,6 +227,12 @@ function reducer(state: RuntimeState, action: RuntimeAction): RuntimeState {
     case 'HYDRATE':
       return { ...state, ...action.state };
 
+    case 'RESET_WORKSPACE':
+      // Mission 13 (P-NEW-6): New Idea must clear stale flags, reasoning chain,
+      // telemetry, and agent states from the previous project — not just the
+      // artifact list. Returns to the same DEFAULT_STATE used on first mount.
+      return { ...DEFAULT_STATE };
+
     default:
       return state;
   }
@@ -252,6 +259,7 @@ interface RuntimeContextValue {
   markStale:    (artifacts: string[]) => void;
   clearStale:   (artifacts?: string[]) => void;
   emitEvent:    (event: Omit<RuntimeEvent, 'id'|'timestamp'>) => void;
+  resetWorkspace: () => void;
 
   // Agent coordination
   setAgentState: (agent: string, agentState: 'idle'|'working'|'done'|'blocked') => void;
@@ -319,6 +327,7 @@ export function RuntimeContext({ children }: { children: ReactNode }) {
   const markStale    = useCallback((artifacts: string[]) => broadcast({ type: 'MARK_STALE', artifacts }), [broadcast]);
   const clearStale   = useCallback((artifacts?: string[]) => broadcast({ type: 'CLEAR_STALE', artifacts }), [broadcast]);
   const emitEvent    = useCallback((event: Omit<RuntimeEvent, 'id'|'timestamp'>) => broadcast({ type: 'EMIT_EVENT', event }), [broadcast]);
+  const resetWorkspace = useCallback(() => broadcast({ type: 'RESET_WORKSPACE' }), [broadcast]);
   const setAgentState= useCallback((agent: string, agentState: 'idle'|'working'|'done'|'blocked') => broadcast({ type: 'SET_AGENT_STATE', agent, state: agentState }), [broadcast]);
   const setStage     = useCallback((stage: number) => broadcast({ type: 'SET_STAGE', stage }), [broadcast]);
 
@@ -331,6 +340,7 @@ export function RuntimeContext({ children }: { children: ReactNode }) {
   const value: RuntimeContextValue = {
     state,
     markImproved, markStale, clearStale, emitEvent,
+    resetWorkspace,
     setAgentState, setStage,
     isStale, getVersion, getReasoningFor, getDownstream,
   };

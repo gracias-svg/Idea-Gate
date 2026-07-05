@@ -18,6 +18,13 @@ import {
   type CompressionMode, type BuilderId,
 } from '@/lib/GlobalStore';
 import { useRuntime } from '@/lib/RuntimeContext';
+// Mission 13 Batch C — parity with TopBar.tsx (Mission 12B reference implementation)
+import { ModelSelector } from '@/components/ModelSelector';
+import { resolveModelId } from '@/lib/model-registry';
+// MODEL_LABELS / ModelKey below are no longer used for the Default Model picker
+// (replaced by the registry-driven ModelSelector) but are kept — still referenced
+// by getModelMeta()'s legacy-key fallback path elsewhere in this file.
+// @deprecated for model-picker purposes as of Mission 13 Batch C
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const MONO: React.CSSProperties = { fontFamily: "'JetBrains Mono','Fira Code',monospace" };
@@ -195,11 +202,11 @@ function CAIModels(){
       <span style={{color:S.textMute2,fontSize:'9px',marginTop:'3px',display:'block'}}>Selected model persists across Desk, Refine, and Office. Token budget is applied as max_tokens in every LLM call.</span>
     </div>
     <Row label="Default Model" description="Persists across all views. Free tier models (marked FREE) use OpenRouter free tier — rate-limited, no cost.">
-      <Sel value={s.defaultModel} onChange={v=>updateSettings({defaultModel:v as ModelKey})}
-        options={(Object.keys(MODEL_LABELS) as ModelKey[]).map(k=>({
-          value:k,
-          label:MODEL_LABELS[k].free ? `${MODEL_LABELS[k].label}` : MODEL_LABELS[k].label,
-        }))}/>
+      <ModelSelector
+        selectedModelId={resolveModelId(s.defaultModel)}
+        onSelectModel={(modelId) => updateSettings({defaultModel: modelId})}
+        disabled={false}
+      />
     </Row>
     <Row label="Token Budget" description="Hard ceiling on tokens per improvement call. Passed as max_tokens to the LLM. Free models capped at 8K automatically.">
       <NumInput value={s.tokenBudgetPerCall} onChange={v=>updateSettings({tokenBudgetPerCall:Math.max(500,Math.min(8000,v))})} min={500} max={8000} step={500} suffix="tokens"/>

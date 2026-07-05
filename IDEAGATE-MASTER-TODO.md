@@ -44,6 +44,10 @@ Update the COMPLETED section after each mission.
 
 ## P-NEW-1 — PRIORITY HIGH — Increase max_tokens (52% truncation rate confirmed)
 
+**STATUS:** ✅ CLOSED — Mission 13 Batch A — commit 29d685b (idea-gate-ui-safe)
+**Resolution:** config.js maxTokens 4000 → 8000. Single constant. No agent/merge
+split exists in current codebase. llm.js reads config.maxTokens directly.
+
 **Discovery:** During Mission 11B validation run (meal planning app, Owl Alpha, 33 API calls),
 17 of 33 calls (52%) returned finish_reason: length instead of stop. Every truncated call
 maxed out at exactly 4,000 completion tokens and was cut off mid-generation. This is the
@@ -77,6 +81,11 @@ partly due to the prompt not requiring a minimum structure.
 ---
 
 ## P-NEW-3 — PRIORITY HIGH — Add third recovery model to fallback chain
+
+**STATUS:** ✅ CLOSED — Mission 13 Batch A — commit edafe23 (ui-layer)
+**Resolution:** RECOVERY_MODEL_IDS replaced with 3 distinct entries:
+[nvidia/nemotron-3-super-120b-a12b:free, openai/gpt-oss-120b:free,
+nvidia/nemotron-3-ultra-550b-a55b:free]. No owl-alpha.
 
 **Discovery:** During Mission 11D validation run (StandupFlow idea, 35 API calls,
 11-hour run), Owl Alpha returned genuine errors (400 "Provider returned error",
@@ -129,6 +138,10 @@ used in LangGraph, CrewAI Flows, Google ADK long-running agents (2026).
 ---
 
 ## P-NEW-6 — PRIORITY MEDIUM — New Idea: audit for guaranteed blank canvas
+
+**STATUS:** ✅ CLOSED — Mission 13 Batch B + Addendum — commits 0cc9632, 323d36e (ui-layer)
+**Resolution:** RuntimeContext RESET_WORKSPACE action added. desk/page.tsx dismissal
+latch prevents poll from repopulating until a genuinely new lifecycle projectPath appears.
 
 **Concept:** Confirm "+ New Idea" produces a fully empty state across ALL views
 simultaneously (Desk, Improve, Office) — not just the Desk artifact list.
@@ -304,6 +317,11 @@ Specific improvements needed:
 
 ## P-NEW-11 — PRIORITY MEDIUM — Refresh button non-functional
 
+STATUS: ⏸ DEFERRED — Mission 13 Batch B — root cause documented in TopBar.tsx
+Root cause: ideagate:refresh dispatched by TopBar but improve/page.tsx and
+office/page.tsx have no listener. Neither file is protected. Fix scoped to Mission 14.
+TODO comment added above handleRefresh in TopBar.tsx.
+
 Discovery: User reports the refresh button (top-left, near Stage indicator) does
 not work on the live app. Not yet diagnosed — likely in TopBar.tsx's handleRefresh
 function or the /api/data and /api/run GET polling it triggers. Needs investigation
@@ -393,7 +411,39 @@ Each phase needs its own spec document before any code starts.
 
 ---
 
+## P-NEW-18 — PRIORITY HIGH — coordinator-v2.js internal owl-alpha fallback
+
+Discovered: Mission 13 runtime validation. Confirmed in _last-run.log.
+Root cause: coordinator-v2.js has openrouter/owl-alpha hardcoded at line 213
+(agent-level fallback) AND line 379 (merge-level fallback), completely independent
+of model-registry.ts. Batch A did NOT fix this — only model-registry.ts constants
+were changed. Every lifecycle stage wastes 2 failed API calls and ~9 seconds of
+retry delay before the merge-level fallback lands on nemotron-3-super.
+
+Fix: replace both hardcoded strings with nvidia/nemotron-3-super-120b-a12b:free.
+File: coordinator-v2.js (PROTECTED — requires explicit mission scope).
+Scope: Mission 14 prerequisite or dedicated micro-mission before Mission 14 begins.
+
+---
+
+## P-NEW-19 — PRIORITY MEDIUM — xAI Grok 4.1 Fast model ID invalid in registry
+
+Discovered: Mission 13 runtime validation. Confirmed against source (line 412).
+Root cause: model-registry.ts entry uses x-ai/grok-4-1-fast as modelId.
+OpenRouter returns HTTP 400 "not a valid model ID" for every call using this model.
+
+Fix: verify correct OpenRouter slug at openrouter.ai/models, update modelId field.
+File: model-registry.ts (not protected, low-risk one-line change).
+Scope: Early Mission 14 task or standalone micro-session before Mission 14.
+
+---
+
 ## P-NEW-10 — PRIORITY CRITICAL — Owl Alpha may be retiring; FALLBACK_MODEL_ID at risk
+
+STATUS: ✅ CLOSED — Mission 13 Batch A — commit edafe23 (ui-layer)
+Resolution: FALLBACK_MODEL_ID and DEFAULT_MODEL_ID changed to
+nvidia/nemotron-3-super-120b-a12b:free. Owl Alpha ModelEntry unchanged —
+still enabled, still selectable in Zero-Cost dropdown. Demotion only.
 
 Discovery: During Mission 12B verification run (Gemini 2.5 Flash selected, 36/37
 calls confirmed matching via OpenRouter logs), a Stage 6 merge fallback attempt to
@@ -428,6 +478,10 @@ Section 28.1) to an OBSERVED failure in production.
 
 P-NEW-9 — PRIORITY HIGH — Model selection synchronization audit
 
+STATUS: ✅ CLOSED — Mission 13 Batch C — commit 1b13cdf (ui-layer)
+Resolution: ModelSelector replaces <Sel> picker in SettingsModal.tsx CAIModels().
+Settings and TopBar now show identical 22-model registry selector.
+
 Discovery: Mission 12B's first wiring attempt produced a runtime crash when selecting
 any model not in the legacy 10-model set. The new ModelSelector writes full registry
 IDs (e.g. 'deepseek/deepseek-r1') while legacy components indexed MODEL_LABELS with
@@ -447,6 +501,10 @@ Not implemented now. Tracked for 12C completion verification.
 ## LOW PRIORITY — INFRASTRUCTURE CLEANUP
 
 P-NEW-8 — LOW — Stop button should delete .current-run.json on cleanup
+  STATUS: ✅ CLOSED — Mission 13 Batch B — no code change required.
+  Resolution: Lock file cleanup already present in run/route.ts DELETE handler
+  at lines 255-256. Confirmed by direct inspection.
+
   Discovery: Stop button (Mission 7) kills the process but does not remove
   .current-run.json, leaving a stale lock file that can incorrectly signal an
   active run to future checks. Fix: have DELETE /api/run handler unlink

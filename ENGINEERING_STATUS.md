@@ -243,3 +243,34 @@ Next immediate: raise quality gate threshold (150 → 300 words).
 | v3.5-stable | 2026-06-28 | Stop button, agent fallback, New Idea refresh, model catalog cleanup |
 | v3.3-stable | 2026-06-27 | First full-stack stable release — rendering fixed, model routing fixed, 10/10 checks |
 | (pre-v3) | pre-June 2026 | V1/V2 prototype work before June 2026 sessions |
+
+---
+
+## Mission 13 — Stabilisation + Settings Parity (July 2026)
+
+Status: COMPLETE. All commits pushed to origin/main.
+
+Note: ENGINEERING_STATUS.md is missing Mission 11 and 12 entries. Not backfilled
+here — out of Mission 13 scope. Previous entry: Mission 10E / v3.5-stable (2026-06-28).
+
+Batch A (idea-gate-ui-safe + ui-layer):
+  8ef7f3b — docs: correct Nemotron Ultra model ID in planning documents
+  29d685b — fix(config): maxTokens 4000 → 8000 (config.js, protected-file exception)
+  edafe23 — fix(model-registry): retire Owl Alpha as FALLBACK/DEFAULT model
+  P-NEW-1 CLOSED, P-NEW-3 CLOSED, P-NEW-10 CLOSED
+
+Batch B (ui-layer):
+  0cc9632 — fix(ux): New Idea resets full workspace state via RuntimeContext
+  323d36e — fix(desk): dismissal latch preserves cleared state until new lifecycle
+  P-NEW-6 CLOSED, P-NEW-8 CLOSED (already present), P-NEW-11 DEFERRED
+
+Batch C (ui-layer):
+  1b13cdf — feat(settings): ModelSelector replaces Sel picker in Settings AI Models
+  P-NEW-9 CLOSED
+
+Runtime validation: 14-stage lifecycle, nvidia/nemotron-3-super-120b-a12b:free,
+  19 minutes 27 seconds, dollar-zero cost, 27/28 API calls finish_reason: stop.
+
+Key discoveries added to backlog as new P-NEW items:
+  P-NEW-18 [HIGH]: coordinator-v2.js has owl-alpha hardcoded at lines 213 + 379
+  P-NEW-19 [MEDIUM]: xAI Grok model ID x-ai/grok-4-1-fast returns HTTP 400

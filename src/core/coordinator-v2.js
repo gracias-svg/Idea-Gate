@@ -209,8 +209,8 @@ export class CoordinatorV2 {
       // before falling through to empty output. Uses process.env + try/finally
       // (Option A) so llm.js is not modified.
       const AGENT_FALLBACKS = [
-        process.env.OPENROUTER_MODEL,  // user-selected (primary)
-        'openrouter/owl-alpha',        // fallback
+        process.env.OPENROUTER_MODEL,              // user-selected (primary)
+        'nvidia/nemotron-3-super-120b-a12b:free',  // fallback (P-NEW-18: owl-alpha retired)
       ].filter(Boolean);
       const uniqueAgentModels = [...new Set(AGENT_FALLBACKS)];
 
@@ -376,8 +376,7 @@ Return STRICT JSON:
     // the original value is always put back regardless of error or success.
     const MERGE_FALLBACK_MODELS = [
       process.env.OPENROUTER_MODEL,              // primary (user-selected)
-      'openrouter/owl-alpha',                    // fallback 1: IdeaGate default
-      'nvidia/nemotron-3-super-120b-a12b:free',  // fallback 2: different provider
+      'nvidia/nemotron-3-super-120b-a12b:free',  // fallback 1: production-proven (P-NEW-18: owl-alpha retired)
     ].filter(Boolean);
     const uniqueModels = [...new Set(MERGE_FALLBACK_MODELS)];
 

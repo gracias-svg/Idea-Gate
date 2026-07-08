@@ -5,10 +5,12 @@
 // Fix: ArtifactReader uses if-else-if chains (no continue with JSX)
 // TSX parser cannot handle `elements.push(<jsx>)` followed by `continue` in a for loop.
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useGlobalStore } from '@/lib/GlobalStore';
 import { useRuntime } from '@/lib/RuntimeContext';
 import { parseContent } from '@/lib/parseContent';
+import LifecycleNodeChain, { type StageData } from '@/components/desk/LifecycleNodeChain';
+import RunInsightPanel from '@/components/desk/RunInsightPanel';
 
 const MONO: React.CSSProperties = { fontFamily: "'JetBrains Mono','Fira Code',monospace" };
 const BASE_FONT = 17;
@@ -198,9 +200,10 @@ function ArtifactReader({ content, scrollRef }: { content:string; scrollRef:Reac
 
 // ── PM Intelligence panel ──────────────────────────────────────────────────────
 function PMIntelligence({
-  selected, content, runtime, artifacts,
+  selected, content, runtime, artifacts, insight, agentsUsed,
 }: {
   selected:string; content:string; runtime:ReturnType<typeof useRuntime>; artifacts:string[];
+  insight?: StageData; agentsUsed?: string[];
 }) {
   const n       = stageNum(selected);
   const intel   = STAGE_INTEL[n];
@@ -222,16 +225,18 @@ function PMIntelligence({
         <div style={{fontSize:'10px',color:'#2a5a30',letterSpacing:'0.1em',fontWeight:700,marginBottom:'6px'}}>PURPOSE</div>
         <div style={{padding:'9px 10px',backgroundColor:'#040b14',border:`1px solid ${col}22`,borderRadius:'3px',fontSize:'11px',color:'#64748b',lineHeight:1.8}}>{intel.purpose}</div>
       </div>
-      {/* Agent ownership */}
+      {/* Agent ownership — real run reasoning (journey-state), supersedes static framework/interview text */}
       <div style={{marginBottom:'12px'}}>
         <div style={{fontSize:'10px',color:'#2a5a30',letterSpacing:'0.1em',fontWeight:700,marginBottom:'6px'}}>AGENT OWNERSHIP</div>
-        <div style={{padding:'8px 10px',backgroundColor:'#040b14',border:`1px solid ${intel.agentColor}22`,borderRadius:'3px',fontSize:'11px',lineHeight:1.9}}>
-          <div style={{display:'flex',alignItems:'center',gap:'7px',marginBottom:'4px'}}>
-            <div style={{width:'6px',height:'6px',borderRadius:'50%',backgroundColor:intel.agentColor}}/>
-            <span style={{color:intel.agentColor,fontWeight:700}}>{intel.agentFull}</span>
-          </div>
-          <div style={{color:'#64748b'}}>Framework: <span style={{color:'#cbd5e1'}}>{intel.framework}</span></div>
-          <div style={{color:'#64748b'}}>Interview: <span style={{color:'#cbd5e1'}}>{intel.interview}</span></div>
+        <div style={{backgroundColor:'#040b14',border:`1px solid ${intel.agentColor}22`,borderRadius:'3px'}}>
+          <RunInsightPanel
+            stageId={String(n)}
+            reasoning={insight?.reasoning ?? null}
+            decision={insight?.decision ?? null}
+            confidence={insight?.confidence ?? null}
+            agentsUsed={agentsUsed}
+            isStale={isStale}
+          />
         </div>
       </div>
       {/* Dependency map */}
@@ -332,6 +337,13 @@ export default function DeskPage() {
   const dismissedRef        = useRef(false);
   const dismissedProjectRef = useRef<string|null>(null);
   const latestProjectRef    = useRef<string|null>(null);
+  // Mission 14 Phase 2 Stage B — real reasoning data, polled independently of
+  // the /api/data effect above so the dismissal latch above is never touched.
+  const [journeyState, setJourneyState] = useState<{
+    currentStage: number;
+    stages: Record<string, StageData>;
+    agentsByStage: Record<string, string[]>;
+  }>({ currentStage: 0, stages: {}, agentsByStage: {} });
 
   useEffect(()=>{
     const loadData = () => fetch('/api/data').then(r=>r.json()).then(d=>{
@@ -364,6 +376,15 @@ export default function DeskPage() {
   },[]);
 
   useEffect(()=>{
+    const loadJourneyState = () => fetch('/api/journey-state').then(r=>r.json())
+      .then(d=>setJourneyState({ currentStage:d.currentStage??0, stages:d.stages??{}, agentsByStage:d.agentsByStage??{} }))
+      .catch(()=>{});
+    loadJourneyState();
+    const poll = setInterval(loadJourneyState, 4000);
+    return () => clearInterval(poll);
+  },[]);
+
+  useEffect(()=>{
     setRawContent(null); setLoading(false);
     if(!selected) return;
     setLoading(true);
@@ -380,6 +401,21 @@ export default function DeskPage() {
   const isStale  = selected ? runtime.isStale(selected) : false;
   const ver      = selected ? runtime.getVersion(selected) : 0;
   const staleCount = runtime.state.staleArtifacts.size;
+
+  const stagesForChain = useMemo(():Record<string,StageData> => {
+    const out: Record<string,StageData> = {};
+    for (const [id, data] of Object.entries(journeyState.stages)) {
+      const art = artifacts.find(a=>stageNum(a)===parseInt(id,10));
+      out[id] = { ...data, isStale: art ? runtime.isStale(art) : false };
+    }
+    return out;
+  },[journeyState.stages, artifacts, runtime]);
+
+  const handleSelectStageFromChain = useCallback((id:string)=>{
+    const n = parseInt(id,10);
+    const art = artifacts.find(a=>stageNum(a)===n);
+    if (art) setSelected(art);
+  },[artifacts]);
 
   const handleDownload = useCallback(()=>{
     if(!content||!selected) return;
@@ -572,24 +608,19 @@ export default function DeskPage() {
                         <div>Stale: <span style={{color:staleCount>0?'#f59e0b':'#64748b'}}>{staleCount}</span></div>
                       </div>
                       <div style={{fontSize:'10px',color:'#2a5a30',fontWeight:700,letterSpacing:'0.1em',marginBottom:'8px'}}>LIFECYCLE MAP</div>
-                      {Array.from({length:15},(_,i) => {
-                        const art=artifacts.find(a=>stageNum(a)===i);
-                        const stale=art?runtime.isStale(art):false, v=art?runtime.getVersion(art):0;
-                        const col=STAGE_COLOR[i]??'#94a3b8', done=i<=currentStage;
-                        return (
-                          <div key={i} onClick={()=>art&&setSelected(art)}
-                            style={{display:'flex',alignItems:'center',gap:'7px',padding:'4px 0',cursor:art?'pointer':'default',borderBottom:'1px solid #060e09'}}>
-                            <div style={{width:'5px',height:'5px',borderRadius:'50%',flexShrink:0,backgroundColor:stale?'#f59e0b':v>0?'#4ade80':done?col:'#334155'}}/>
-                            <div style={{fontSize:'12px',color:stale?'#f59e0b':done?col:'#64748b',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{STAGE_LABEL[i]}</div>
-                            <div style={{fontSize:'8px',color:'#334155'}}>{STAGE_INTEL[i]?.agentId}</div>
-                            {v > 0 && <div style={{fontSize:'8px',color:'#4ade8066'}}>v{v}</div>}
-                          </div>
-                        );
-                      })}
+                      <LifecycleNodeChain
+                        stages={stagesForChain}
+                        currentStage={currentStage}
+                        onSelectStage={handleSelectStageFromChain}
+                      />
                     </>
                   )}
                   {selected && content && (
-                    <PMIntelligence selected={selected} content={content} runtime={runtime} artifacts={artifacts}/>
+                    <PMIntelligence
+                      selected={selected} content={content} runtime={runtime} artifacts={artifacts}
+                      insight={journeyState.stages[String(selStage)]}
+                      agentsUsed={journeyState.agentsByStage[String(selStage)]}
+                    />
                   )}
                 </>
               )}

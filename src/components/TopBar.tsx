@@ -7,13 +7,18 @@
 // No other settings surfaces exist anywhere else in the product.
 
 import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useRuntime } from '@/lib/RuntimeContext';
 import { useGlobalStore } from '@/lib/GlobalStore';
 // DEPRECATED as of Mission 12B — TopBar now uses ModelSelector. ModelDropdown.tsx is
 // kept for SettingsModal.tsx and office/page.tsx, which still reference it directly.
 import { ModelSelector } from '@/components/ModelSelector';
 import { resolveModelId } from '@/lib/model-registry';
+// Mission 14 Phase 1 — desk/improve/office tab navigation moved to NavRail.
+// TopBar keeps the command surface (Run/Stop/New Idea/model) and now exposes
+// a Cmd+K trigger instead of owning navigation.
+import { useCommandPalette } from '@/components/shell/CommandPalette';
+import { Command } from 'lucide-react';
 
 // Lazy-load the settings modal — it's heavy, only load when opened
 const SettingsModal = lazy(() => import('./SettingsModal'));
@@ -28,10 +33,10 @@ const STAGE_LABELS: Record<number, string> = {
 };
 
 export default function TopBar() {
-  const pathname  = usePathname();
   const router    = useRouter();
   const runtime   = useRuntime();
   const { state:{ settings }, updateSettings } = useGlobalStore();
+  const { open: openCommandPalette } = useCommandPalette();
 
   const [idea,          setIdea]          = useState('');
   const [currentStage,  setCurrentStage]  = useState(0);
@@ -127,22 +132,6 @@ export default function TopBar() {
     }).catch(()=>{});
     window.dispatchEvent(new Event('ideagate:refresh'));
   }, []);
-
-  // Nav: desk first (reader), improve second (editor), office last (watcher)
-  const NAV = [
-    { label: 'desk',    path: '/desk'    },
-    { label: 'improve', path: '/improve' },
-    { label: 'office',  path: '/office'  },
-  ] as const;
-
-  const activeNav = NAV.find(n => pathname.startsWith(n.path))?.label ?? 'desk';
-
-  const navStyles = (label: string) => ({
-    color:           label === activeNav ? (label==='desk'?'#818cf8':label==='improve'?'#4ade80':'#f59e0b') : '#334155',
-    backgroundColor: label === activeNav ? (label==='desk'?'#0a0f1e':label==='improve'?'#0a1f0e':'#1a0f00') : 'transparent',
-    outline:         label === activeNav ? `1px solid ${label==='desk'?'#818cf833':label==='improve'?'#4ade8033':'#f59e0b33'}` : '1px solid #1e293b',
-    fontWeight:      label === activeNav ? 700 : 400,
-  });
 
   const staleCount   = runtime.state.staleArtifacts.size;
   const improvements = runtime.state.improvementCount;
@@ -279,23 +268,23 @@ export default function TopBar() {
 
         <div style={{ width:'1px', height:'24px', backgroundColor:'#0a1a2e', flexShrink:0 }} />
 
-        {/* Navigation — desk | improve | office */}
-        <div style={{ display:'flex', gap:'3px', flexShrink:0 }}>
-          {NAV.map(({ label, path }) => (
-            <button
-              key={label}
-              onClick={() => router.push(path)}
-              style={{
-                padding:'4px 11px', ...MONO, fontSize:'11px',
-                cursor:'pointer', border:'none', borderRadius:'3px',
-                letterSpacing:'0.04em',
-                ...navStyles(label),
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        {/* Cmd+K trigger — navigation moved to NavRail (Mission 14 Phase 1) */}
+        <button
+          onClick={openCommandPalette}
+          title="Command palette (⌘K)"
+          style={{
+            display:'flex', alignItems:'center', gap:'4px',
+            padding:'4px 9px', ...MONO, fontSize:'11px',
+            cursor:'pointer', border:'1px solid #1e293b', borderRadius:'3px',
+            backgroundColor:'transparent', color:'#334155', flexShrink:0,
+            transition:'all 0.1s',
+          }}
+          onMouseEnter={e=>{(e.currentTarget as HTMLElement).style.color='#4ade80';(e.currentTarget as HTMLElement).style.borderColor='#4ade8033';}}
+          onMouseLeave={e=>{(e.currentTarget as HTMLElement).style.color='#334155';(e.currentTarget as HTMLElement).style.borderColor='#1e293b';}}
+        >
+          <Command size={12} strokeWidth={1.5} />
+          <span>K</span>
+        </button>
 
         <div style={{ width:'1px', height:'24px', backgroundColor:'#0a1a2e', flexShrink:0 }} />
 

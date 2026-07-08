@@ -409,7 +409,7 @@ export const MODEL_REGISTRY: ModelEntry[] = [
   },
 
   {
-    modelId: 'x-ai/grok-4-1-fast',
+    modelId: 'x-ai/grok-4.1-fast',
     displayName: 'xAI Grok 4.1 Fast',
     provider: 'openrouter',
     category: 'best-value-paid',

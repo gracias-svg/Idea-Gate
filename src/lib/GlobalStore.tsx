@@ -8,7 +8,7 @@
 // Storage: localStorage (V3.1). Migrates to Supabase in V3.4.
 
 import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
-import { MODEL_REGISTRY, LEGACY_KEY_MAP, getModelById } from '@/lib/model-registry';
+import { MODEL_REGISTRY, LEGACY_KEY_MAP, getModelById, DEFAULT_MODEL_ID } from '@/lib/model-registry';
 
 // ── Model keys ────────────────────────────────────────────────────────────────
 export type ModelKey =
@@ -208,7 +208,7 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   animationsEnabled:  true,
   crtIntensity:       'subtle',
   // Personal — AI Models
-  defaultModel:       'owlalpha', // Free tier default — change in Settings > AI Models
+  defaultModel:       DEFAULT_MODEL_ID, // Single source of truth from model-registry (OBS-1 fix, Batch 0B)
   tokenBudgetPerCall: 4000,
   openRouterApiKey:   '',   // Leave blank to use OPENROUTER_API_KEY env var
   anthropicApiKey:    '',   // Leave blank to use ANTHROPIC_API_KEY env var

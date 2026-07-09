@@ -11,6 +11,9 @@ import { useState, useEffect, useRef } from 'react';
 import { useRuntime, ARTIFACT_DEPS } from '@/lib/RuntimeContext';
 import { useGlobalStore, getModelMeta, isModelFree } from '@/lib/GlobalStore';
 import type { AgentData, OfficeSceneConfig } from '../../game/OfficeScene';
+import OrchestrationGraph from '@/components/office/OrchestrationGraph';
+import ExecutionSummary   from '@/components/office/ExecutionSummary';
+import LiveLogStream      from '@/components/office/LiveLogStream';
 
 const PhaserGame = dynamic(() => import('./PhaserGame'), { ssr: false });
 
@@ -69,6 +72,7 @@ const AGENT_DEFS = [
 ] as const;
 
 type DashTab = 'STATUS' | 'AGENTS' | 'FEED' | 'CONTROLS';
+type OfficeView = 'analytics' | 'agent-activity';
 
 // ── Derive agent state from real runtime data ─────────────────────────────────
 function deriveAgentState(agentId: string, artifacts: string[], runtime: ReturnType<typeof useRuntime>): 'idle'|'done'|'working'|'stale'|'blocked' {
@@ -194,6 +198,12 @@ export default function OfficePage() {
   const [currentStage, setCurrentStage] = useState(0);
   const [activeTab,    setActiveTab]    = useState<DashTab>('STATUS');
   const [phaserConfig, setPhaserConfig] = useState<OfficeSceneConfig>({ agents: [] });
+  const [officeView, setOfficeView] = useState<OfficeView>('analytics');
+  const [journeyState, setJourneyState] = useState<{
+    currentStage: number;
+    stages: Record<string, any>;
+    agentsByStage: Record<string, string[]>;
+  }>({ currentStage: 0, stages: {}, agentsByStage: {} });
   const logEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(()=>{
@@ -227,6 +237,17 @@ export default function OfficePage() {
   useEffect(()=>{
     logEndRef.current?.scrollIntoView({ behavior:'smooth' });
   },[runtime.state.events.length]);
+
+  // Journey-state polling (Mission 14 Phase 3 — Office Analytics)
+  useEffect(()=>{
+    const load = () => fetch('/api/journey-state').then(r=>r.json())
+      .then(d => setJourneyState({ currentStage:d.currentStage??0, stages:d.stages??{},
+                                   agentsByStage:d.agentsByStage??{} }))
+      .catch(()=>{});
+    load();
+    const id = setInterval(load, 4000);
+    return () => clearInterval(id);
+  },[]);
 
   const staleCount    = runtime.state.staleArtifacts.size;
   const improvements  = runtime.state.improvementCount;
@@ -272,13 +293,59 @@ export default function OfficePage() {
           {sessionTokens>0&& <span><span style={{color:'#818cf8'}}>{sessionTokens.toLocaleString()}</span>t · <span style={{color:'#4ade80'}}>${sessionCost.toFixed(3)}</span></span>}
         </div>
 
+        {/* Analytics / Agent Activity view toggle — persistent in header strip */}
+        <div style={{display:'flex', gap:'2px', marginRight:'8px'}}>
+          {(['analytics','agent-activity'] as OfficeView[]).map(v => (
+            <button key={v} onClick={()=>setOfficeView(v)}
+              style={{fontFamily:"'JetBrains Mono','Fira Code',monospace",
+                      fontSize:'9px', letterSpacing:'0.06em', textTransform:'uppercase',
+                      padding:'3px 8px', border:'none', borderRadius:'2px',
+                      cursor:'pointer',
+                      background: officeView===v ? '#0a1f0e' : 'transparent',
+                      color: officeView===v ? '#4ade80' : '#94a3b8',
+                      outline: officeView===v ? '1px solid #4ade8033' : 'none'}}>
+              {v === 'analytics' ? 'Analytics' : 'Agent Activity'}
+            </button>
+          ))}
+        </div>
+
         {/* LIFECYCLE indicator (compact, far right of strip) */}
         <div style={{fontSize:'12px',color:'#94a3b8',padding:'3px 8px',border:'1px solid #1e293b',borderRadius:'2px'}}>
           {currentStage}/14 · {currentStage >= 14 ? <span style={{color:'#4ade80'}}>COMPLETE</span> : <span style={{color:'#818cf8'}}>RUNNING</span>}
         </div>
       </div>
 
+      {/* ── Analytics view (Mission 14 Phase 3 — Office Analytics) ── */}
+      <div style={{display: officeView==='analytics' ? 'flex' : 'none',
+                   flex:1, flexDirection:'column', overflow:'hidden',
+                   backgroundColor:'#020c06'}}>
+        <div style={{flex:1, display:'flex', flexDirection:'column', overflow:'hidden',
+                     padding:'16px', gap:'12px'}}>
+          <div style={{display:'flex', gap:'12px', flex:'0 0 auto'}}>
+            <div style={{flex:2}}>
+              <OrchestrationGraph
+                agents={AGENT_DEFS as any}
+                stages={journeyState.stages}
+                currentStage={journeyState.currentStage}
+                agentsByStage={journeyState.agentsByStage}
+              />
+            </div>
+            <div style={{flex:1}}>
+              <ExecutionSummary
+                stages={journeyState.stages}
+                currentStage={journeyState.currentStage}
+              />
+            </div>
+          </div>
+          <div style={{flex:1, overflow:'hidden'}}>
+            <LiveLogStream events={runtime.state.events} maxItems={20} />
+          </div>
+        </div>
+      </div>
+
       {/* ── Main: canvas + mission control ── */}
+      <div style={{display: officeView==='agent-activity' ? 'flex' : 'none',
+                   flex:1, flexDirection:'column', overflow:'hidden'}}>
       <div style={{flex:1,display:'flex',overflow:'hidden'}}>
 
         {/* Phaser canvas */}
@@ -538,6 +605,7 @@ export default function OfficePage() {
             )}
           </div>
         </div>
+      </div>
       </div>
     </div>
   );

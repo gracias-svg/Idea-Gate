@@ -114,8 +114,8 @@ export default function NavRail() {
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
-        background: 'var(--surface-raised)',
-        borderRight: '1px solid var(--border-default)',
+        background: '#0a1a0e',
+        borderRight: '1px solid #1a3a20',
         padding: '12px 0',
       }}
     >

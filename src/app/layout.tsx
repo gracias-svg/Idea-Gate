@@ -21,6 +21,8 @@ import { RuntimeContext } from '@/lib/RuntimeContext';
 import NavRail from '@/components/shell/NavRail';
 import StatusBar from '@/components/shell/StatusBar';
 import CommandPalette, { CommandPaletteProvider } from '@/components/shell/CommandPalette';
+import { GeistSans } from "geist/font/sans";
+import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
   title:       'IdeaGate — AI-Native PM Operating System',
@@ -29,7 +31,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className={cn("font-sans", GeistSans.variable)}>
       <body style={{
         margin:          0,
         padding:         0,

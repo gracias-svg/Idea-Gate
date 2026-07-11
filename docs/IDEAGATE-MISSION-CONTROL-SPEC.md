@@ -167,7 +167,8 @@ export interface OrchestrationModel {
 
 export function toOrchestrationModel(
   execution: ExecutionState,       // from the Zustand store
-  agentDefs: typeof AGENT_DEFS,    // the existing 6-agent array in office/page.tsx
+  agentDefs: readonly AgentDef[],  // AGENT_DEFS, injected (C3) — no office/ import
+  layout: AgentLayout,             // M2: hand-tuned positions, injected (viz/layout.ts)
 ): OrchestrationModel
 ```
 

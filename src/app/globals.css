@@ -465,3 +465,23 @@ body {
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 }
+
+/* =========================================================
+   MISSION CONTROL v1 (Batch M2) — edge pulse.
+   A discrete packet of work travelling CO → active agent.
+   CSS, not JS (spec §0): cheaper and reliably 60fps. The pulse
+   is one short dash sweeping a long gap, so it reads as a
+   handoff, not a barber pole. Motion fires ONLY on the active
+   edge — idle edges are static.
+   ========================================================= */
+@keyframes mc-edge-pulse {
+  from { stroke-dashoffset: 250; }
+  to   { stroke-dashoffset: 0; }
+}
+.mc-edge-pulse {
+  stroke-dasharray: 10 240;
+  animation: mc-edge-pulse 1.6s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mc-edge-pulse { animation: none; }
+}

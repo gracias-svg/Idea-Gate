@@ -60,6 +60,11 @@ export interface StageNode {
   status: StageStatus;
 }
 
+// Node CENTRE positions, injected (see src/components/viz/layout.ts). Layout is
+// a design decision, not a data derivation — kept out of the adapter so it can
+// be hand-tuned without touching derivation logic.
+export type AgentLayout = Record<AgentId, { x: number; y: number }>;
+
 export interface OrchestrationModel {
   nodes: Node<AgentNodeData>[];
   edges: Edge<FlowEdgeData>[];
@@ -121,31 +126,13 @@ const AGENT_TOKEN: Record<AgentId, string> = {
 // is a stale artifact of an abandoned run, not live work — motion must stop.
 const STALE_AFTER_MS = 120_000; // 2 minutes
 
-// ── Geometry (computed, never hardcoded per-node) ─────────────────────────────
-// CO is the hub at optical centre. The five specialists fan on a circular arc
-// beneath it, ordered left→right by zone (STRATEGY · EXECUTION · QA). An arc
-// reads as a team gathered around a lead; a grid reads as an org chart.
+// ── Geometry ──────────────────────────────────────────────────────────────
+// Positions are injected (AgentLayout), never computed here. The adapter only
+// converts an injected visual CENTRE to the top-left corner XYFlow positions by.
 
-const CO_SIZE = 72;
+const CO_SIZE = 80;
 const SPECIALIST_SIZE = 56;
-const HUB_X = 380;
-const HUB_Y = 96;          // optical centre — slightly above the arc's chord
-const ARC_PIVOT_Y = 70;
-const ARC_RADIUS = 250;
-const FAN_START_DEG = 165; // left extreme
-const FAN_END_DEG = 15;    // right extreme
 
-function specialistCenter(indexInArc: number, count: number): { x: number; y: number } {
-  const frac = count <= 1 ? 0.5 : indexInArc / (count - 1);
-  const deg = FAN_START_DEG + (FAN_END_DEG - FAN_START_DEG) * frac;
-  const rad = (deg * Math.PI) / 180;
-  return {
-    x: HUB_X + ARC_RADIUS * Math.cos(rad),
-    y: ARC_PIVOT_Y + ARC_RADIUS * Math.sin(rad),
-  };
-}
-
-// XYFlow positions a node by its top-left corner; convert a visual centre.
 function topLeft(center: { x: number; y: number }, size: number) {
   return { x: center.x - size / 2, y: center.y - size / 2 };
 }
@@ -243,6 +230,7 @@ function deriveStageNodes(execution: ExecutionState, runState: RunState): StageN
 export function toOrchestrationModel(
   execution: ExecutionState,
   agentDefs: readonly AgentDef[],
+  layout: AgentLayout,
 ): OrchestrationModel {
   const runState = deriveRunState(execution);
   const activeAgentId = deriveActiveAgentId(execution, agentDefs, runState);
@@ -258,7 +246,7 @@ export function toOrchestrationModel(
     nodes.push({
       id,
       type: 'coordinator',
-      position: topLeft({ x: HUB_X, y: HUB_Y }, CO_SIZE),
+      position: topLeft(layout[id], CO_SIZE),
       data: {
         agentId: id,
         label: coordinator.name,
@@ -269,12 +257,12 @@ export function toOrchestrationModel(
     });
   }
 
-  specialists.forEach((def, i) => {
+  specialists.forEach((def) => {
     const id = def.id as AgentId;
     nodes.push({
       id,
       type: 'agent',
-      position: topLeft(specialistCenter(i, specialists.length), SPECIALIST_SIZE),
+      position: topLeft(layout[id], SPECIALIST_SIZE),
       data: {
         agentId: id,
         label: def.name,

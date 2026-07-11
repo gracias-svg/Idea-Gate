@@ -35,7 +35,7 @@ const ALL_ARTIFACTS = Object.keys(ARTIFACT_DEPS);
 const AGENT_DEFS = [
   {
     id:'CO', name:'Coordinator', fullName:'PM Coordinator',
-    color:'#4ade80', stages:[0,6,11], zone:'STRATEGY',
+    color:'#34d399', stages:[0,6,11], zone:'STRATEGY',
     role:'Lifecycle orchestration · quality gating · stage advancement',
     isCoordinator: true,
   },
@@ -53,7 +53,7 @@ const AGENT_DEFS = [
   },
   {
     id:'UX', name:'UX Designer', fullName:'UX Designer',
-    color:'#f59e0b', stages:[3,8], zone:'EXECUTION',
+    color:'#f472b6', stages:[3,8], zone:'EXECUTION',
     role:'Solution design · UX specification',
     isCoordinator: false,
   },
@@ -65,7 +65,7 @@ const AGENT_DEFS = [
   },
   {
     id:'QA', name:'QA Engineer', fullName:'QA Engineer',
-    color:'#f472b6', stages:[5,13], zone:'QA',
+    color:'#c084fc', stages:[5,13], zone:'QA',
     role:'Validation strategy · QA readiness',
     isCoordinator: false,
   },

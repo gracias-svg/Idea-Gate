@@ -267,6 +267,84 @@ body {
   }
 }
 
+/* =========================================================
+   FOUNDATION PHASE 1 — DESIGN TOKENS (spec §2, §3, §4)
+   Batch F1. Additive alongside the Mission-14 tokens above —
+   nothing above is removed or renamed. New surfaces should
+   prefer --ig-* going forward; existing surfaces keep working
+   on the provisional names until migrated per their own mission.
+   ========================================================= */
+
+:root {
+  /* ── Canvas & surfaces (near-black, emerald undertone) ── */
+  --ig-canvas:            oklch(14% 0.012 165);
+  --ig-surface:           oklch(17% 0.014 165);
+  --ig-surface-raised:    oklch(21% 0.020 162);
+  --ig-surface-overlay:   oklch(24% 0.024 162);
+
+  /* ── Borders ── */
+  --ig-border-subtle:     oklch(24% 0.018 162);
+  --ig-border-default:    oklch(30% 0.028 160);
+  --ig-border-strong:     oklch(40% 0.045 158);
+
+  /* ── Emerald — the protagonist (spent sparingly) ── */
+  --ig-emerald:           oklch(76% 0.15 162);
+  --ig-emerald-bright:    oklch(85% 0.16 165);
+  --ig-emerald-dim:       oklch(52% 0.11 160);
+  --ig-emerald-muted:     oklch(76% 0.15 162 / 0.14);
+  --ig-emerald-glow:      oklch(76% 0.15 162 / 0.35);
+
+  /* ── Text ── */
+  --ig-text-primary:      oklch(94% 0.010 160);
+  --ig-text-secondary:    oklch(72% 0.018 165);
+  --ig-text-tertiary:     oklch(52% 0.016 165);
+  --ig-text-on-emerald:   oklch(16% 0.02 165);
+
+  /* ── Semantic (meaning only) ── */
+  --ig-caution:           oklch(82% 0.15 85);
+  --ig-danger:            oklch(70% 0.17 25);
+  --ig-info:              oklch(72% 0.13 245);
+  --ig-stale:             oklch(60% 0.02 250);
+
+  /* ── Agent palette (data-encoding ONLY, never chrome) ── */
+  --ig-agent-co:          oklch(76% 0.15 162);
+  --ig-agent-ps:          oklch(70% 0.15 275);
+  --ig-agent-re:          oklch(74% 0.13 235);
+  --ig-agent-ux:          oklch(72% 0.16 350);
+  --ig-agent-ar:          oklch(75% 0.15 55);
+  --ig-agent-qa:          oklch(72% 0.16 305);
+
+  /* ── Radius ── */
+  --ig-radius-sm: 4px; --ig-radius-md: 8px; --ig-radius-lg: 12px;
+  --ig-radius-xl: 16px; --ig-radius-full: 999px;
+
+  /* ── Elevation (light-based, not heavy shadow) ── */
+  --ig-elev-1: inset 0 0 0 1px var(--ig-border-subtle);
+  --ig-elev-2: inset 0 0 0 1px var(--ig-border-default), 0 1px 0 0 oklch(100% 0 0 / 0.03);
+  --ig-elev-overlay: 0 8px 40px -8px oklch(0% 0 0 / 0.6);
+  --ig-glow-active: 0 0 24px -4px var(--ig-emerald-glow);
+  --ig-focus-ring: 0 0 0 2px var(--ig-emerald-muted);
+
+  /* ── Typography (spec §3). --font-geist-sans is set by next/font/local
+     via GeistSans.variable in layout.tsx — 'Geist Sans' is not a system
+     font name, so the token references the loaded font's own variable. ── */
+  --ig-font-sans: var(--font-geist-sans), -apple-system, system-ui, sans-serif;
+  --ig-font-mono: 'JetBrains Mono', 'Geist Mono', ui-monospace, monospace;
+
+  /* Note: spec §3's type scale (--ig-t-hero..--ig-t-code) is a component-
+     level reference table (size/weight/tracking/font per row), not a
+     literal CSS drop-in — §2's globals.css block doesn't define it as
+     custom properties. Left for Batch F3 composition primitives to apply
+     directly per the table, rather than inventing a lossy CSS-var
+     encoding here (font shorthand can't carry letter-spacing/tracking). */
+
+  /* ── Spacing & layout scale (spec §4) ── */
+  --ig-space-1: 4px;  --ig-space-2: 8px;   --ig-space-3: 12px; --ig-space-4: 16px;
+  --ig-space-6: 24px; --ig-space-8: 32px;  --ig-space-12: 48px; --ig-space-16: 64px;
+  --ig-rail-width: 240px; --ig-topbar-h: 52px; --ig-statusbar-h: 28px;
+  --ig-content-max: 1440px; --ig-reading-max: 68ch;
+}
+
 @layer base {
   .theme {
     --font-heading: var(--font-sans);

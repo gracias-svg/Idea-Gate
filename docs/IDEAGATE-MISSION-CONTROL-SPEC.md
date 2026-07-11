@@ -118,19 +118,28 @@ Vitals is a thin text band. This is `WorkspaceLayout` used exactly as designed.
 
 ## 4. THE ONE-ALIVE-ELEMENT RULE — how it resolves here
 
+> **CORRECTED by M0 reality check (C1) — this section supersedes the original §4.**
+> The store has no "between stages" state; there is no data for it. The rule below is
+> what the data actually supports.
+
 This is the most important craft decision in the experience, and it must be implemented
 exactly:
 
-> **The lead specialist for the current stage is the single alive element** — it glows and
-> `breathe`s. The Coordinator, though it is the visual hub (hexagon, larger, emerald), does
-> **not** breathe at the same time.
+> **The single alive element is whichever agent OWNS `currentStage`**, per
+> `AGENT_DEFS.stages[]`. This may be a specialist **or** the Coordinator — CO owns stages
+> 0, 6 and 11 and does real work on them. At any instant **exactly one node is alive**, and
+> it is the owner of the current stage.
 >
-> **The Coordinator breathes only between stages** — during the merge/decision moment, when
-> no specialist is active.
+> - When a **specialist** owns the current stage: that specialist glows and `breathe`s, and
+>   the `CO → specialist` edge animates (work is being handed off).
+> - When the **Coordinator** owns the current stage: CO glows and `breathe`s, and **no edge
+>   animates** — nothing is being handed off, CO is doing the work itself.
+>
+> There is **no** "CO breathes between stages" moment. That idea is deleted.
 
-Consequence: at any instant, **exactly one node is alive.** And the alternation itself tells
-the story — you watch attention pass CO → specialist → back to CO → next specialist. That
-alternation *is* the orchestration made visible. Two things breathing at once destroys it.
+Consequence: at any instant, **exactly one node is alive** — never zero (while running),
+never two. You watch attention move from node to node as stages advance. That movement *is*
+the orchestration made visible. Two things breathing at once destroys it.
 
 ---
 
@@ -164,21 +173,32 @@ export function toOrchestrationModel(
 
 **Derivation rules (implement exactly):**
 
-1. **Read `AGENT_DEFS` from where it already lives.** Do not duplicate or redefine the agent
-   array. If it is currently declared inside `office/page.tsx`, **extract it to
-   `src/lib/execution/agents.ts` and import it in both places.** That is the only refactor
-   permitted to `office/page.tsx`'s existing code.
-2. **Active specialist** = the agent whose `stages[]` includes `currentStage`, when a run is
-   in progress. If more than one matches, take the first (parallel execution is a future mode).
-3. **Done** = the agent appears in `agentsByStage` for any stage with `completedAt`.
+1. **Do NOT extract `AGENT_DEFS`. (C3 — supersedes the original rule 1.)** Extracting it out
+   of `office/page.tsx` creates a circular import (`page → MissionControl → adapter → page`).
+   Instead use **dependency injection**: `toOrchestrationModel(execution, agentDefs)` takes
+   `agentDefs` as a parameter; `office/page.tsx` passes `AGENT_DEFS` down as a prop in M3. The
+   adapter imports **nothing** from `office/`. Extraction to `src/lib/agents.ts` is a
+   post-Mission-Control cleanup, not now.
+2. **Active agent** = the agent whose `stages[]` includes `currentStage`, **only when
+   `runState === 'running'`**. Ownership is 1:1 (verified M0), so exactly one matches. This may
+   be a specialist or the Coordinator (C1).
+3. **Done** = the agent owns ≥1 stage with `completedAt` (id-based, primary signal).
+   `agentsByStage` class-name matching via `CLASSNAME_TO_ID` is a **secondary reinforcement
+   only** — the runtime emits class names (`ProductStrategyAgent`, …), not the short ids.
 4. **Waiting** = everything else.
-5. **`coordinatorActive`** = true when a run is in progress but no specialist matches
-   `currentStage` (the merge moment), OR the run has just completed a stage and not yet
-   started the next.
-6. **Stage node state** = `done` if `completedAt` exists; `current` if index === `currentStage`;
-   `low-confidence` if `confidence === 'low'` (overrides `done` styling with amber);
-   `pending` otherwise.
-7. **Node positions** are computed, not hardcoded: CO at optical center (slightly above
+5. **Run state (C2 — new; prevents a real bug).** There is no `isRunning` field; derive it:
+   `running` = some stage has `startedAt && !completedAt`; `complete` = nothing in progress;
+   `empty` = no stage has `startedAt`. **Staleness guard:** if `metrics.lastUpdated` is older
+   than 2 minutes, treat as not-running (otherwise AR, owner of stage 14, breathes forever
+   after the run ends). `coordinatorActive` is simply `activeAgentId === 'CO'`.
+6. **Stage node state** = `current` if index === `currentStage` while running (and not yet
+   complete); else `low-confidence` if `completedAt && confidence === 'low'` (amber, overrides
+   `done`); else `done` if `completedAt`; else `pending`. **The rail is 15 nodes (0–14) — C4.**
+   Never size it from `metrics.totalStages`, which reports 14.
+7. **CodeAgent (C5).** `CodeAgent` is a real runtime contributor (stages 11/12/14) but is
+   **not** one of the six graph roles → `CLASSNAME_TO_ID['CodeAgent'] = null`. The graph stays
+   six nodes; CodeAgent surfaces later in `ActivityStream` / contributor lists, never as a node.
+8. **Node positions** are computed, not hardcoded: CO at optical center (slightly above
    geometric center); the 5 specialists on an arc around it, grouped by their `zone`
    (STRATEGY left, EXECUTION center, QA right). Organic arc, **not a rigid grid** — a grid
    reads as an org chart, an arc reads as a team.

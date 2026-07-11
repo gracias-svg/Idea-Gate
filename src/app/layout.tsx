@@ -1,9 +1,11 @@
 // src/app/layout.tsx
-// Provider hierarchy (inner to outer):
-//   RuntimeContext          → shared event bus, artifact graph, stale tracking, telemetry
-//   GlobalStore             → settings, improvement history, ref docs (localStorage)
-//   DataProvider            → artifact list polling, agent state polling
-//   CommandPaletteProvider  → Cmd+K open/close state (Mission 14 Phase 1)
+// Provider hierarchy (outer to inner):
+//   QueryProvider            → TanStack QueryClient (Pre-Mission-Control verification)
+//   ExecutionProvider        → polls /api/journey-state into the Zustand execution store
+//   RuntimeContext           → shared event bus, artifact graph, stale tracking, telemetry
+//   GlobalStore              → settings, improvement history, ref docs (localStorage)
+//   DataProvider             → artifact list polling, agent state polling
+//   CommandPaletteProvider   → Cmd+K open/close state (Mission 14 Phase 1)
 //   NavRail / TopBar / StatusBar → global shell chrome around {children}
 //
 // Note: desk/improve/office pages each size their own root container to
@@ -21,6 +23,8 @@ import { RuntimeContext } from '@/lib/RuntimeContext';
 import NavRail from '@/components/shell/NavRail';
 import StatusBar from '@/components/shell/StatusBar';
 import CommandPalette, { CommandPaletteProvider } from '@/components/shell/CommandPalette';
+import QueryProvider from '@/components/providers/QueryProvider';
+import ExecutionProvider from '@/components/providers/ExecutionProvider';
 import { GeistSans } from "geist/font/sans";
 import { cn } from "@/lib/utils";
 
@@ -39,30 +43,34 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         fontFamily:      "'JetBrains Mono','Fira Code',monospace",
         overflowX:       'hidden',
       }}>
-        <RuntimeContext>
-          <GlobalStore>
-            <DataProvider>
-              <CommandPaletteProvider>
-                <div className="ideagate-shell" style={{
-                  display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden',
-                  background: 'var(--surface-base)',
-                }}>
-                  <NavRail />
-                  <div style={{
-                    display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, overflow: 'hidden',
-                  }}>
-                    <TopBar />
-                    <main style={{ flex: 1, overflow: 'auto' }}>
-                      {children}
-                    </main>
-                    <StatusBar />
-                  </div>
-                </div>
-                <CommandPalette />
-              </CommandPaletteProvider>
-            </DataProvider>
-          </GlobalStore>
-        </RuntimeContext>
+        <QueryProvider>
+          <ExecutionProvider>
+            <RuntimeContext>
+              <GlobalStore>
+                <DataProvider>
+                  <CommandPaletteProvider>
+                    <div className="ideagate-shell" style={{
+                      display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden',
+                      background: 'var(--surface-base)',
+                    }}>
+                      <NavRail />
+                      <div style={{
+                        display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, overflow: 'hidden',
+                      }}>
+                        <TopBar />
+                        <main style={{ flex: 1, overflow: 'auto' }}>
+                          {children}
+                        </main>
+                        <StatusBar />
+                      </div>
+                    </div>
+                    <CommandPalette />
+                  </CommandPaletteProvider>
+                </DataProvider>
+              </GlobalStore>
+            </RuntimeContext>
+          </ExecutionProvider>
+        </QueryProvider>
       </body>
     </html>
   );

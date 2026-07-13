@@ -8,12 +8,22 @@
 // renders ONCE, below the rail. Presentation-only: it reads `status`.
 
 import { memo } from 'react';
+import { motion, useReducedMotion } from 'framer-motion';
 import type { StageNode } from '@/lib/execution/adapters/orchestration';
 
 interface StageRailProps {
   stageNodes: StageNode[];
   selectedIndex?: number | null;
   onSelectStage?: (index: number) => void;
+  /**
+   * M2.5 Task 4 — completion sweep trigger. The rail itself can't detect
+   * "just finished" (it's presentation-only, one snapshot in, one render
+   * out); the composition layer diffs `runState` across renders and bumps
+   * this counter exactly once on a running -> complete transition. A
+   * changed value re-mounts the sweep (via `key`), so it always plays
+   * exactly once and never loops.
+   */
+  completionSweepNonce?: number;
 }
 
 function dotStyle(status: StageNode['status']): React.CSSProperties {
@@ -37,12 +47,14 @@ function dotStyle(status: StageNode['status']): React.CSSProperties {
   }
 }
 
-function StageRailImpl({ stageNodes, selectedIndex, onSelectStage }: StageRailProps) {
+function StageRailImpl({ stageNodes, selectedIndex, onSelectStage, completionSweepNonce }: StageRailProps) {
   const current = stageNodes.find((s) => s.status === 'current');
+  const prefersReducedMotion = useReducedMotion();
+  const showSweep = Boolean(completionSweepNonce) && !prefersReducedMotion;
 
   return (
     <div style={{ width: '100%', userSelect: 'none' }}>
-      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
         {/* connecting line — very low opacity, behind the dots */}
         <div
           style={{
@@ -54,6 +66,30 @@ function StageRailImpl({ stageNodes, selectedIndex, onSelectStage }: StageRailPr
             opacity: 0.4,
           }}
         />
+
+        {/* Completion sweep — one-shot left-to-right light, once per
+            running->complete transition. key={nonce} forces a remount so it
+            always plays fresh and never repeats on its own. */}
+        {showSweep && (
+          <motion.div
+            key={completionSweepNonce}
+            initial={{ left: '-12%', opacity: 0 }}
+            animate={{
+              left: '100%',
+              opacity: [0, 1, 1, 0],
+              transition: { duration: 0.4, ease: 'easeOut' },
+            }}
+            style={{
+              position: 'absolute',
+              top: 0,
+              bottom: 0,
+              width: '14%',
+              background:
+                'linear-gradient(90deg, transparent, var(--ig-emerald-glow) 45%, var(--ig-emerald-bright) 50%, var(--ig-emerald-glow) 55%, transparent)',
+              pointerEvents: 'none',
+            }}
+          />
+        )}
         {stageNodes.map((s) => {
           const isSelected = selectedIndex === s.index;
           return (

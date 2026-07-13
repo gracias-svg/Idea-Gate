@@ -42,12 +42,25 @@ export interface AgentDef {
 
 // `type` (not interface) so the shapes satisfy XYFlow v12's
 // `Record<string, unknown>` node-data constraint.
+//
+// M2.5 note: `rippleTone`/`rippleNonce`/`reasoningTag` below are UI-interaction
+// presentation fields, NOT runtime data — the layering law only forbids runtime
+// concepts (`completedAt`, `agentsByStage`, ...) leaking into this bag; a
+// one-shot ripple trigger or an already-composed caption string is not that.
+// `toOrchestrationModel` NEVER sets them (always undefined on its output) —
+// it stays a pure, stateless snapshot function and cannot know "just
+// transitioned". The composition layer (mc-scratch today, office/page.tsx in
+// M3) diffs consecutive snapshots itself and overlays these fields onto the
+// matching node before handing nodes/edges to OrchestrationCanvas.
 export type AgentNodeData = {
   agentId: AgentId;
   label: string;
   color: string;            // Foundation token, e.g. 'var(--ig-agent-ps)'
   status: AgentStatus;
   isCoordinator: boolean;
+  rippleTone?: 'emerald' | 'caution' | null;
+  rippleNonce?: number;
+  reasoningTag?: string | null;
 };
 
 export type FlowEdgeData = {

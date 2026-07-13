@@ -13,7 +13,7 @@
 // inner component refits on every container resize and whenever the node set
 // changes, so the graph always fills the hero.
 
-import { memo, useCallback, useEffect, useRef } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -36,15 +36,48 @@ const edgeTypes: EdgeTypes = { flow: FlowEdge };
 const FIT_VIEW_OPTIONS = { padding: 0.28 };
 const PRO_OPTIONS = { hideAttribution: true };
 
+// M2.5 — one-shot interaction overlays. The adapter's `nodes` prop never
+// carries these (toOrchestrationModel is a pure snapshot fn and can't know
+// "just happened"). The composition layer diffs consecutive snapshots and
+// passes the result down as these two small signals; the canvas merges them
+// onto the matching node's `data` right before handing nodes to XYFlow. This
+// is prop plumbing, not journey-state knowledge — same category as
+// `onSelectNode`.
+export interface RippleSignal {
+  nodeId: string;
+  tone: 'emerald' | 'caution';
+  nonce: number;
+}
+export interface ReasoningSignal {
+  nodeId: string;
+  text: string;
+}
+
 interface OrchestrationCanvasProps {
   nodes: Node<AgentNodeData>[];
   edges: Edge[];
   onSelectNode?: (agentId: string | null) => void;
+  ripple?: RippleSignal | null;
+  reasoning?: ReasoningSignal | null;
 }
 
-function CanvasInner({ nodes, edges, onSelectNode }: OrchestrationCanvasProps) {
+function CanvasInner({ nodes, edges, onSelectNode, ripple, reasoning }: OrchestrationCanvasProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const { fitView } = useReactFlow();
+
+  const decoratedNodes = useMemo(() => {
+    return nodes.map((n) => ({
+      ...n,
+      data: {
+        ...n.data,
+        ...(n.id === ripple?.nodeId ? { rippleTone: ripple.tone, rippleNonce: ripple.nonce } : {}),
+        // Every node's tag is recomputed from the current signal, so the
+        // previously-tagged node correctly clears (and exit-fades) when the
+        // active agent changes to someone else.
+        reasoningTag: n.id === reasoning?.nodeId ? reasoning.text : undefined,
+      },
+    }));
+  }, [nodes, ripple, reasoning]);
 
   const refit = useCallback(() => {
     // rAF so we measure after layout has settled.
@@ -74,7 +107,7 @@ function CanvasInner({ nodes, edges, onSelectNode }: OrchestrationCanvasProps) {
   return (
     <div ref={wrapRef} style={{ width: '100%', height: '100%' }}>
       <ReactFlow
-        nodes={nodes}
+        nodes={decoratedNodes}
         edges={edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}

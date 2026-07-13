@@ -6,11 +6,14 @@
 // This page is the composition/orchestration layer: it may read the store and
 // map runtime → presentation items. The viz components stay presentation-only.
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import WorkspaceLayout from '@/components/shell/WorkspaceLayout';
 import HeroSlot from '@/components/ui/HeroSlot';
 import Panel from '@/components/ui/Panel';
-import OrchestrationCanvas from '@/components/viz/OrchestrationCanvas';
+import OrchestrationCanvas, {
+  type RippleSignal,
+  type ReasoningSignal,
+} from '@/components/viz/OrchestrationCanvas';
 import StageRail from '@/components/viz/StageRail';
 import MetricGrid, { type MetricItem } from '@/components/viz/MetricGrid';
 import ActivityStream, { type ActivityItem } from '@/components/viz/ActivityStream';
@@ -50,22 +53,42 @@ function emptyState(): ExecutionState {
   return { currentStage: 0, stages: {}, agents: {}, metrics: null };
 }
 
-function runningState(): ExecutionState {
-  // Stages 0–3 complete (stage 3 low-confidence), stage 4 in progress → AR alive.
+// M2.5 — parameterised by the stage currently in progress so the "Advance
+// Stage" demo control (below) can step it forward, one stage at a time,
+// each step producing a fresh completion (drives the ripple) and eventually
+// a running->complete transition (drives the stage-rail sweep). Confidence
+// pattern (every 4th stage low) matches the original fixed M2 fixture —
+// stage 3 is still low-confidence at the default starting point (4).
+function demoRunningState(activeStage: number): ExecutionState {
   const stages: Record<string, StageState> = {};
-  for (let i = 0; i <= 4; i++) {
-    const base = { id: String(i), status: 'completed' as const, startedAt: '2026-07-11T18:00:00.000Z' };
-    if (i < 4) {
-      stages[String(i)] = { ...base, completedAt: '2026-07-11T18:05:00.000Z', confidence: i === 3 ? 'low' : 'high' };
+  const lastIndex = Math.min(activeStage, 14);
+  for (let i = 0; i <= lastIndex; i++) {
+    if (i === activeStage && activeStage <= 14) {
+      stages[String(i)] = { id: String(i), status: 'active', startedAt: '2026-07-11T18:06:00.000Z' };
     } else {
-      stages[String(i)] = { id: '4', status: 'active', startedAt: '2026-07-11T18:06:00.000Z' };
+      stages[String(i)] = {
+        id: String(i),
+        status: 'completed',
+        startedAt: '2026-07-11T18:00:00.000Z',
+        completedAt: '2026-07-11T18:05:00.000Z',
+        confidence: i % 4 === 3 ? 'low' : 'high',
+      };
     }
   }
+  const completedStages = Object.values(stages).filter((s) => s.completedAt).length;
   return {
-    currentStage: 4,
+    currentStage: lastIndex,
     stages,
     agents: {},
-    metrics: { currentStage: 4, totalStages: 14, completedStages: 4, totalDurationMs: 0, lastUpdated: new Date().toISOString() },
+    metrics: {
+      currentStage: lastIndex,
+      totalStages: 14,
+      completedStages,
+      totalDurationMs: 0,
+      // Always fresh — the staleness guard (adapter C2) would otherwise
+      // treat this synthetic fixture as an abandoned run.
+      lastUpdated: new Date().toISOString(),
+    },
   };
 }
 
@@ -108,6 +131,16 @@ function toVitals(s: ExecutionState, activeAgentId: string | null, runState: str
 export default function McScratchPage() {
   const [scenario, setScenario] = useState<Scenario>('live');
 
+  // M2.5 — synthetic "advance stage" control for the running scenario, so
+  // the storytelling motion (ripple on completion, eventual completion
+  // sweep) can be demonstrated deterministically instead of waiting on a
+  // real run. Resets to the original M2 fixture (stage 4, AR active) every
+  // time the running tab is re-entered.
+  const [demoStage, setDemoStage] = useState(4);
+  useEffect(() => {
+    if (scenario === 'running') setDemoStage(4);
+  }, [scenario]);
+
   // Live store snapshot.
   const liveCurrentStage = useExecutionStore((s) => s.currentStage);
   const liveStages = useExecutionStore((s) => s.stages);
@@ -116,9 +149,9 @@ export default function McScratchPage() {
 
   const execution: ExecutionState = useMemo(() => {
     if (scenario === 'empty') return emptyState();
-    if (scenario === 'running') return runningState();
+    if (scenario === 'running') return demoRunningState(demoStage);
     return { currentStage: liveCurrentStage, stages: liveStages, agents: liveAgents, metrics: liveMetrics };
-  }, [scenario, liveCurrentStage, liveStages, liveAgents, liveMetrics]);
+  }, [scenario, demoStage, liveCurrentStage, liveStages, liveAgents, liveMetrics]);
 
   const model = useMemo(
     () => toOrchestrationModel(execution, AGENT_DEFS, AGENT_LAYOUT),
@@ -128,6 +161,71 @@ export default function McScratchPage() {
   const metricItems = toMetricItems(execution, model.activeAgentId, model.runState);
   const activityItems = toActivityItems(execution);
   const vitals = toVitals(execution, model.activeAgentId, model.runState);
+
+  // ── M2.5 storytelling signals — diffed here, in the composition layer,
+  // never in the pure adapter (see OrchestrationCanvas.tsx comment). ──────
+
+  // Reset both diff baselines silently on scenario switch, BEFORE the diff
+  // effects below run in the same commit — otherwise switching tabs would
+  // read a stale baseline from a different scenario and fire a spurious
+  // burst of ripples / a spurious sweep. Declared first so it commits first.
+  const prevStagesRef = useRef<Record<string, StageState> | null>(null);
+  const prevRunStateRef = useRef<string | null>(null);
+  useEffect(() => {
+    prevStagesRef.current = null;
+    prevRunStateRef.current = null;
+  }, [scenario]);
+
+  // Task 2 — confidence ripple: fire once from the owning agent whenever a
+  // stage transitions to completed. Tone carries the confidence signal
+  // itself (caution = low) rather than a separate indicator.
+  const rippleNonceRef = useRef(0);
+  const [ripple, setRipple] = useState<RippleSignal | null>(null);
+  useEffect(() => {
+    const prev = prevStagesRef.current;
+    prevStagesRef.current = execution.stages;
+    if (!prev) return; // first observation of this baseline — nothing "just" happened.
+    for (const [idx, stage] of Object.entries(execution.stages)) {
+      if (stage.completedAt && !prev[idx]?.completedAt) {
+        const owner = AGENT_DEFS.find((d) => d.stages.includes(Number(idx)));
+        if (owner) {
+          rippleNonceRef.current += 1;
+          setRipple({
+            nodeId: owner.id,
+            tone: stage.confidence === 'low' ? 'caution' : 'emerald',
+            nonce: rippleNonceRef.current,
+          });
+        }
+      }
+    }
+  }, [execution.stages]);
+
+  // Task 4 — completion sweep: fire once on a running -> complete transition.
+  const sweepNonceRef = useRef(0);
+  const [completionSweepNonce, setCompletionSweepNonce] = useState(0);
+  useEffect(() => {
+    const prev = prevRunStateRef.current;
+    prevRunStateRef.current = model.runState;
+    if (prev === 'running' && model.runState === 'complete') {
+      sweepNonceRef.current += 1;
+      setCompletionSweepNonce(sweepNonceRef.current);
+    }
+  }, [model.runState]);
+
+  // Task 3 — reasoning tag: real data only. Stage label is always known;
+  // the confidence half only renders when the store has actually resolved a
+  // confidence for THIS stage. For a stage still in progress that's usually
+  // not yet true (confidence is written at completion) — so on genuinely
+  // live/in-progress work the tag will often show just the label, which is
+  // the honest behaviour, not a missing feature.
+  const reasoning: ReasoningSignal | null = useMemo(() => {
+    if (!model.activeAgentId) return null;
+    const label = STAGE_LABELS[execution.currentStage];
+    if (!label) return null;
+    const confidence = execution.stages[String(execution.currentStage)]?.confidence;
+    const phrase = confidence ? (confidence === 'low' ? 'reviewing carefully' : 'high confidence') : null;
+    return { nodeId: model.activeAgentId, text: phrase ? `${label} · ${phrase}` : label };
+  }, [model.activeAgentId, execution.currentStage, execution.stages]);
 
   return (
     <div style={{ height: '100%', padding: 20, boxSizing: 'border-box' }}>
@@ -150,6 +248,26 @@ export default function McScratchPage() {
             {s}
           </button>
         ))}
+        {scenario === 'running' && (
+          <button
+            type="button"
+            data-testid="advance-stage"
+            onClick={() => setDemoStage((s) => Math.min(s + 1, 15))}
+            disabled={demoStage > 14}
+            style={{
+              fontFamily: 'var(--ig-font-mono)', fontSize: 11,
+              padding: '4px 12px', borderRadius: 6,
+              cursor: demoStage > 14 ? 'default' : 'pointer',
+              textTransform: 'uppercase', letterSpacing: '0.06em',
+              background: 'transparent',
+              color: demoStage > 14 ? 'var(--ig-text-tertiary)' : 'var(--ig-emerald)',
+              border: `1px solid ${demoStage > 14 ? 'var(--ig-border-default)' : 'var(--ig-emerald-dim)'}`,
+              opacity: demoStage > 14 ? 0.5 : 1,
+            }}
+          >
+            {demoStage > 14 ? 'Run complete' : 'Advance Stage →'}
+          </button>
+        )}
       </div>
 
       <div style={{ height: 'calc(100% - 46px)' }}>
@@ -159,7 +277,12 @@ export default function McScratchPage() {
             <HeroSlot alive={model.runState === 'running'} className="h-full">
               <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 16 }}>
                 <div style={{ position: 'relative', flex: 1, minHeight: 340 }}>
-                  <OrchestrationCanvas nodes={model.nodes} edges={model.edges} />
+                  <OrchestrationCanvas
+                    nodes={model.nodes}
+                    edges={model.edges}
+                    ripple={ripple}
+                    reasoning={reasoning}
+                  />
                   {model.runState === 'empty' && (
                     <div
                       style={{
@@ -173,7 +296,7 @@ export default function McScratchPage() {
                   )}
                 </div>
                 <div style={{ flexShrink: 0 }}>
-                  <StageRail stageNodes={model.stageNodes} />
+                  <StageRail stageNodes={model.stageNodes} completionSweepNonce={completionSweepNonce} />
                 </div>
               </div>
             </HeroSlot>

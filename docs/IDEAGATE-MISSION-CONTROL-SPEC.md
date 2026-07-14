@@ -2,6 +2,10 @@
 # Live Orchestration · The First Flagship Experience
 # Version 1.0 | July 2026
 
+> Construction, motion, and state rules live ONLY in THE GRAMMAR
+> (docs/IDEAGATE-VISUAL-GRAMMAR.md). This document defines what is specific to the Live
+> Orchestration screen: composition, the adapter, the component list, and batch sequencing.
+
 > **Prerequisite:** Foundation Phase 1 complete and frozen (`v5.1-foundation-complete`),
 > providers wired (`2c23d1d`), Execution Context verified hydrating live data.
 >
@@ -95,51 +99,15 @@ Vitals is a thin text band. This is `WorkspaceLayout` used exactly as designed.
 
 ---
 
-## 3. VISUAL GRAMMAR APPLIED (from Foundation §1 — law, not suggestion)
+## 3. Construction
 
-| Element | Rendering |
-|---|---|
-| **Coordinator** | **Hexagon**, ~72px, emerald stroke, `--ig-surface-raised` fill, emerald `CO` label. The only hexagon in the product. |
-| **Specialist** | **Circle**, ~56px. Stroke + label in that agent's palette color (`--ig-agent-ps/re/ux/ar/qa`). |
-| **Agent: active** | Fill = agent color @15%, stroke 2px full agent color, label full opacity. **Emerald glow + `breathe`.** |
-| **Agent: done** | Fill = `--ig-surface-raised`, stroke 1px agent color @40%, label @60%. No motion. |
-| **Agent: waiting** | Outline only, `--ig-border-default` stroke, label `--ig-text-tertiary`. No motion. |
-| **Edge: active** | Solid bezier, emerald, animated dash-flow (CSS). CO → active specialist only. |
-| **Edge: waiting** | Dashed bezier, `--ig-border-default`, static. |
-| **Edge: blocked** | Severed (gap in the middle of the path), `--ig-danger`. *(Grammar reserved; the current engine has no blocked state. Implement the visual, leave it unused.)* |
-| **Stage node: done** | Filled emerald dot. |
-| **Stage node: current** | Emerald dot + 3px emerald ring. |
-| **Stage node: low-confidence** | Filled `--ig-caution` (amber) dot. |
-| **Stage node: pending** | Outlined dot, `--ig-border-default`. |
-| **Ripple** | One-shot expanding emerald ring from the agent node whose stage just completed (`propagate` primitive). Confidence resolving. |
-| **Selection** | 2px `--ig-emerald-muted` ring, persistent. **Distinct from hover, focus, and active-work.** |
+All node, edge, canvas, and material construction rules are defined in
+docs/IDEAGATE-VISUAL-GRAMMAR.md. This document does not define construction. If this
+spec and the Grammar ever disagree, the Grammar wins.
 
 ---
 
-## 4. THE ONE-ALIVE-ELEMENT RULE — how it resolves here
-
-> **CORRECTED by M0 reality check (C1) — this section supersedes the original §4.**
-> The store has no "between stages" state; there is no data for it. The rule below is
-> what the data actually supports.
-
-This is the most important craft decision in the experience, and it must be implemented
-exactly:
-
-> **The single alive element is whichever agent OWNS `currentStage`**, per
-> `AGENT_DEFS.stages[]`. This may be a specialist **or** the Coordinator — CO owns stages
-> 0, 6 and 11 and does real work on them. At any instant **exactly one node is alive**, and
-> it is the owner of the current stage.
->
-> - When a **specialist** owns the current stage: that specialist glows and `breathe`s, and
->   the `CO → specialist` edge animates (work is being handed off).
-> - When the **Coordinator** owns the current stage: CO glows and `breathe`s, and **no edge
->   animates** — nothing is being handed off, CO is doing the work itself.
->
-> There is **no** "CO breathes between stages" moment. That idea is deleted.
-
-Consequence: at any instant, **exactly one node is alive** — never zero (while running),
-never two. You watch attention move from node to node as stages advance. That movement *is*
-the orchestration made visible. Two things breathing at once destroys it.
+## 4. Motion. Defined in THE GRAMMAR §7. Not redefined here.
 
 ---
 
@@ -233,22 +201,13 @@ it will fight XYFlow and cause jitter. Animate only *inner* elements of the node
 
 ---
 
-## 7. MOTION MAPPING (Foundation §6 primitives — no new animations)
-
-| Primitive | Where it fires | Trigger |
-|---|---|---|
-| `breathe` | The single active node (specialist, or CO between stages) — inner element only | `status === 'active'` |
-| `handoffTransition` | The active edge's `strokeDashoffset` — **via CSS animation, not JS** | Edge is CO→active-specialist |
-| `propagate` | One-shot ripple from an agent node | Store detects `currentStage` advanced (stage completed) |
-| `reveal` + `staggerParent` | `ActivityStream` items, `MetricGrid` on mount | Mount / new event |
-| `settle` | **Unused in Mission Control v1.** It was designed for a different composition. Do not force it. | — |
-
-**Motion stops entirely when nothing is working.** Run complete or idle → no breathe, no
-dash-flow, no ripple. A still screen is the honest signal that no cognition is happening.
+## 7. See THE GRAMMAR §7.
 
 ---
 
 ## 8. SELECTION (proving the contract)
+
+Status: NOT YET IMPLEMENTED. M4 was never run. Scoped to W1.
 
 - Click an agent node → `select({ id: agent.id, kind: 'agent' })`
 - Click a stage rail node → `select({ id: String(stageIndex), kind: 'stage' })`
@@ -264,17 +223,7 @@ rather than aspirational.
 
 ---
 
-## 9. STATES (Foundation seven-state contract)
-
-| State | What renders |
-|---|---|
-| **Empty (no run)** | **The full graph renders at rest** — hexagon + 5 circles, all dimmed/outlined, all edges dashed, stage rail all pending. No glow, no motion. Caption near the CO: *"Run an idea to see the organization work."* **Never a blank page. Never a spinner.** |
-| **Loading (first fetch)** | Skeleton nodes in the graph's layout positions. Not a spinner. |
-| **Active** | §3/§4 exactly. One alive element. |
-| **Low confidence** | The stage rail node is amber. The `VitalsBand` names it. Nothing alarms. |
-| **Error** | `VitalsBand` shows plain-language cause + a next action. No stack trace, ever. |
-| **Complete** | All stage nodes emerald. All agents `done`. **All motion stops.** One single left-to-right emerald sweep across the stage rail (400ms, once, never repeated). Quiet completeness — no confetti. |
-| **Stale** | Stage nodes for superseded artifacts render muted (`--ig-stale`). |
+## 9. See THE GRAMMAR §10 (Empty State Grammar).
 
 ---
 
@@ -361,6 +310,24 @@ Run this in the browser after M4. This is the difference between premium and alm
 **The final test — the only one that matters:**
 > Show someone the Analytics tab for five seconds. Ask what they saw. If they say
 > *"a dashboard,"* we failed. If they say *"a team working on something,"* we succeeded.
+
+---
+
+## 12. Design Intent
+
+Not a specification. When multiple choices are all constructionally valid and correctly
+authorized, this is the tie-breaker. If a decision doesn't serve these, reconsider it
+regardless of whether it technically complies with the Grammar.
+
+- Calm under information density — dense is fine, cluttered is not.
+- Hierarchy before decoration — earn attention through weight and position, not effects.
+- Motion communicates state, never entertains.
+- Every visual element earns its place — if removing it loses no meaning, remove it.
+- Premium through restraint, not spectacle.
+- The graph reads as a team working, not a system rendering.
+- Stillness is honest — a quiet screen means nothing is happening, and that's fine.
+- No sci-fi, no HUD, no "AI aesthetic" signaling — earn premium through craft.
+- When in doubt, ask: would this survive being shown to a hiring manager for 3 seconds?
 
 ---
 

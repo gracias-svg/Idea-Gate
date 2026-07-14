@@ -318,9 +318,18 @@ body {
   --ig-radius-sm: 4px; --ig-radius-md: 8px; --ig-radius-lg: 12px;
   --ig-radius-xl: 16px; --ig-radius-full: 999px;
 
-  /* ── Elevation (light-based, not heavy shadow) ── */
-  --ig-elev-1: inset 0 0 0 1px var(--ig-border-subtle);
-  --ig-elev-2: inset 0 0 0 1px var(--ig-border-default), 0 1px 0 0 oklch(100% 0 0 / 0.03);
+  /* ── Elevation (light-based, not heavy shadow) — Grammar §1.1, four
+     stacked layers: top-edge highlight, hairline border, contact shadow,
+     ambient shadow. Replaces the single-layer border-only placeholder. ── */
+  --ig-elev-1:
+    inset 0 1px 0 0 oklch(100% 0 0 / 0.04),
+    inset 0 0 0 1px var(--ig-border-subtle),
+    0 1px 2px 0 oklch(0% 0 0 / 0.25);
+  --ig-elev-2:
+    inset 0 1px 0 0 oklch(100% 0 0 / 0.06),
+    inset 0 0 0 1px var(--ig-border-default),
+    0 1px 2px 0 oklch(0% 0 0 / 0.30),
+    0 8px 24px -8px oklch(0% 0 0 / 0.28);
   --ig-elev-overlay: 0 8px 40px -8px oklch(0% 0 0 / 0.6);
   --ig-glow-active: 0 0 24px -4px var(--ig-emerald-glow);
   --ig-focus-ring: 0 0 0 2px var(--ig-emerald-muted);
@@ -331,18 +340,40 @@ body {
   --ig-font-sans: var(--font-geist-sans), -apple-system, system-ui, sans-serif;
   --ig-font-mono: 'JetBrains Mono', 'Geist Mono', ui-monospace, monospace;
 
-  /* Note: spec §3's type scale (--ig-t-hero..--ig-t-code) is a component-
-     level reference table (size/weight/tracking/font per row), not a
-     literal CSS drop-in — §2's globals.css block doesn't define it as
-     custom properties. Left for Batch F3 composition primitives to apply
-     directly per the table, rather than inventing a lossy CSS-var
-     encoding here (font shorthand can't carry letter-spacing/tracking). */
+  /* ── Type scale (Grammar §5.2). Encoded as separate size/weight/tracking/
+     leading properties per row — not a font shorthand — because shorthand
+     can't carry letter-spacing or line-height. Additive only: nothing
+     consumes these yet, they land ahead of the components that will apply
+     them (W0-C and later). Family is sans by default; label is the one
+     row that is mono, per the Grammar (machine-surface convention). ── */
+  --ig-t-hero-size:    40px; --ig-t-hero-weight:    700; --ig-t-hero-tracking:    -0.02em;
+  --ig-t-display-size: 28px; --ig-t-display-weight: 700; --ig-t-display-tracking: -0.01em;
+  --ig-t-title-size:   18px; --ig-t-title-weight:   600;
+  --ig-t-body-size:    14px; --ig-t-body-weight:    400; --ig-t-body-leading:     1.6;
+  --ig-t-label-size:   10px; --ig-t-label-weight:   600; --ig-t-label-tracking:   0.08em;
+  --ig-t-caption-size: 11px; --ig-t-caption-weight: 500;
 
   /* ── Spacing & layout scale (spec §4) ── */
   --ig-space-1: 4px;  --ig-space-2: 8px;   --ig-space-3: 12px; --ig-space-4: 16px;
   --ig-space-6: 24px; --ig-space-8: 32px;  --ig-space-12: 48px; --ig-space-16: 64px;
   --ig-rail-width: 240px; --ig-topbar-h: 52px; --ig-statusbar-h: 28px;
   --ig-content-max: 1440px; --ig-reading-max: 68ch;
+}
+
+/* ── Grain (Grammar §1.3, 🔬 EXPERIMENTAL) — defined, NOT applied anywhere.
+   The <filter id="ig-grain"> lives in src/components/ui/GrainFilter.tsx,
+   mounted once globally in layout.tsx. This utility class is the intended
+   consumption point for later — full-viewport, ~2.5% opacity, opaque
+   texture (not glassmorphism: no blur, no translucency). No selector
+   references .ig-grain-overlay yet, so this rule is inert. Trivially
+   removable alongside GrainFilter.tsx if it doesn't survive review. ── */
+.ig-grain-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.025;
+  filter: url(#ig-grain);
 }
 
 @layer base {

@@ -27,6 +27,7 @@ import QueryProvider from '@/components/providers/QueryProvider';
 import ExecutionProvider from '@/components/providers/ExecutionProvider';
 import { GeistSans } from "geist/font/sans";
 import { cn } from "@/lib/utils";
+import GrainFilter from "@/components/ui/GrainFilter";
 
 export const metadata: Metadata = {
   title:       'IdeaGate — AI-Native PM Operating System',
@@ -39,10 +40,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body style={{
         margin:          0,
         padding:         0,
-        backgroundColor: '#020609',
+        backgroundColor: 'var(--ig-canvas)',
         fontFamily:      "'JetBrains Mono','Fira Code',monospace",
         overflowX:       'hidden',
       }}>
+        {/* W0-B: filter defined, not applied to anything yet — see GrainFilter.tsx */}
+        <GrainFilter />
         <QueryProvider>
           <ExecutionProvider>
             <RuntimeContext>

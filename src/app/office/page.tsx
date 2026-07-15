@@ -255,7 +255,7 @@ export default function OfficePage() {
   const sessionCost   = runtime.state.sessionCost;
 
   return (
-    <div style={{display:'flex',flexDirection:'column',height:'100vh',backgroundColor:'#020609',overflow:'hidden',...MONO,color:'#94a3b8'}}>
+    <div style={{display:'flex',flexDirection:'column',height:'100vh',backgroundColor:'var(--ig-canvas)',overflow:'hidden',...MONO,color:'#94a3b8'}}>
       <style>{`
         ::-webkit-scrollbar{width:3px} ::-webkit-scrollbar-thumb{background:#1e293b;border-radius:2px}
         @keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}}

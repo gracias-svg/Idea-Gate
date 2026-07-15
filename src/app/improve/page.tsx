@@ -314,7 +314,7 @@ export default function ImprovePage() {
   const B: React.CSSProperties = { ...MONO, cursor:'pointer', border:'none', borderRadius:'3px' };
 
   return (
-    <div style={{display:'flex',flexDirection:'column',height:'100vh',backgroundColor:'#020609',overflow:'hidden',...MONO,color:'#94a3b8'}}>
+    <div style={{display:'flex',flexDirection:'column',height:'100vh',backgroundColor:'var(--ig-canvas)',overflow:'hidden',...MONO,color:'#94a3b8'}}>
       <style>{`
         ::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-thumb{background:#1e293b;border-radius:2px}
         ::-webkit-scrollbar-track{background:transparent} textarea::placeholder{color:#334155}

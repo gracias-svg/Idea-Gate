@@ -186,29 +186,37 @@ body {
    ========================================================= */
 
 :root {
-  /* SURFACES (dark-first, green-tinted) */
-  --surface-base:     #020c06;
-  --surface-raised:   #06140c;
-  --surface-overlay:  #0a1c11;
-  --surface-sunken:   #010704;
+  /* W0-C1 — Foundation bridge. These legacy Mission-14 tokens are now
+     ALIASES onto the Foundation (--ig-*) scale, so ~100 legacy consumers
+     resolve to one source of truth without touching any component. Values
+     are no longer authored here; the canonical value lives on the --ig-*
+     target. Dead tokens (no consumers) are aliased too, for consistency
+     and to preserve ladder order. --status-* stay literal (semantic colors,
+     not surfaces — out of scope). Legacy names should disappear over time. */
+
+  /* SURFACES (ladder order preserved — monotonic, verified B2) */
+  --surface-base:     var(--ig-canvas);
+  --surface-raised:   var(--ig-surface-raised);
+  --surface-overlay:  var(--ig-surface-overlay);   /* dead, align */
+  --surface-sunken:   var(--ig-surface);           /* dead, align */
 
   /* BORDERS */
-  --border-subtle:    rgba(74,222,128,0.08);
-  --border-default:   rgba(74,222,128,0.15);
-  --border-strong:    rgba(74,222,128,0.30);
+  --border-subtle:    var(--ig-border-subtle);
+  --border-default:   var(--ig-border-default);
+  --border-strong:    var(--ig-border-strong);
 
   /* ACCENT */
-  --accent-primary:   #4ade80;
-  --accent-hover:     #6ee79b;
-  --accent-muted:     rgba(74,222,128,0.12);
-  --accent-glow:      rgba(74,222,128,0.06);
+  --accent-primary:   var(--ig-emerald);
+  --accent-hover:     var(--ig-emerald-bright);    /* dead, align */
+  --accent-muted:     var(--ig-emerald-muted);
+  --accent-glow:      var(--ig-emerald-glow);      /* dead, align */
 
   /* TEXT */
-  --text-primary:     #f1f5f4;
-  --text-secondary:   #9ca3af;
-  --text-tertiary:    #6b7280;
-  --text-accent:      #4ade80;
-  --text-on-accent:   #020c06;
+  --text-primary:     var(--ig-text-primary);
+  --text-secondary:   var(--ig-text-secondary);
+  --text-tertiary:    var(--ig-text-tertiary);
+  --text-accent:      var(--ig-emerald);           /* dead, align */
+  --text-on-accent:   var(--ig-text-on-emerald);   /* canonical Foundation token; emerald is fixed identity */
 
   /* STATUS */
   --status-active:    #4ade80;

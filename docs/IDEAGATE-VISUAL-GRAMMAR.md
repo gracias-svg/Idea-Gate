@@ -228,6 +228,36 @@ Every stat pairs `--ig-t-hero` (40px) with `--ig-t-label` (10px). **That ratio *
 premium signal.** The current build renders both at ~12px — a 1:1 ratio — which is exactly
 why nothing on screen has hierarchy.
 
+## 5.4 Label/Content Authority 🏛
+**A label MARKS content. It must never OUTWEIGH it.**
+
+A label is a signpost, not the destination. Its job is to name a region quietly; the
+information it introduces must always read as the more prominent of the two.
+
+- **Labels** — `--ig-t-label`, uppercase, letter-spaced, and set in a **dim/muted color**.
+  A label may carry a high `font-weight` (e.g. 600), but that weight is spent on
+  *structure, not emphasis*: uppercase + tracking + low luminance keep its **effective
+  visual weight** (its perceived heaviness on a dark surface) **low**.
+- **Content the label describes** must read as *more prominent than its label* through
+  **two coordinated signals, never one axis alone**:
+  1. **Higher luminance contrast** against the background than its label — measurably, not
+     marginally. A few points of luminance above a dim label is not authority; the content
+     must sit clearly brighter.
+  2. **Font-weight ≥ the label's *effective visual weight*** — never lighter. Because a dim,
+     tracked, uppercase label has low effective weight, content typically achieves this at a
+     mid weight (≈500) *combined with* the luminance lift — not by jumping to a heavy weight
+     on the weight axis alone.
+
+**This is a weight-and-luminance composition rule layered onto §5.2 — it does not change any
+`--ig-t-*` size value.** Size is a third, separate lever; do not reach for it to manufacture
+authority the weight/color layer should already provide.
+
+**The relationship is proportional, not tied to one size pair.** It holds at every density
+tier — caption, body, title — and governs *information hierarchy in general*, so it applies
+equally to future non-prose tenants (diagrams, reasoning threads, comparison views,
+dependency graphs, timelines), not only to text lists. Wherever a marker introduces
+information, the information wins.
+
 ---
 
 # §6 — SPACING 🏛

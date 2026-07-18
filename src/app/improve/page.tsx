@@ -105,6 +105,21 @@ const T: Record<'hero'|'display'|'title'|'body'|'label'|'caption', React.CSSProp
   caption: { fontFamily:FONT_MONO, fontSize:'var(--ig-t-caption-size)', fontWeight:500 },
 };
 
+// ── Hero surface + reading measure (Design Direction §1.5 · §2 · §3.1) ─────────
+// The hero is a SLOT, not a type. `heroSurface` is the outer container that fills the
+// full central region for ANY tenant (prose today; diagram / comparison / reasoning
+// trace later) — it carries NO prose-specific constraint. `readingMeasure` is a
+// DISTINCT, addressable inner layer that caps ONLY running prose to a comfortable
+// measure and centres it, so whitespace becomes editorial margin rather than an empty
+// gutter. The two are never fused: a non-prose tenant uses heroSurface alone.
+// `fontSize` is pinned to the body rung so `68ch` resolves against the reading size
+// (without it, ch collapses against an inherited 8px and the measure halves).
+const heroSurface: React.CSSProperties = { flex:1, overflowY:'auto' };
+const readingMeasure: React.CSSProperties = {
+  maxWidth:'var(--ig-reading-max)', width:'100%', margin:'0 auto',
+  fontSize:'var(--ig-t-body-size)',
+};
+
 // ── Markdown renderer ─────────────────────────────────────────────────────────
 function ir(text:string,k:string):React.ReactNode[]{
   return text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g).map((p,i)=>{
@@ -535,8 +550,8 @@ export default function ImprovePage() {
           )}
 
           {!selected&&(
-            <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',overflowY:'auto',padding:'48px 56px'}}>
-              <div style={{width:'100%',maxWidth:'var(--ig-reading-max)',display:'flex',flexDirection:'column',gap:'32px'}}>
+            <div style={{...heroSurface,display:'flex',alignItems:'center',justifyContent:'center',padding:'48px 56px'}}>
+              <div style={{...readingMeasure,display:'flex',flexDirection:'column',gap:'32px'}}>
                 <div style={{display:'flex',flexDirection:'column',gap:'14px'}}>
                   <div style={{...T.display,color:'#e2e8f0'}}>Choose an artifact to refine</div>
                   <div style={{...T.body,color:'#64748b',maxWidth:'56ch'}}>
@@ -567,8 +582,8 @@ export default function ImprovePage() {
           {selected&&fileLoading&&<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{fontSize:'11px',color:'#475569'}}>Loading artifact…</span></div>}
 
           {selected&&!fileLoading&&uiState==='idle'&&rawContent&&(
-            <div style={{flex:1,overflowY:'auto',padding:'32px 40px'}}>
-              <div style={{maxWidth:'var(--ig-reading-max)'}}>
+            <div style={{...heroSurface,padding:'32px 40px'}}>
+              <div style={readingMeasure}>
                 <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'20px'}}>
                   <div style={{...T.label,color:'#2a5a30'}}>CURRENT · {selected}</div>
                   {runtime.isStale(selected)&&<div style={{...T.caption,color:'#f59e0b',padding:'1px 6px',border:'1px solid #f59e0b33',borderRadius:'2px'}}>△ STALE</div>}
@@ -613,8 +628,8 @@ export default function ImprovePage() {
               </div>
             </div>
           )}
-          {result&&uiState==='previewed'&&view==='original'&&<div style={{flex:1,overflowY:'auto',padding:'24px 32px'}}><div style={{maxWidth:'var(--ig-reading-max)'}}><MD content={result.original} fs={12}/></div></div>}
-          {result&&uiState==='previewed'&&view==='improved'&&<div style={{flex:1,overflowY:'auto',padding:'24px 32px'}}><div style={{maxWidth:'var(--ig-reading-max)'}}><MD content={result.improved} fs={13}/></div></div>}
+          {result&&uiState==='previewed'&&view==='original'&&<div style={{...heroSurface,padding:'24px 32px'}}><div style={readingMeasure}><MD content={result.original} fs={12}/></div></div>}
+          {result&&uiState==='previewed'&&view==='improved'&&<div style={{...heroSurface,padding:'24px 32px'}}><div style={readingMeasure}><MD content={result.improved} fs={13}/></div></div>}
 
           {error&&<div style={{padding:'8px 16px',backgroundColor:'#150005',borderTop:'1px solid #f8717133',flexShrink:0,fontSize:'11px',color:'#f87171'}}>⚠ {error}</div>}
         </div>

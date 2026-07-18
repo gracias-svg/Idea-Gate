@@ -88,33 +88,57 @@ const BUILDERS = [
   { id:'openhands',  label:'OpenHands',    icon:'◐', color:'#a78bfa', deepLink:'https://app.openhands.ai' },
 ] as const;
 
+// ── Type scale (Design Direction §4 · Grammar --ig-t-* tokens) ─────────────────
+// The Two Voices (Ledger #5): FONT_SANS = human thinking (prose, identity, reasoning,
+// headings); FONT_MONO = machine state (codes, versions, tokens, timestamps, labels).
+// Editorial Hierarchy (Ledger #6): four scannable levels — identity / section /
+// content / metadata. All sizes/weights/tracking read from the design-system tokens;
+// nothing is invented here.
+const FONT_SANS = 'var(--ig-font-sans)';
+const FONT_MONO = 'var(--ig-font-mono)';
+const T: Record<'hero'|'display'|'title'|'body'|'label'|'caption', React.CSSProperties> = {
+  hero:    { fontFamily:FONT_SANS, fontSize:'var(--ig-t-hero-size)',    fontWeight:700, letterSpacing:'var(--ig-t-hero-tracking)' },
+  display: { fontFamily:FONT_SANS, fontSize:'var(--ig-t-display-size)', fontWeight:700, letterSpacing:'var(--ig-t-display-tracking)' },
+  title:   { fontFamily:FONT_SANS, fontSize:'var(--ig-t-title-size)',   fontWeight:600 },
+  body:    { fontFamily:FONT_SANS, fontSize:'var(--ig-t-body-size)',    fontWeight:400, lineHeight:'var(--ig-t-body-leading)' },
+  label:   { fontFamily:FONT_MONO, fontSize:'var(--ig-t-label-size)',   fontWeight:600, letterSpacing:'var(--ig-t-label-tracking)', textTransform:'uppercase' as const },
+  caption: { fontFamily:FONT_MONO, fontSize:'var(--ig-t-caption-size)', fontWeight:500 },
+};
+
 // ── Markdown renderer ─────────────────────────────────────────────────────────
 function ir(text:string,k:string):React.ReactNode[]{
   return text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g).map((p,i)=>{
     const key=`${k}-${i}`;
-    if(p.startsWith('**')&&p.endsWith('**'))return<strong key={key}style={{color:'#94a3b8',fontWeight:700}}>{p.slice(2,-2)}</strong>;
-    if(p.startsWith('`')&&p.endsWith('`')&&p.length>2)return<code key={key}style={{background:'#0d1117',color:'#4ade80',padding:'1px 5px',borderRadius:'3px',fontSize:'11px'}}>{p.slice(1,-1)}</code>;
+    // Bold emphasis rides the human voice (inherits Sans from the paragraph); lifted
+    // luminance carries the emphasis (Ledger #4 — Luminance Leads).
+    if(p.startsWith('**')&&p.endsWith('**'))return<strong key={key}style={{color:'#e2e8f0',fontWeight:700}}>{p.slice(2,-2)}</strong>;
+    // Inline code is machine state → stays mono.
+    if(p.startsWith('`')&&p.endsWith('`')&&p.length>2)return<code key={key}style={{fontFamily:FONT_MONO,background:'#0d1117',color:'#4ade80',padding:'1px 5px',borderRadius:'3px',fontSize:'0.85em'}}>{p.slice(1,-1)}</code>;
     return<React.Fragment key={key}>{p}</React.Fragment>;
   });
 }
+// Editorial reading surface (Design Direction §4.2): artifact prose is *reading matter* —
+// Geist Sans, comfortable line-height, real paragraph rhythm. Headings collapse onto the
+// --ig-t-* scale (display / title / content). Tabular rows stay mono (machine voice).
+// `fs` is retained for call-site compatibility but the body reads from the type scale.
 function MD({content,fs=12}:{content:string;fs?:number}){
-  const M:React.CSSProperties={fontFamily:"'JetBrains Mono','Fira Code',monospace"};
+  void fs;
   return(
     <div>{content.split('\n').map((line,i)=>{
       const t=line.trim(),k=`l${i}`;
-      if(!t)return<div key={k}style={{height:'7px'}}/>;
-      if(t==='---'||t==='***')return<div key={k}style={{borderTop:'1px solid #1e293b',margin:'14px 0'}}/>;
-      if(t.startsWith('# '))return<div key={k}style={{marginTop:i===0?0:'22px',marginBottom:'10px',paddingBottom:'8px',borderBottom:'1px solid #1e293b',fontSize:'17px',color:'#e2e8f0',fontWeight:700,...M}}>{ir(t.slice(2),k)}</div>;
-      if(t.startsWith('## '))return<div key={k}style={{marginTop:'16px',marginBottom:'6px',fontSize:'13px',color:'#94a3b8',fontWeight:700,...M}}>{ir(t.slice(3),k)}</div>;
-      if(t.startsWith('### '))return<div key={k}style={{marginTop:'12px',marginBottom:'4px',fontSize:'11px',color:'#64748b',fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'0.05em',...M}}>{ir(t.slice(4),k)}</div>;
-      if(t.startsWith('#### '))return<div key={k}style={{marginTop:'9px',marginBottom:'3px',fontSize:'11px',color:'#475569',fontWeight:600,...M}}>{ir(t.slice(5),k)}</div>;
-      if(t.startsWith('> '))return<div key={k}style={{margin:'6px 0',padding:'6px 12px',borderLeft:'3px solid #4ade8033',background:'#040f08',fontSize:`${fs}px`,color:'#4ade8088',...M}}>{ir(t.slice(2),k)}</div>;
+      if(!t)return<div key={k}style={{height:'10px'}}/>;
+      if(t==='---'||t==='***')return<div key={k}style={{borderTop:'1px solid #1e293b',margin:'20px 0'}}/>;
+      if(t.startsWith('# '))return<div key={k}style={{...T.display,marginTop:i===0?0:'30px',marginBottom:'14px',paddingBottom:'10px',borderBottom:'1px solid #1e293b',color:'#f1f5f9'}}>{ir(t.slice(2),k)}</div>;
+      if(t.startsWith('## '))return<div key={k}style={{...T.title,marginTop:'24px',marginBottom:'8px',color:'#e2e8f0'}}>{ir(t.slice(3),k)}</div>;
+      if(t.startsWith('### '))return<div key={k}style={{...T.body,fontWeight:700,marginTop:'18px',marginBottom:'5px',color:'#cbd5e1'}}>{ir(t.slice(4),k)}</div>;
+      if(t.startsWith('#### '))return<div key={k}style={{...T.body,fontWeight:600,marginTop:'12px',marginBottom:'3px',color:'#94a3b8'}}>{ir(t.slice(5),k)}</div>;
+      if(t.startsWith('> '))return<div key={k}style={{...T.body,margin:'10px 0',padding:'8px 14px',borderLeft:'3px solid #4ade8044',background:'#040f08',color:'#94a3b8'}}>{ir(t.slice(2),k)}</div>;
       const bm=line.match(/^(\s*)([-*])\s+(.+)/);
-      if(bm)return<div key={k}style={{display:'flex',gap:'7px',marginLeft:Math.floor(bm[1].length/2)*14,margin:'2px 0'}}><span style={{color:'#4ade8055',flexShrink:0,fontSize:'11px'}}>▸</span><span style={{fontSize:`${fs}px`,color:'#64748b',lineHeight:1.7,...M}}>{ir(bm[3],k)}</span></div>;
+      if(bm)return<div key={k}style={{display:'flex',gap:'9px',marginLeft:Math.floor(bm[1].length/2)*16,margin:'4px 0'}}><span style={{color:'#4ade8066',flexShrink:0,fontSize:'13px',lineHeight:'var(--ig-t-body-leading)'}}>▸</span><span style={{...T.body,color:'#cbd5e1'}}>{ir(bm[3],k)}</span></div>;
       const om=line.match(/^(\s*)(\d+)\.\s+(.+)/);
-      if(om)return<div key={k}style={{display:'flex',gap:'8px',margin:'2px 0'}}><span style={{fontSize:`${fs}px`,color:'#475569',flexShrink:0,minWidth:'20px',textAlign:'right' as const,...M}}>{om[2]}.</span><span style={{fontSize:`${fs}px`,color:'#64748b',lineHeight:1.7,...M}}>{ir(om[3],k)}</span></div>;
-      if(t.startsWith('|')){return<div key={k}style={{fontSize:`${Math.max(fs-1,10)}px`,color:'#475569',borderBottom:'1px solid #0f1923',padding:'3px 0',...M}}>{t}</div>;}
-      return<div key={k}style={{fontSize:`${fs}px`,color:'#64748b',lineHeight:1.8,...M}}>{ir(t,k)}</div>;
+      if(om)return<div key={k}style={{display:'flex',gap:'10px',margin:'4px 0'}}><span style={{fontFamily:FONT_MONO,fontSize:'13px',color:'#64748b',flexShrink:0,minWidth:'22px',textAlign:'right' as const,lineHeight:'var(--ig-t-body-leading)'}}>{om[2]}.</span><span style={{...T.body,color:'#cbd5e1'}}>{ir(om[3],k)}</span></div>;
+      if(t.startsWith('|')){return<div key={k}style={{fontFamily:FONT_MONO,fontSize:'11px',color:'#64748b',borderBottom:'1px solid #0f1923',padding:'4px 0'}}>{t}</div>;}
+      return<div key={k}style={{...T.body,color:'#cbd5e1',margin:'8px 0'}}>{ir(t,k)}</div>;
     })}</div>
   );
 }
@@ -457,21 +481,10 @@ export default function ImprovePage() {
 
         {/* Left sidebar */}
         <div style={{width:'210px',flexShrink:0,borderRight:'1px solid #0a1a2e',backgroundColor:'#020c06',overflowY:'auto',display:'flex',flexDirection:'column'}}>
-          <div style={{padding:'10px 14px 6px',fontSize:'10px',color:'#2a5a30',letterSpacing:'0.12em',fontWeight:700}}>ARTIFACTS · {artifacts.length}</div>
+          <div style={{padding:'12px 14px 8px',...T.label,color:'#2a5a30'}}>ARTIFACTS · {artifacts.length}</div>
 
-          {/* Suggested starting points when nothing selected */}
-          {!selected&&artifacts.length>0&&(
-            <div style={{margin:'6px 12px 10px',padding:'8px',backgroundColor:'#040b14',border:'1px solid #4ade8022',borderRadius:'3px'}}>
-              <div style={{fontSize:'9px',color:'#2a5a30',fontWeight:700,marginBottom:'5px',letterSpacing:'0.08em'}}>SUGGESTED START</div>
-              {STAGE_SUGGESTIONS.filter(s=>artifacts.includes(s.file)).map(s=>(
-                <div key={s.file} onClick={()=>setSelected(s.file)}
-                  style={{fontSize:'9px',color:'#4ade8077',cursor:'pointer',padding:'3px 0',lineHeight:1.5,borderBottom:'1px solid #060e09'}}>
-                  <span style={{color:'#4ade80'}}>→ {humanName(s.file)}</span>
-                  <span style={{display:'block',color:'#334155'}}>{s.hint}</span>
-                </div>
-              ))}
-            </div>
-          )}
+          {/* Suggested starting points now live in the hero (empty state) — the rail keeps
+              the full artifact list as its single primary action (One Hero, Two Aides). */}
 
           {artifacts.map(f=>{
             const active=selected===f,col=stageColor(f);
@@ -492,7 +505,7 @@ export default function ImprovePage() {
 
           {selected&&downstreamCount>0&&(
             <div style={{margin:'8px 12px',padding:'8px',backgroundColor:'#040b14',border:'1px solid #0a2a14',borderRadius:'3px'}}>
-              <div style={{fontSize:'9px',color:'#2a5a30',marginBottom:'5px',fontWeight:700,letterSpacing:'0.08em'}}>DOWNSTREAM · {downstreamCount}</div>
+              <div style={{...T.label,color:'#2a5a30',marginBottom:'5px'}}>DOWNSTREAM · {downstreamCount}</div>
               {getTransitiveDownstream(selected).slice(0,5).map(n=>(
                 <div key={n} style={{fontSize:'9px',color:runtime.isStale(n)?'#f59e0b':'#475569',marginBottom:'2px'}}>
                   ↓ {humanName(n)} {runtime.isStale(n)?'△':''}
@@ -522,18 +535,31 @@ export default function ImprovePage() {
           )}
 
           {!selected&&(
-            <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:'14px',padding:'32px'}}>
-              <div style={{fontSize:'22px',opacity:.1}}>◈</div>
-              <div style={{fontSize:'13px',color:'#334155'}}>Select an artifact from the left rail or click a node in the graph</div>
-              <div style={{padding:'12px 16px',backgroundColor:'#040b14',border:'1px solid #0a1a2e',borderRadius:'4px',fontSize:'11px',color:'#334155',lineHeight:1.9,maxWidth:'340px'}}>
-                <div style={{color:'#475569',marginBottom:'6px',fontWeight:700,fontSize:'10px',letterSpacing:'0.08em'}}>RUNTIME WORKFLOW</div>
-                <div>① Click a stage node in the graph above</div>
-                <div>② OR select from the artifact list on the left</div>
-                <div>③ Choose your model (8 providers via OpenRouter)</div>
-                <div>④ Describe your improvement intent or use a preset</div>
-                <div>⑤ Click ◈ IMPROVE NOW — this makes a real LLM call</div>
-                <div>⑥ Accept → artifact saved + stale state propagates</div>
-                <div>⑦ Generate build package to send to any builder platform</div>
+            <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',overflowY:'auto',padding:'48px 56px'}}>
+              <div style={{width:'100%',maxWidth:'var(--ig-reading-max)',display:'flex',flexDirection:'column',gap:'32px'}}>
+                <div style={{display:'flex',flexDirection:'column',gap:'14px'}}>
+                  <div style={{...T.display,color:'#e2e8f0'}}>Choose an artifact to refine</div>
+                  <div style={{...T.body,color:'#64748b',maxWidth:'56ch'}}>
+                    Each artifact is a stage in the product lifecycle. Open one to read it as a
+                    working document, then brief the model on how to improve it — every change is
+                    previewed before you accept it, and its downstream impact is shown before you commit.
+                  </div>
+                </div>
+                {artifacts.length>0&&STAGE_SUGGESTIONS.filter(s=>artifacts.includes(s.file)).length>0&&(
+                  <div style={{display:'flex',flexDirection:'column',gap:'12px'}}>
+                    <div style={{...T.label,color:'#2a5a30'}}>Suggested starting points</div>
+                    <div style={{display:'flex',flexDirection:'column'}}>
+                      {STAGE_SUGGESTIONS.filter(s=>artifacts.includes(s.file)).map(s=>(
+                        <button key={s.file} onClick={()=>setSelected(s.file)}
+                          style={{display:'flex',flexDirection:'column',gap:'4px',alignItems:'flex-start',textAlign:'left' as const,
+                            padding:'14px 4px',background:'transparent',border:'none',borderBottom:'1px solid #0a1a2e',cursor:'pointer'}}>
+                          <span style={{...T.title,color:'#cbd5e1',textTransform:'capitalize' as const}}>{humanName(s.file)}</span>
+                          <span style={{...T.body,color:'#64748b'}}>{s.hint}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -541,31 +567,33 @@ export default function ImprovePage() {
           {selected&&fileLoading&&<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{fontSize:'11px',color:'#475569'}}>Loading artifact…</span></div>}
 
           {selected&&!fileLoading&&uiState==='idle'&&rawContent&&(
-            <div style={{flex:1,overflowY:'auto',padding:'20px 24px'}}>
-              <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'12px'}}>
-                <div style={{fontSize:'10px',color:'#2a5a30',letterSpacing:'0.1em',fontWeight:700}}>CURRENT · {selected}</div>
-                {runtime.isStale(selected)&&<div style={{fontSize:'9px',color:'#f59e0b',padding:'1px 6px',border:'1px solid #f59e0b33',borderRadius:'2px'}}>△ STALE</div>}
-                {runtime.getVersion(selected)>0&&<div style={{fontSize:'9px',color:'#4ade80',padding:'1px 6px',border:'1px solid #4ade8033',borderRadius:'2px'}}>v{runtime.getVersion(selected)}</div>}
+            <div style={{flex:1,overflowY:'auto',padding:'32px 40px'}}>
+              <div style={{maxWidth:'var(--ig-reading-max)'}}>
+                <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'20px'}}>
+                  <div style={{...T.label,color:'#2a5a30'}}>CURRENT · {selected}</div>
+                  {runtime.isStale(selected)&&<div style={{...T.caption,color:'#f59e0b',padding:'1px 6px',border:'1px solid #f59e0b33',borderRadius:'2px'}}>△ STALE</div>}
+                  {runtime.getVersion(selected)>0&&<div style={{...T.caption,color:'#4ade80',padding:'1px 6px',border:'1px solid #4ade8033',borderRadius:'2px'}}>v{runtime.getVersion(selected)}</div>}
+                </div>
+                {parseWarn&&<div style={{marginBottom:'16px',padding:'7px 10px',backgroundColor:'#0a0a00',border:'1px solid #f59e0b33',borderRadius:'3px',...T.caption,color:'#f59e0b88'}}>{parseWarn}</div>}
+                <MD content={rawContent} fs={12}/>
               </div>
-              {parseWarn&&<div style={{marginBottom:'10px',padding:'7px 10px',backgroundColor:'#0a0a00',border:'1px solid #f59e0b33',borderRadius:'3px',fontSize:'9px',color:'#f59e0b88'}}>{parseWarn}</div>}
-              <MD content={rawContent} fs={12}/>
             </div>
           )}
 
           {uiState==='loading'&&(
             <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:'12px'}}>
-              <div style={{fontSize:'12px',color:'#475569',letterSpacing:'0.1em',animation:'pulse 1.5s infinite'}}>GENERATING…</div>
-              <div style={{fontSize:'11px',color:activeModel.color}}>{activeModel.label} · {activeModel.provider} · {activeModel.cost}</div>
-              {docs.length>0&&<div style={{fontSize:'10px',color:'#818cf8'}}>{docs.length} reference doc{docs.length>1?'s':''} injected into context</div>}
+              <div style={{...T.label,color:'#475569',animation:'pulse 1.5s infinite'}}>GENERATING…</div>
+              <div style={{...T.caption,color:activeModel.color}}>{activeModel.label} · {activeModel.provider} · {activeModel.cost}</div>
+              {docs.length>0&&<div style={{...T.caption,color:'#818cf8'}}>{docs.length} reference doc{docs.length>1?'s':''} injected into context</div>}
             </div>
           )}
 
           {uiState==='accepted'&&(
-            <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:'12px'}}>
+            <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:'14px'}}>
               <div style={{fontSize:'24px',color:'#4ade80'}}>✓</div>
-              <div style={{fontSize:'14px',color:'#4ade80',fontWeight:700}}>Improvement accepted · graph updated</div>
-              <div style={{fontSize:'11px',color:'#475569'}}>{selected} saved to disk · {getTransitiveDownstream(selected!).length} downstream artifacts marked stale</div>
-              {result&&<div style={{fontSize:'10px',color:'#334155'}}>{result.tokens?.total?.toLocaleString()} tokens · ${result.cost?.toFixed(4)} · {result.modelKey}</div>}
+              <div style={{...T.title,color:'#4ade80'}}>Improvement accepted · graph updated</div>
+              <div style={{...T.body,color:'#64748b',textAlign:'center' as const,maxWidth:'52ch'}}>{selected} saved to disk · {getTransitiveDownstream(selected!).length} downstream artifacts marked stale</div>
+              {result&&<div style={{...T.caption,color:'#334155'}}>{result.tokens?.total?.toLocaleString()} tokens · ${result.cost?.toFixed(4)} · {result.modelKey}</div>}
               <div style={{display:'flex',gap:'8px',marginTop:'6px'}}>
                 <button onClick={handleDiscard} style={{...B,padding:'7px 14px',fontSize:'11px',backgroundColor:'#0a1509',color:'#4ade80',outline:'1px solid #1a3a20'}}>Improve again</button>
                 <button onClick={()=>setShowBuild(true)} style={{...B,padding:'7px 14px',fontSize:'11px',backgroundColor:'#0a0f1e',color:'#818cf8',outline:'1px solid #818cf833'}}>Generate build package</button>
@@ -575,46 +603,48 @@ export default function ImprovePage() {
 
           {result&&uiState==='previewed'&&view==='split'&&(
             <div style={{flex:1,display:'flex',overflow:'hidden'}}>
-              <div style={{flex:1,overflowY:'auto',padding:'16px 20px',borderRight:'1px solid #0a1a2e'}}>
-                <div style={{fontSize:'9px',color:'#2a5a30',letterSpacing:'0.1em',marginBottom:'10px',fontWeight:700}}>ORIGINAL</div>
+              <div style={{flex:1,overflowY:'auto',padding:'24px 28px',borderRight:'1px solid #0a1a2e'}}>
+                <div style={{...T.label,color:'#2a5a30',marginBottom:'16px'}}>ORIGINAL</div>
                 <MD content={result.original} fs={12}/>
               </div>
-              <div style={{flex:1,overflowY:'auto',padding:'16px 20px'}}>
-                <div style={{fontSize:'9px',color:'#4ade8077',letterSpacing:'0.1em',marginBottom:'10px',fontWeight:700}}>IMPROVED · {result.modelKey}</div>
+              <div style={{flex:1,overflowY:'auto',padding:'24px 28px'}}>
+                <div style={{...T.label,color:'#4ade8099',marginBottom:'16px'}}>IMPROVED · {result.modelKey}</div>
                 <MD content={result.improved} fs={12}/>
               </div>
             </div>
           )}
-          {result&&uiState==='previewed'&&view==='original'&&<div style={{flex:1,overflowY:'auto',padding:'16px 24px'}}><MD content={result.original} fs={12}/></div>}
-          {result&&uiState==='previewed'&&view==='improved'&&<div style={{flex:1,overflowY:'auto',padding:'16px 24px'}}><MD content={result.improved} fs={13}/></div>}
+          {result&&uiState==='previewed'&&view==='original'&&<div style={{flex:1,overflowY:'auto',padding:'24px 32px'}}><div style={{maxWidth:'var(--ig-reading-max)'}}><MD content={result.original} fs={12}/></div></div>}
+          {result&&uiState==='previewed'&&view==='improved'&&<div style={{flex:1,overflowY:'auto',padding:'24px 32px'}}><div style={{maxWidth:'var(--ig-reading-max)'}}><MD content={result.improved} fs={13}/></div></div>}
 
           {error&&<div style={{padding:'8px 16px',backgroundColor:'#150005',borderTop:'1px solid #f8717133',flexShrink:0,fontSize:'11px',color:'#f87171'}}>⚠ {error}</div>}
         </div>
 
         {/* Right panel */}
         <div style={{width:'270px',flexShrink:0,borderLeft:'1px solid #0a1a2e',backgroundColor:'#020c06',display:'flex',flexDirection:'column',overflowY:'auto'}}>
-          <div style={{padding:'12px'}}>
-            <div style={{fontSize:'10px',color:'#2a5a30',letterSpacing:'0.12em',marginBottom:'6px',fontWeight:700}}>IMPROVEMENT INTENT</div>
+          <div style={{padding:'16px 14px'}}>
+            {/* Primary act of the Direct aide: brief the collaborator (human voice). */}
+            <div style={{...T.label,color:'#2a5a30',marginBottom:'8px'}}>IMPROVEMENT INTENT</div>
             <textarea value={intent} onChange={e=>setIntent(e.target.value)}
               placeholder='Describe what to improve — e.g. "Strengthen competitive moat with a defensible advantage and long-term implications"'
-              style={{width:'100%',minHeight:'76px',padding:'9px',...MONO,fontSize:'10px',color:'#64748b',backgroundColor:'#040b14',border:'1px solid #0f1923',borderRadius:'4px',resize:'vertical',outline:'none',lineHeight:1.65,boxSizing:'border-box' as const}}/>
+              style={{width:'100%',minHeight:'84px',padding:'11px',fontFamily:FONT_SANS,fontSize:'13px',color:'#cbd5e1',backgroundColor:'#040b14',border:'1px solid #0f1923',borderRadius:'4px',resize:'vertical',outline:'none',lineHeight:1.55,boxSizing:'border-box' as const}}/>
 
-            {/* Active model badge */}
-            <div style={{padding:'5px 8px',backgroundColor:`${activeModel.color}11`,border:`1px solid ${activeModel.color}22`,borderRadius:'3px',margin:'6px 0',display:'flex',alignItems:'center',gap:'6px'}}>
+            {/* Active model badge — machine metadata */}
+            <div style={{padding:'5px 8px',backgroundColor:`${activeModel.color}11`,border:`1px solid ${activeModel.color}22`,borderRadius:'3px',margin:'8px 0',display:'flex',alignItems:'center',gap:'6px'}}>
               <div style={{width:'5px',height:'5px',borderRadius:'50%',backgroundColor:activeModel.color,flexShrink:0}}/>
-              <div style={{flex:1,fontSize:'9px'}}>
+              <div style={{flex:1,...T.caption}}>
                 <span style={{color:activeModel.color,fontWeight:700}}>{activeModel.label}</span>
                 <span style={{color:'#334155'}}> · {activeModel.provider} · {activeModel.cost} · {activeModel.use}</span>
               </div>
             </div>
 
-            <div style={{fontSize:'10px',color:'#2a5a30',letterSpacing:'0.1em',marginBottom:'5px',fontWeight:700}}>PRESETS</div>
-            <div style={{display:'flex',flexWrap:'wrap',gap:'4px',marginBottom:'12px'}}>
+            {/* Refinements below recede — quieter labels, more whitespace between groups. */}
+            <div style={{...T.label,color:'#2a5a30',marginTop:'22px',marginBottom:'7px'}}>PRESETS</div>
+            <div style={{display:'flex',flexWrap:'wrap',gap:'4px'}}>
               {PRESETS.map(p=><button key={p.label} onClick={()=>setIntent(p.intent)} style={{...B,padding:'3px 7px',fontSize:'9px',backgroundColor:'#040b14',color:'#475569',outline:'1px solid #1e293b'}}>{p.label}</button>)}
             </div>
 
             {/* Reference docs */}
-            <div style={{fontSize:'10px',color:'#2a5a30',letterSpacing:'0.1em',marginBottom:'5px',fontWeight:700}}>
+            <div style={{...T.label,color:'#2a5a30',marginTop:'22px',marginBottom:'7px'}}>
               REFERENCE DOCS{docs.length>0&&<span style={{color:'#818cf855',marginLeft:'6px'}}>{docs.length} loaded</span>}
             </div>
             {docs.map(d=>(
@@ -634,7 +664,7 @@ export default function ImprovePage() {
             {uplError&&<div style={{fontSize:'9px',color:'#f87171',marginBottom:'7px',lineHeight:1.5}}>⚠ {uplError}</div>}
 
             {/* Extent */}
-            <div style={{fontSize:'10px',color:'#2a5a30',letterSpacing:'0.1em',marginBottom:'4px',fontWeight:700}}>EXTENT</div>
+            <div style={{...T.label,color:'#2a5a30',marginTop:'22px',marginBottom:'6px'}}>EXTENT</div>
             <div style={{display:'flex',gap:'4px',marginBottom:'4px'}}>
               {([['light','#4ade80','Polish wording'],['medium','#f59e0b','Improve sections'],['strong','#f87171','Restructure']] as const).map(([e,c])=>(
                 <button key={e} onClick={()=>setExtent(e as Extent)} style={{...B,padding:'4px 7px',fontSize:'9px',
@@ -643,10 +673,10 @@ export default function ImprovePage() {
                 </button>
               ))}
             </div>
-            <div style={{fontSize:'9px',color:'#334155',marginBottom:'10px'}}>{extent==='light'?'Minor wording polish':extent==='medium'?'Rewrite sections':'Restructure artifact'}</div>
+            <div style={{...T.caption,color:'#334155'}}>{extent==='light'?'Minor wording polish':extent==='medium'?'Rewrite sections':'Restructure artifact'}</div>
 
             {/* Scope */}
-            <div style={{fontSize:'10px',color:'#2a5a30',letterSpacing:'0.1em',marginBottom:'4px',fontWeight:700}}>SCOPE</div>
+            <div style={{...T.label,color:'#2a5a30',marginTop:'22px',marginBottom:'6px'}}>SCOPE</div>
             <div style={{display:'flex',gap:'4px',marginBottom:'4px'}}>
               {(['block','stage','project'] as Scope[]).map(s=>(
                 <button key={s} onClick={()=>setScope(s)} style={{...B,padding:'4px 7px',fontSize:'9px',
@@ -655,21 +685,21 @@ export default function ImprovePage() {
                 </button>
               ))}
             </div>
-            <div style={{fontSize:'9px',color:'#334155',marginBottom:'14px'}}>{scope==='block'?'Selected section only':scope==='stage'?'Full artifact for this stage':'Cross-artifact PM consistency'}</div>
+            <div style={{...T.caption,color:'#334155',marginBottom:'22px'}}>{scope==='block'?'Selected section only':scope==='stage'?'Full artifact for this stage':'Cross-artifact PM consistency'}</div>
 
-            {/* Improve button */}
+            {/* Improve button — the Direct aide's single prominent action. */}
             <button onClick={handleImprove} disabled={!selected||!intent.trim()||uiState==='loading'}
               style={{width:'100%',padding:'11px 0',fontSize:'12px',...MONO,cursor:'pointer',borderRadius:'4px',border:'none',letterSpacing:'0.1em',fontWeight:700,
                 backgroundColor:(!selected||!intent.trim())?'#0a1509':'#0d2a10',
                 color:(!selected||!intent.trim())?'#1a3a20':'#4ade80',outline:'1px solid #1a3a20'}}>
               {uiState==='loading'?'⟳ GENERATING…':'◈ IMPROVE NOW'}
             </button>
-            <div style={{fontSize:'9px',color:'#1e293b',textAlign:'center' as const,marginTop:'4px'}}>{activeModel.label} · OpenRouter · {activeModel.cost}</div>
+            <div style={{...T.caption,color:'#1e293b',textAlign:'center' as const,marginTop:'5px'}}>{activeModel.label} · OpenRouter · {activeModel.cost}</div>
 
             {/* ── BUILD DESTINATION ── */}
-            <div style={{marginTop:'16px',paddingTop:'14px',borderTop:'1px solid #0a1a2e'}}>
+            <div style={{marginTop:'22px',paddingTop:'16px',borderTop:'1px solid #0a1a2e'}}>
               <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'8px'}}>
-                <div style={{fontSize:'10px',color:'#2a5a30',letterSpacing:'0.12em',fontWeight:700}}>BUILD DESTINATION</div>
+                <div style={{...T.label,color:'#2a5a30'}}>BUILD DESTINATION</div>
                 <button onClick={()=>setShowBuild(!showBuild)} style={{...B,padding:'2px 6px',fontSize:'9px',backgroundColor:'transparent',color:'#334155',outline:'1px solid #1e293b'}}>
                   {showBuild?'▲':'▼'}
                 </button>
@@ -738,15 +768,16 @@ export default function ImprovePage() {
                 <button onClick={handleDiscard} style={{flex:1,padding:'9px 0',fontSize:'10px',cursor:'pointer',...MONO,borderRadius:'3px',border:'none',backgroundColor:'transparent',color:'#475569',outline:'1px solid #1e293b'}}>DISCARD</button>
               </div>
               <div style={{padding:'8px',backgroundColor:'#040b14',border:'1px solid #0f1923',borderRadius:'3px',marginBottom:'8px'}}>
-                <div style={{fontSize:'9px',color:'#2a5a30',letterSpacing:'0.1em',marginBottom:'6px',fontWeight:700}}>USAGE</div>
+                <div style={{...T.label,color:'#2a5a30',marginBottom:'6px'}}>USAGE</div>
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'4px',textAlign:'center' as const}}>
                   {[{l:'Input',v:result.tokens?.input?.toLocaleString()??'—',c:'#475569'},{l:'Output',v:result.tokens?.output?.toLocaleString()??'—',c:'#818cf8'},{l:'Cost',v:`$${result.cost?.toFixed(4)??'—'}`,c:'#4ade80'}].map(x=>(
-                    <div key={x.l}><div style={{fontSize:'12px',color:x.c,fontWeight:700}}>{x.v}</div><div style={{fontSize:'8px',color:'#334155',marginTop:'1px'}}>{x.l}</div></div>
+                    <div key={x.l}><div style={{fontFamily:FONT_MONO,fontSize:'12px',color:x.c,fontWeight:700}}>{x.v}</div><div style={{...T.caption,fontSize:'8px',color:'#334155',marginTop:'1px'}}>{x.l}</div></div>
                   ))}
                 </div>
               </div>
-              <div style={{fontSize:'9px',color:'#2a5a30',letterSpacing:'0.1em',marginBottom:'5px',fontWeight:700}}>PM REASONING</div>
-              <div style={{padding:'8px',backgroundColor:'#040b14',border:'1px solid #0a2a14',borderRadius:'3px',fontSize:'10px',color:'#4ade8099',lineHeight:1.75,marginBottom:'8px'}}>
+              {/* AI reasoning is first-class thinking → human voice (Design Direction §7, P3). */}
+              <div style={{...T.label,color:'#2a5a30',marginBottom:'6px'}}>PM REASONING</div>
+              <div style={{padding:'10px',backgroundColor:'#040b14',border:'1px solid #0a2a14',borderRadius:'3px',fontFamily:FONT_SANS,fontSize:'13px',color:'#94a3b8',lineHeight:1.6,marginBottom:'8px'}}>
                 {result.reasoning||'No reasoning returned from model.'}
               </div>
               {(result.impactWarnings?.length??0)>0&&result.impactWarnings.map((w,i)=><div key={i} style={{padding:'6px 8px',backgroundColor:'#0a0800',border:'1px solid #f59e0b33',borderRadius:'3px',fontSize:'9px',color:'#f59e0b99',lineHeight:1.6,marginBottom:'4px'}}>▲ {w}</div>)}

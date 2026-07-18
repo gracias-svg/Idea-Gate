@@ -182,6 +182,9 @@ share their level of craft. And still unmistakably IdeaGate.
 construction, motion primitives, the four interaction states, empty states — is in THE
 GRAMMAR. Read it. Do not re-derive it here.**
 
+Studio Design Direction (source of truth for Studio's redesign): docs/ui-audit/studio/04-studio-design-direction.md (includes v1.1 Product Operating Principles + v1.2 Thinking Surface)
+
+
 ---
 
 ## 9.5 — THE CRAFT STANDARD
@@ -261,3 +264,5 @@ full replacement. Polishing deprecated components is negative-value work.
 > **The current milestone, its scope, its exclusions, and its acceptance criteria live in
 > the Execution Blueprint — not here.** Read it at the start of every batch. This file tells
 > you the standing rules; the Blueprint tells you today's job.
+
+

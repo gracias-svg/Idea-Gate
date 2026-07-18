@@ -506,7 +506,7 @@ export default function ImprovePage() {
             const isStale=runtime.isStale(f), ver=runtime.getVersion(f);
             return(
               <div key={f} style={{display:'flex',borderLeft:`2px solid ${active?col:isStale?'#f59e0b33':'transparent'}`,backgroundColor:active?'#0a1509':'transparent'}}>
-                <button onClick={()=>setSelected(f)} style={{flex:1,padding:'7px 12px',textAlign:'left',cursor:'pointer',border:'none',...MONO,fontSize:'var(--ig-t-caption-size)',backgroundColor:'transparent',color:active?col:isStale?'#f59e0b':'#475569'}}>
+                <button onClick={()=>setSelected(f)} style={{flex:1,padding:'7px 12px',textAlign:'left',cursor:'pointer',border:'none',...MONO,fontSize:'var(--ig-t-caption-size)',fontWeight:500,backgroundColor:'transparent',color:active?col:isStale?'#f59e0b':'#64748b'}}>
                   <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
                     <span style={{width:'5px',height:'5px',borderRadius:'50%',backgroundColor:isStale?'#f59e0b':ver>0?'#4ade80':col,flexShrink:0,display:'inline-block'}}/>
                     <span style={{lineHeight:1.4}}>{humanName(f)}</span>
@@ -522,7 +522,7 @@ export default function ImprovePage() {
             <div style={{margin:'8px 12px',padding:'8px',backgroundColor:'#040b14',border:'1px solid #0a2a14',borderRadius:'3px'}}>
               <div style={{...T.label,color:'#2a5a30',marginBottom:'5px'}}>DOWNSTREAM · {downstreamCount}</div>
               {getTransitiveDownstream(selected).slice(0,5).map(n=>(
-                <div key={n} style={{fontSize:'var(--ig-t-caption-size)',color:runtime.isStale(n)?'#f59e0b':'#475569',marginBottom:'2px'}}>
+                <div key={n} style={{fontSize:'var(--ig-t-caption-size)',fontWeight:500,color:runtime.isStale(n)?'#f59e0b':'#64748b',marginBottom:'2px'}}>
                   ↓ {humanName(n)} {runtime.isStale(n)?'△':''}
                 </div>
               ))}
@@ -655,7 +655,7 @@ export default function ImprovePage() {
             {/* Refinements below recede — quieter labels, more whitespace between groups. */}
             <div style={{...T.label,color:'#2a5a30',marginTop:'22px',marginBottom:'7px'}}>PRESETS</div>
             <div style={{display:'flex',flexWrap:'wrap',gap:'4px'}}>
-              {PRESETS.map(p=><button key={p.label} onClick={()=>setIntent(p.intent)} style={{...B,padding:'3px 7px',fontSize:'var(--ig-t-caption-size)',backgroundColor:'#040b14',color:'#475569',outline:'1px solid #1e293b'}}>{p.label}</button>)}
+              {PRESETS.map(p=><button key={p.label} onClick={()=>setIntent(p.intent)} style={{...B,padding:'3px 7px',fontSize:'var(--ig-t-caption-size)',fontWeight:500,backgroundColor:'#040b14',color:'#64748b',outline:'1px solid #1e293b'}}>{p.label}</button>)}
             </div>
 
             {/* Reference docs */}
@@ -682,8 +682,8 @@ export default function ImprovePage() {
             <div style={{...T.label,color:'#2a5a30',marginTop:'22px',marginBottom:'6px'}}>EXTENT</div>
             <div style={{display:'flex',gap:'4px',marginBottom:'4px'}}>
               {([['light','#4ade80','Polish wording'],['medium','#f59e0b','Improve sections'],['strong','#f87171','Restructure']] as const).map(([e,c])=>(
-                <button key={e} onClick={()=>setExtent(e as Extent)} style={{...B,padding:'4px 7px',fontSize:'var(--ig-t-caption-size)',
-                  backgroundColor:extent===e?'#0a1f0e':'#0d1117',color:extent===e?c:'#475569',outline:extent===e?`1px solid ${c}55`:'1px solid #1e293b'}}>
+                <button key={e} onClick={()=>setExtent(e as Extent)} style={{...B,padding:'4px 7px',fontSize:'var(--ig-t-caption-size)',fontWeight:500,
+                  backgroundColor:extent===e?'#0a1f0e':'#0d1117',color:extent===e?c:'#64748b',outline:extent===e?`1px solid ${c}55`:'1px solid #1e293b'}}>
                   {e.toUpperCase()}
                 </button>
               ))}
@@ -694,8 +694,8 @@ export default function ImprovePage() {
             <div style={{...T.label,color:'#2a5a30',marginTop:'22px',marginBottom:'6px'}}>SCOPE</div>
             <div style={{display:'flex',gap:'4px',marginBottom:'4px'}}>
               {(['block','stage','project'] as Scope[]).map(s=>(
-                <button key={s} onClick={()=>setScope(s)} style={{...B,padding:'4px 7px',fontSize:'var(--ig-t-caption-size)',
-                  backgroundColor:scope===s?'#0a0f1e':'#0d1117',color:scope===s?'#818cf8':'#475569',outline:scope===s?'1px solid #818cf855':'1px solid #1e293b'}}>
+                <button key={s} onClick={()=>setScope(s)} style={{...B,padding:'4px 7px',fontSize:'var(--ig-t-caption-size)',fontWeight:500,
+                  backgroundColor:scope===s?'#0a0f1e':'#0d1117',color:scope===s?'#818cf8':'#64748b',outline:scope===s?'1px solid #818cf855':'1px solid #1e293b'}}>
                   {s.toUpperCase()}
                 </button>
               ))}

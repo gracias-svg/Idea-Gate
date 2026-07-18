@@ -506,7 +506,7 @@ export default function ImprovePage() {
             const isStale=runtime.isStale(f), ver=runtime.getVersion(f);
             return(
               <div key={f} style={{display:'flex',borderLeft:`2px solid ${active?col:isStale?'#f59e0b33':'transparent'}`,backgroundColor:active?'#0a1509':'transparent'}}>
-                <button onClick={()=>setSelected(f)} style={{flex:1,padding:'7px 12px',textAlign:'left',cursor:'pointer',border:'none',...MONO,fontSize:'10px',backgroundColor:'transparent',color:active?col:isStale?'#f59e0b':'#475569'}}>
+                <button onClick={()=>setSelected(f)} style={{flex:1,padding:'7px 12px',textAlign:'left',cursor:'pointer',border:'none',...MONO,fontSize:'var(--ig-t-caption-size)',backgroundColor:'transparent',color:active?col:isStale?'#f59e0b':'#475569'}}>
                   <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
                     <span style={{width:'5px',height:'5px',borderRadius:'50%',backgroundColor:isStale?'#f59e0b':ver>0?'#4ade80':col,flexShrink:0,display:'inline-block'}}/>
                     <span style={{lineHeight:1.4}}>{humanName(f)}</span>
@@ -522,7 +522,7 @@ export default function ImprovePage() {
             <div style={{margin:'8px 12px',padding:'8px',backgroundColor:'#040b14',border:'1px solid #0a2a14',borderRadius:'3px'}}>
               <div style={{...T.label,color:'#2a5a30',marginBottom:'5px'}}>DOWNSTREAM · {downstreamCount}</div>
               {getTransitiveDownstream(selected).slice(0,5).map(n=>(
-                <div key={n} style={{fontSize:'9px',color:runtime.isStale(n)?'#f59e0b':'#475569',marginBottom:'2px'}}>
+                <div key={n} style={{fontSize:'var(--ig-t-caption-size)',color:runtime.isStale(n)?'#f59e0b':'#475569',marginBottom:'2px'}}>
                   ↓ {humanName(n)} {runtime.isStale(n)?'△':''}
                 </div>
               ))}
@@ -655,7 +655,7 @@ export default function ImprovePage() {
             {/* Refinements below recede — quieter labels, more whitespace between groups. */}
             <div style={{...T.label,color:'#2a5a30',marginTop:'22px',marginBottom:'7px'}}>PRESETS</div>
             <div style={{display:'flex',flexWrap:'wrap',gap:'4px'}}>
-              {PRESETS.map(p=><button key={p.label} onClick={()=>setIntent(p.intent)} style={{...B,padding:'3px 7px',fontSize:'9px',backgroundColor:'#040b14',color:'#475569',outline:'1px solid #1e293b'}}>{p.label}</button>)}
+              {PRESETS.map(p=><button key={p.label} onClick={()=>setIntent(p.intent)} style={{...B,padding:'3px 7px',fontSize:'var(--ig-t-caption-size)',backgroundColor:'#040b14',color:'#475569',outline:'1px solid #1e293b'}}>{p.label}</button>)}
             </div>
 
             {/* Reference docs */}
@@ -665,7 +665,7 @@ export default function ImprovePage() {
             {docs.map(d=>(
               <div key={d.name} style={{padding:'5px 8px',backgroundColor:'#040b14',border:'1px solid #818cf822',borderRadius:'3px',marginBottom:'4px',display:'flex',alignItems:'center',gap:'6px'}}>
                 <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:'9px',color:'#818cf8',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>◆ {d.name}</div>
+                  <div style={{fontSize:'var(--ig-t-caption-size)',color:'#818cf8',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>◆ {d.name}</div>
                   <div style={{fontSize:'8px',color:'#475569'}}>{d.chars.toLocaleString()} chars</div>
                 </div>
                 <button onClick={()=>setDocs(p=>p.filter(x=>x.name!==d.name))} style={{background:'none',border:'none',color:'#334155',cursor:'pointer',fontSize:'14px',lineHeight:1}}>×</button>
@@ -682,7 +682,7 @@ export default function ImprovePage() {
             <div style={{...T.label,color:'#2a5a30',marginTop:'22px',marginBottom:'6px'}}>EXTENT</div>
             <div style={{display:'flex',gap:'4px',marginBottom:'4px'}}>
               {([['light','#4ade80','Polish wording'],['medium','#f59e0b','Improve sections'],['strong','#f87171','Restructure']] as const).map(([e,c])=>(
-                <button key={e} onClick={()=>setExtent(e as Extent)} style={{...B,padding:'4px 7px',fontSize:'9px',
+                <button key={e} onClick={()=>setExtent(e as Extent)} style={{...B,padding:'4px 7px',fontSize:'var(--ig-t-caption-size)',
                   backgroundColor:extent===e?'#0a1f0e':'#0d1117',color:extent===e?c:'#475569',outline:extent===e?`1px solid ${c}55`:'1px solid #1e293b'}}>
                   {e.toUpperCase()}
                 </button>
@@ -694,7 +694,7 @@ export default function ImprovePage() {
             <div style={{...T.label,color:'#2a5a30',marginTop:'22px',marginBottom:'6px'}}>SCOPE</div>
             <div style={{display:'flex',gap:'4px',marginBottom:'4px'}}>
               {(['block','stage','project'] as Scope[]).map(s=>(
-                <button key={s} onClick={()=>setScope(s)} style={{...B,padding:'4px 7px',fontSize:'9px',
+                <button key={s} onClick={()=>setScope(s)} style={{...B,padding:'4px 7px',fontSize:'var(--ig-t-caption-size)',
                   backgroundColor:scope===s?'#0a0f1e':'#0d1117',color:scope===s?'#818cf8':'#475569',outline:scope===s?'1px solid #818cf855':'1px solid #1e293b'}}>
                   {s.toUpperCase()}
                 </button>
@@ -726,7 +726,7 @@ export default function ImprovePage() {
                   <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'4px',marginBottom:'10px'}}>
                     {BUILDERS.map(b=>(
                       <button key={b.id} onClick={()=>setBuildTarget(b.id)}
-                        style={{...B,padding:'5px 8px',fontSize:'9px',textAlign:'left' as const,display:'flex',alignItems:'center',gap:'5px',
+                        style={{...B,padding:'5px 8px',fontSize:'var(--ig-t-caption-size)',textAlign:'left' as const,display:'flex',alignItems:'center',gap:'5px',
                           backgroundColor:buildTarget===b.id?`${b.color}22`:'#040b14',
                           color:buildTarget===b.id?b.color:'#475569',
                           outline:buildTarget===b.id?`1px solid ${b.color}55`:'1px solid #1e293b'}}>
@@ -792,10 +792,10 @@ export default function ImprovePage() {
               </div>
               {/* AI reasoning is first-class thinking → human voice (Design Direction §7, P3). */}
               <div style={{...T.label,color:'#2a5a30',marginBottom:'6px'}}>PM REASONING</div>
-              <div style={{padding:'10px',backgroundColor:'#040b14',border:'1px solid #0a2a14',borderRadius:'3px',fontFamily:FONT_SANS,fontSize:'13px',color:'#94a3b8',lineHeight:1.6,marginBottom:'8px'}}>
+              <div style={{padding:'10px',backgroundColor:'#040b14',border:'1px solid #0a2a14',borderRadius:'3px',fontFamily:FONT_SANS,fontSize:'var(--ig-t-body-size)',color:'#94a3b8',lineHeight:1.6,marginBottom:'8px'}}>
                 {result.reasoning||'No reasoning returned from model.'}
               </div>
-              {(result.impactWarnings?.length??0)>0&&result.impactWarnings.map((w,i)=><div key={i} style={{padding:'6px 8px',backgroundColor:'#0a0800',border:'1px solid #f59e0b33',borderRadius:'3px',fontSize:'9px',color:'#f59e0b99',lineHeight:1.6,marginBottom:'4px'}}>▲ {w}</div>)}
+              {(result.impactWarnings?.length??0)>0&&result.impactWarnings.map((w,i)=><div key={i} style={{padding:'6px 8px',backgroundColor:'#0a0800',border:'1px solid #f59e0b33',borderRadius:'3px',fontSize:'var(--ig-t-caption-size)',color:'#f59e0b99',lineHeight:1.6,marginBottom:'4px'}}>▲ {w}</div>)}
             </div>
           )}
         </div>

@@ -126,6 +126,19 @@ const STAGE_LABELS = [
 ] as const;
 export const STAGE_COUNT = STAGE_LABELS.length; // 15 — shared display stage count (0–14)
 
+// ── Stage display convention (Product Decision) ─────────────────────────────
+// Internal engine index is 0–14 and is NEVER exposed to the user. External,
+// user-facing presentation is 1–15. Every on-screen stage counter must derive
+// through these two functions — no screen composes its own numerator or
+// denominator. Comparisons/gating logic (e.g. "is this the last stage?") must
+// keep using the raw internal index — only the rendered string shifts by one.
+export function stageDisplayNumber(currentIndex: number): number {
+  return currentIndex + 1;
+}
+export function formatStageDisplay(currentIndex: number): string {
+  return `${stageDisplayNumber(currentIndex)} / ${STAGE_COUNT}`;
+}
+
 const AGENT_TOKEN: Record<AgentId, string> = {
   CO: 'var(--ig-agent-co)',
   PS: 'var(--ig-agent-ps)',

@@ -20,7 +20,7 @@ import {
 import { useRuntime } from '@/lib/RuntimeContext';
 // Mission 13 Batch C — parity with TopBar.tsx (Mission 12B reference implementation)
 import { ModelSelector } from '@/components/ModelSelector';
-import { STAGE_COUNT } from '@/lib/execution/adapters/orchestration';
+import { STAGE_COUNT, formatStageDisplay } from '@/lib/execution/adapters/orchestration';
 import { resolveModelId } from '@/lib/model-registry';
 // MODEL_LABELS / ModelKey below are no longer used for the Default Model picker
 // (replaced by the registry-driven ModelSelector) but are kept — still referenced
@@ -502,7 +502,7 @@ function CHealth(){
   useEffect(()=>{fetch('/api/data').then(r=>r.json()).then(d=>{setArtifactCount(d.artifacts?.length??0);setStage(d.currentStage??0);}).catch(()=>{});},[]);
   const staleCount=runtime.state.staleArtifacts.size;
   const rows=[
-    {label:'Lifecycle stage',value:`${stage}/${STAGE_COUNT}`,color:stage>=STAGE_COUNT-1?S.accent:S.indigo},
+    {label:'Lifecycle stage',value:formatStageDisplay(stage),color:stage>=STAGE_COUNT-1?S.accent:S.indigo},
     {label:'Artifacts',value:artifactCount,color:artifactCount>0?S.accent:S.textMute},
     {label:'Stale artifacts',value:staleCount,color:staleCount>0?S.amber:S.textMute},
     {label:'Improvements this session',value:runtime.state.improvementCount,color:runtime.state.improvementCount>0?S.indigo:S.textMute},
@@ -525,7 +525,7 @@ function CHealth(){
         </div>
       ))}
     </div>
-    <div style={{marginTop:'10px',fontSize:'9px',color:S.textMute2,lineHeight:1.6}}>Lifecycle status · {stage>=14?'COMPLETE':'ACTIVE'} · {artifactCount} artifact{artifactCount!==1?'s':''} generated</div>
+    <div style={{marginTop:'10px',fontSize:'9px',color:S.textMute2,lineHeight:1.6}}>Lifecycle status · {stage>=STAGE_COUNT-1?'COMPLETE':'ACTIVE'} · {artifactCount} artifact{artifactCount!==1?'s':''} generated</div>
   </div>);
 }
 

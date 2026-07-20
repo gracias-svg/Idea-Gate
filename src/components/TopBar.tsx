@@ -14,7 +14,7 @@ import { useGlobalStore } from '@/lib/GlobalStore';
 // kept for SettingsModal.tsx and office/page.tsx, which still reference it directly.
 import { ModelSelector } from '@/components/ModelSelector';
 import { resolveModelId } from '@/lib/model-registry';
-import { STAGE_COUNT } from '@/lib/execution/adapters/orchestration';
+import { STAGE_COUNT, stageDisplayNumber, formatStageDisplay } from '@/lib/execution/adapters/orchestration';
 // Mission 14 Phase 1 — desk/improve/office tab navigation moved to NavRail.
 // TopBar keeps the command surface (Run/Stop/New Idea/model) and now exposes
 // a Cmd+K trigger instead of owning navigation.
@@ -155,9 +155,9 @@ export default function TopBar() {
         <div style={{ display:'flex', alignItems:'center', gap:'6px', flexShrink:0 }}>
           <div style={{ fontSize:'12px', color:'#475569' }}>
             Stage{' '}
-            <span style={{ color:'#4ade80', fontWeight:700 }}>{currentStage}</span>
+            <span style={{ color:'#4ade80', fontWeight:700 }}>{stageDisplayNumber(currentStage)}</span>
             {' / '}
-            <span style={{ color:'#334155' }}>14</span>
+            <span style={{ color:'#334155' }}>{STAGE_COUNT}</span>
           </div>
           {/* Refresh button — forces artifact list update on all pages */}
           <button
@@ -328,7 +328,7 @@ export default function TopBar() {
             ⟳ Generating
           </span>
           <span style={{ fontSize:'11px', color:'#4ade8088', flexShrink:0 }}>
-            · Stage {currentStage}/{STAGE_COUNT} · {STAGE_LABELS[currentStage] ?? `Stage ${currentStage}`}
+            · Stage {formatStageDisplay(currentStage)} · {STAGE_LABELS[currentStage] ?? `Stage ${currentStage}`}
           </span>
           <span style={{ fontSize:'11px', color:'#4ade8088', flexShrink:0 }}>
             · {artifactCount} artifact{artifactCount === 1 ? '' : 's'} so far

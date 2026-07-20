@@ -197,6 +197,19 @@ Never fabricate text to fill the space.
 
 # §5 — TYPOGRAPHY
 
+## 5.0 The order of operations 🏛
+**Attention → Hierarchy → Typography.**
+
+Typography, spacing, material and motion are *mechanisms*. They are never the objective.
+Every batch must answer: **how does this change where the user's attention goes?**
+
+Four hierarchies are optimised simultaneously: **information · attention · interaction ·
+cognitive.**
+
+**Composition outranks styling.** Perfect typography on an inside-out composition still reads
+as assembled. Establish hero and reading order first; style second. *(Proven: Studio's
+typography changed and it still failed review, because the hero container was half-width.)*
+
 ## 5.1 Two voices, strictly assigned 🏛
 - **Geist Sans** — anything a *human reads*: titles, prose, reasoning, stat numerals
 - **JetBrains Mono** — anything a *machine produced*: codes, labels, telemetry, logs, IDs, timestamps, stage numbers
@@ -208,6 +221,8 @@ Never fabricate text to fill the space.
 > Sans is loaded and correctly set on `<html>`, then immediately overridden. **Every screen
 > in IdeaGate renders in monospace.** This is the single largest typographic defect and it
 > blocks every rule below.
+
+
 
 ## 5.2 The scale — as real CSS custom properties 🏛
 
@@ -228,7 +243,7 @@ Every stat pairs `--ig-t-hero` (40px) with `--ig-t-label` (10px). **That ratio *
 premium signal.** The current build renders both at ~12px — a 1:1 ratio — which is exactly
 why nothing on screen has hierarchy.
 
-## 5.4 Label/Content Authority 🏛
+## 5.4 Label/Content Authority ✅
 **A label MARKS content. It must never OUTWEIGH it.**
 
 A label is a signpost, not the destination. Its job is to name a region quietly; the
@@ -257,6 +272,16 @@ tier — caption, body, title — and governs *information hierarchy in general*
 equally to future non-prose tenants (diagrams, reasoning threads, comparison views,
 dependency graphs, timelines), not only to text lists. Wherever a marker introduces
 information, the information wins.
+
+**Luminance is the load-bearing channel.** Validated on Studio (commit `3e45431`, nine-lens
+review determination: lift clearly visible): a +37.5 luminance separation between label and
+content produced clear, glanceable tier separation, while the accompanying 400→500 weight
+step contributed almost nothing perceptible at caption size. **Weight alone is not a tier —
+it is a modifier on a tier that luminance has already created.** Reach for luminance first;
+use weight to reinforce, never to substitute.
+
+**Evidence:** rendered `/improve`, five label→content pairs (`PRESETS`, `EXTENT`, `SCOPE`,
+`ARTIFACTS`, `DOWNSTREAM`), each legible as two tiers at a glance without reading either line.
 
 ---
 
@@ -296,6 +321,19 @@ cognition is happening. Ambient motion on an idle system is a lie, and users fee
 
 ## 7.4 Reduced motion ✅
 Everything gates on `useReducedMotion`. No exceptions.
+
+## 7.5 Curation is mandatory 🏛
+References are **evidence, not inspiration.** Extract transferable *construction principles*;
+never imitate layouts or copy components.
+
+**Verify category before extracting.** In the first reference packet, **4 of 7 images were
+marketing or stock concept art, not product UI** — using them would have pushed IdeaGate
+toward the exact cliché it exists to avoid. Design-gallery sites (Dribbble, Godly,
+recent.design, Land-book) skew heavily toward landing pages. Treat everything from them with
+that suspicion.
+
+**Who extracts:** the human or Claude Chat. **Never Claude Code** — it has no browser-research
+mandate and no design authority.
 
 ---
 
@@ -482,11 +520,14 @@ failed.**
 Every screen, every batch, reviewed under all nine. **Failing one means it does not ship.**
 
 1. **Hierarchy** — one hero at ≥1.7:1. Cover it with your hand: does the screen lose its centre?
+   - *Composition* — is there a real reading order, or is it a grid?
+   - *Negative space* — does the hero breathe, or is it crowded?
 2. **Typography** — ≥3 distinct sizes · 4:1 on every stat · mono only on machine surfaces
 3. **Material** — panels ≥3 shadow layers + gradient · nodes ≥5 layers · never a 1px border
 4. **Motion** — every animation ↔ a real state change · ONE alive element · **stops when idle**
 5. **Interaction** — hover / focus / selection / active-work all distinguishable · keyboard-complete
 6. **Information architecture** — ≤4 stats · 1 accent · nothing duplicated · one question answered
+   - *Execution storytelling* — does it show what changed and why — not only who is working?
 7. **Accessibility** — contrast passes · reduced-motion honoured · never colour-only
 8. **Identity** — recognisable as IdeaGate with the logo removed · zero banned aesthetics
 9. **Portfolio** — **would you show this screenshot to a hiring manager without apologising?**

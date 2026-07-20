@@ -53,7 +53,7 @@ Hard halts. Not warnings. Stop, report, wait for a human.
 **On INTENT — what *should* be true:**
 ```
 1. THE GRAMMAR       docs/IDEAGATE-VISUAL-GRAMMAR.md        all visual construction
-2. THE CONSTITUTION  docs/IDEAGATE-DESIGN-CONSTITUTION.md   authority, values, review lenses
+2. THE CONSTITUTION  docs/IDEAGATE-DESIGN-CONSTITUTION.md   authority, values, decision rights
 3. THE BLUEPRINT     docs/IDEAGATE-DESIGN-EXECUTION-BLUEPRINT.md  build order, Definition of Done
 4. SCREEN SPECS      docs/IDEAGATE-MISSION-CONTROL-SPEC.md  composition, adapter, batches
 5. This file
@@ -73,7 +73,7 @@ Re-read, with intent — each answers a different question:
 | Document | The question it answers |
 |---|---|
 | **Visual Grammar** | *How is this constructed?* — layers, tokens, type scale, motion, interaction, empty states |
-| **Constitution** | *Who decides, and what are the review lenses?* |
+| **Constitution** | *Who decides, and what happens on a stop condition?* |
 | **Execution Blueprint** | *What am I building now, and what does "done" mean?* |
 | **Screen Spec** | *What is specific to this screen?* — composition, adapter, batch order |
 
@@ -218,7 +218,11 @@ TypeScript 0 errors · build succeeds · no protected file touched · Phaser nev
 regression suite passes · **all 9 review lenses pass** (Grammar §12) · **and a human opened a
 browser and approved it.**
 
-Full gate: Execution Blueprint §16. **"It compiles" is not done.**
+Full gate: Execution Blueprint §12 (Exit Criteria). **"It compiles" is not done.**
+
+AND a human or Claude Chat has viewed an **actual rendered screenshot** — not a
+computed-style report — before the sprint is called complete. Numeric proof of a change is
+not evidence the change is perceptible.
 
 ---
 
@@ -240,29 +244,22 @@ These are closed. If you find yourself proposing one of these, stop — it has b
 
 ## 12 — WHERE WE ARE
 
-```
-Baseline tag:  v5.2-pre-mission-control (82aea5d)
-Phase:         Pre-W0 baseline verification → W0 Material Foundation
-```
+**Studio (`/improve`) is the PILOT.** Its validated patterns become the reference
+implementation for Desk, Office, Blueprint, Mission Control. Do not redesign the others yet.
 
-**Built:** 15-stage engine · 22-model registry · Studio improve/accept · Foundation (OKLCH
-tokens, Tailwind v4 + shadcn, Geist + JetBrains loaded, motion primitives, composition
-primitives, Zustand execution store, selection contract) · Mission Control M0–M2.5 (pure
-adapter, viz primitives, storytelling motion).
+**Shipped:** W0-B `f9f24b7` (type scale as CSS, 4-layer elevation, grain, canvas var) ·
+W0-C1 `864fdfc` (legacy tokens bridged to Foundation) · W0-C2 `de2ca24` (Studio + Office roots
+de-occluded; Desk left as control) · S1 `b9f8f27` (composition + Two Voices) · S1 Revision
+`b065f06` (hero width 326→571px) · S1 Polish `8e5c1ff` · Grammar §5.4 `e6c5948` ·
+Content Authority `3e45431`.
 
-**Known gaps — real, verified, not yet fixed:**
-- **The entire app renders in monospace.** `layout.tsx`'s `<body>` forces JetBrains Mono
-  globally, overriding Geist Sans. This is why nothing has typographic hierarchy.
-- `--ig-t-*` type scale exists only in a markdown table — **not as CSS.**
-- `--ig-elev-1` is a **1px border**, not the Grammar's 4-layer elevation.
-- Mission Control lives on `/mc-scratch`; **`/office` still renders the old flat graph.**
-- Selection is not wired. The Coordinator renders at 80×72, not the Grammar's 96px.
+**Known gaps:** `Panel` primitive has exactly **one** consumer (`/mc-scratch`) — the design
+system is built but not connected to the product · Coordinator renders 80×72 from a constant
+duplicated in two files (Grammar wants 96px, one shared export) · `/office` still renders the
+old flat graph · selection not wired · Desk/Office don't subscribe to `GlobalStore`.
 
-**Do not beautify `/office` or `/mc-scratch` as they exist today.** They are scheduled for
-full replacement. Polishing deprecated components is negative-value work.
+**Do not beautify `/office` or `/mc-scratch`.** Scheduled for replacement; polishing
+deprecated components is negative-value work.
 
-> **The current milestone, its scope, its exclusions, and its acceptance criteria live in
-> the Execution Blueprint — not here.** Read it at the start of every batch. This file tells
-> you the standing rules; the Blueprint tells you today's job.
-
-
+> Current milestone, scope, exclusions and acceptance criteria live in the Execution Blueprint
+> and `IDEAGATE-SESSION-BOOTSTRAP.md` — not here.

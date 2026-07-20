@@ -92,6 +92,14 @@ assert a fact. Verify, then write.
 
 ## 5. Roles — and Non-Responsibilities
 
+**Claude Chat vision is the validation instrument.** Claude Chat can see images. Every time a
+rendered screenshot has reached it, the review was accurate and specific. The gap was never
+tooling — it was process.
+
+**Browser tooling measures; it does not judge.** Playwright and DevTools are Claude Code's
+instruments for establishing *facts*. They answer *what is*, never *what should be*. No
+measurement can determine whether something is premium.
+
 **The non-responsibilities matter more than the responsibilities.** Every failure in this
 project's history traces to a participant acting outside its authority.
 
@@ -151,6 +159,11 @@ each is the first visible symptom of erosion:
 - A scratch route survives more than one batch.
 - **A batch ships without a human looking at it.**
 
+- **A batch ships on numbers alone.** Numeric proof that something changed is not evidence the
+  change is perceptible. Three consecutive sprints shipped with verified computed-style deltas,
+  clean TypeScript, passing builds and passing regression — and produced no perceived
+  improvement, because nobody with taste authority looked at a rendered screen.
+
 ---
 
 # PART III — THE INHERITANCE CONTRACT
@@ -200,36 +213,16 @@ becoming two different products.
 
 # PART IV — THE VISUAL REVIEW FRAMEWORK
 
-## 11. The Sixteen Lenses
+## 11. Review Framework — see Grammar §12
 
-Every screen is reviewed under all sixteen, every time, in this order. **Failing one lens
-means the screen does not ship.** Not "ships with a note" — does not ship.
+The operational review framework is defined in Grammar §12 (Nine Lenses, with Composition /
+Negative Space / Execution Storytelling as explicit sub-checks). This section does not
+redefine it.
 
-**Composition (does the eye know where to go?)**
-1. **Hierarchy** — is there one unambiguous hero at ≥1.7:1 over anything else?
-2. **Composition** — is there a real reading order, or is it a grid?
-3. **Negative space** — does the hero breathe, or is it crowded?
-4. **Density** — dense *and* scannable, or cramped?
-
-**Craft (was this built or assembled?)**
-5. **Typography** — ≥3 distinct sizes with genuine weight contrast; 4:1 on every stat.
-6. **Material** — real constructed depth. Never a 1px border pretending to be a panel.
-7. **Consistency** — could any element be dropped into another IdeaGate screen unchanged?
-
-**Behaviour (is it alive, and honestly so?)**
-8. **Interaction** — are hover / focus / active-work / selection four *distinguishable* states?
-9. **Motion** — does every animation map to a real state change? Does everything stop when idle?
-10. **Execution storytelling** — does it show *what changed, why, and what's next* — or only *who is working*?
-
-**The human (can a person actually use this?)**
-11. **Cognitive load** — is "what is happening" answerable in under 3 seconds?
-12. **Signal-to-noise** — could anything be removed with no loss? Then remove it.
-13. **Accessibility** — keyboard-reachable, contrast-passing, `useReducedMotion`-honouring, never colour-only.
-
-**Identity (is this IdeaGate, or is it anything?)**
-14. **Product identity** — would this be recognisable as IdeaGate with the logo removed?
-15. **Anti-goal check** — zero glassmorphism, neon, particles, KPI-card grids, device mockups.
-16. **Portfolio quality** — **would you show this screenshot to a hiring manager without apologising?**
+**Grammar §12 is the only place the checklist is written out.** This Constitution, CLAUDE.md,
+the Execution Blueprint, and the Session Bootstrap reference it; they never restate it. A
+checklist that exists in two places will drift, and a drifted checklist is worse than no
+checklist — reviewers stop trusting it and quietly fall back to taste.
 
 ## 12. The Review Ritual
 
@@ -309,8 +302,8 @@ Therefore, the binding rule of this Constitution's first chapter:
 > **Build one screen to the Grammar. Look at it. Then codify what actually worked.**
 >
 > No further governance documents are written until Live Orchestration renders, is
-> integrated into `/office`, and has been approved by a human in a browser under all
-> sixteen lenses.
+> integrated into `/office`, and has been approved by a human in a browser under the Nine
+> Lenses (Grammar §12).
 
 The next artifact is not a document. It is a Composition Blueprint — wireframe only, no
 colour, no type, no motion — for Live Orchestration. And then a screen.

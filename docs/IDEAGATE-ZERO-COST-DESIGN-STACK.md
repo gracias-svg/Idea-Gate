@@ -110,7 +110,7 @@ That last line is the whole ballgame. **Silence is where the generic output come
 
 **The one nobody would guess is the most useful for us: Vercel's `web-design-guidelines`.**
 It is a *reviewer*, not a generator. It is the closest thing to an automated version of
-our sixteen-lens quality gate — and it would have caught the colour-only status
+our nine-lens quality gate (Grammar §12) — and it would have caught the colour-only status
 indicators and the contrast problems automatically.
 
 ⚠️ **UI/UX Pro Max caution:** its 50-style library includes glassmorphism, neumorphism,

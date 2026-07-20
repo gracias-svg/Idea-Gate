@@ -8,7 +8,8 @@
 >
 > **Binding clause:** No further design, governance, or strategy documents are written
 > until Live Orchestration is rendered, integrated into `/office`, and approved by a
-> human under all sixteen lenses. If a gap appears, it is fixed in the Grammar — not in
+> human under the nine review lenses (Grammar §12). If a gap appears, it is fixed in the
+> Grammar — not in
 > a new document.
 >
 > **Companion documents:** THE CONSTITUTION (authority) · THE GRAMMAR (visual language)
@@ -77,7 +78,7 @@ first.
 |---|---|---|
 | **W0 — Material Foundation** *(global)* | Type unlock · `--ig-t-*` as CSS · 4-layer elevation · grain · canvas vignette · Lucide consistency | Every subsequent wave inherits it. Building Mission Control on a wireframe substrate wastes the work. |
 | **W1 — Live Orchestration** ⭐ | 7-layer Coordinator · 6-layer agents · bloomed travelling-pulse edges · in-canvas telemetry · stage rail · vitals · **integration into `/office`** | **The Grammar's proof of concept.** One screen, done properly, human-approved. |
-| **🚦 HARD GATE** | Human approval under all 16 lenses | **Nothing proceeds until this passes.** |
+| **🚦 HARD GATE** | Human approval under the nine review lenses (Grammar §12) | **Nothing proceeds until this passes.** |
 | **W2 — Intelligence & Quality + Insights & Performance** | Reuse StageRail / MetricGrid / ActivityStream / OrchestrationCanvas with new adapters | Cheap *once W1 is validated*. Expensive and wasteful before. |
 | **W3 — Desk (Artifact Reading)** | Reading · navigation · typography · annotations | Highest-traffic surface. Protected file → exception protocol required. |
 | **W4 — Studio** | Improve · AI editing · versions · AI collaboration | The Grammar's real stress test. If Studio needs a new metaphor, the Grammar was too shallow. |
@@ -103,7 +104,7 @@ Each wave is built in this order. **A layer is not started until the one above i
 | 5 | **Micro-interactions** | Claude Code | Hover / focus / active-work / selection are four *distinguishable* states |
 | 6 | **Accessibility** | Claude Code | Keyboard-reachable · contrast passes · `useReducedMotion` honoured · never colour-only |
 | 7 | **Performance** | Claude Code | 60fps with graph animating. SVG filters profiled. No layout thrash. |
-| 8 | **Human QA** | **Human, in a browser** | All 16 lenses pass. **Non-negotiable.** |
+| 8 | **Human QA** | **Human, in a browser** | The nine review lenses (Grammar §12) pass. **Non-negotiable.** |
 
 ---
 
@@ -126,7 +127,7 @@ CLAUDE CODE  ← frontend-design skill active
         ↓
 BROWSER (integrated route — never a scratch page)
         ↓
-   🚨 HUMAN REVIEW — 16 lenses
+   🚨 HUMAN REVIEW — nine lenses (Grammar §12)
         ↓
 REVISION (targeted, never a rebuild)
         ↓
@@ -288,7 +289,7 @@ All must be true. No partial credit.
 □ Keyboard-reachable; contrast passes; reduced-motion honoured
 □ Regression: lifecycle · Stop · Improve+Accept · New Idea · model selector · Desk/Studio intact
 □ 0 TypeScript errors; production build succeeds
-□ 🚨 HUMAN approved under all 16 lenses
+□ 🚨 HUMAN approved under the nine review lenses (Grammar §12)
 □ Tagged v5.3-mission-control
 ```
 
@@ -400,8 +401,8 @@ reference's nodes? If not, keep going.
 - Delete `/mc-scratch`
 - Regression suite
 
-**🚨 HUMAN REVIEW — the whole point of everything.** All 16 lenses, in the browser, on
-`/office`. 10–15 minutes. Specific notes.
+**🚨 HUMAN REVIEW — the whole point of everything.** The nine review lenses (Grammar §12),
+in the browser, on `/office`. 10–15 minutes. Specific notes.
 
 **Exit fork:**
 - **Pass** → iterate on notes → tag `v5.3-mission-control` → W2
@@ -426,6 +427,24 @@ If everything else in this document is ignored, this is the one that matters:
 > If it doesn't happen, nothing else does.
 
 ---
+# 17 — EXPRESS SPRINT CRITERIA
+
+Per sprint: **one concern · one rollback point · one regression check · one visual review ·
+one obvious user-visible improvement.**
+
+> **A sprint that is technically correct but imperceptible to the user is a failed sprint.**
+
+Move quickly; never rush architecture. Small, measurable, reviewable, reversible batches.
+Additive over replacement. When several small fixes appear, group them into a reusable pattern
+rather than page-specific patches — **every sprint leaves the Design System stronger.**
+
+The documentation phase is closed. If a rule is missing, amend the Grammar; do not write a
+new document.
+
+# 18 — THE DESIGN ACQUISITION PIPELINE
+
+Runs in full **only** when introducing a new reusable principle. Most sprints enter at
+Implementation.
 
 *IdeaGate Design Execution Blueprint v1.0*
 *The last document. The next artifact is a screen.*

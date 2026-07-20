@@ -124,7 +124,7 @@ const STAGE_LABELS = [
   'UX Design', 'Usability', 'Architecture', 'Backlog & Release',
   'Implementation', 'QA & Readiness', 'Prototype Prompt',
 ] as const;
-const STAGE_COUNT = STAGE_LABELS.length; // 15
+export const STAGE_COUNT = STAGE_LABELS.length; // 15 — shared display stage count (0–14)
 
 const AGENT_TOKEN: Record<AgentId, string> = {
   CO: 'var(--ig-agent-co)',

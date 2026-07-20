@@ -14,6 +14,7 @@
 import { useEffect, useState } from 'react';
 import { useGlobalStore } from '@/lib/GlobalStore';
 import { getModelById, resolveModelId } from '@/lib/model-registry';
+import { STAGE_COUNT } from '@/lib/execution/adapters/orchestration';
 
 type RunStatus = 'idle' | 'running' | 'done' | 'error';
 
@@ -73,7 +74,7 @@ export default function StatusBar() {
   const modelEntry = getModelById(resolveModelId(settings.defaultModel));
   const modelLabel = modelEntry?.displayName ?? '--';
 
-  const stageProgress = dataReady && isRunning ? `Stage ${currentStage} / 14` : '';
+  const stageProgress = dataReady && isRunning ? `Stage ${currentStage} / ${STAGE_COUNT}` : '';
 
   const barStyle: React.CSSProperties = {
     height: '28px',

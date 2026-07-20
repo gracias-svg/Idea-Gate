@@ -367,13 +367,9 @@ export default function ImprovePage() {
           <div style={{fontSize:'14px',color:'#818cf8',fontWeight:700,letterSpacing:'0.1em'}}>REFINE</div>
           <div style={{fontSize:'9px',color:'#1a1a3a',letterSpacing:'0.08em'}}>ARTIFACT IMPROVEMENT ENGINE</div>
         </div>
-        <div style={{width:'1px',height:'28px',backgroundColor:'#0a1a2e'}}/>
         <div style={{display:'flex',gap:'10px',fontSize:'10px'}}>
-          <span style={{color:'#334155'}}><span style={{color:'#4ade80',fontWeight:700}}>{runtime.state.improvementCount}</span> improved</span>
-          <span style={{color:'#334155'}}><span style={{color:staleCount>0?'#f59e0b':'#334155',fontWeight:700}}>{staleCount}</span> stale</span>
           {runtime.state.sessionTokens>0&&<span style={{color:'#334155'}}><span style={{color:'#818cf8'}}>{runtime.state.sessionTokens.toLocaleString()}</span>t <span style={{color:'#4ade80'}}>${runtime.state.sessionCost.toFixed(4)}</span></span>}
         </div>
-        <div style={{width:'1px',height:'28px',backgroundColor:'#0a1a2e'}}/>
 
         {/* Local model picker removed Mission 12C — TopBar's ModelSelector is now the
             single source of model selection across all pages. */}
@@ -429,6 +425,7 @@ export default function ImprovePage() {
                 const r = isSelected?8:5;
                 return(
                   <g key={i} onClick={()=>art&&setSelected(art)} style={{cursor:art?'pointer':'default'}}>
+                    <title>{STAGE_LABELS[i] ?? `Stage ${i}`}</title>
                     {i>0&&<line x1={x-700/15} y1={40} x2={x} y2={40} stroke="#1e293b" strokeWidth={1}/>}
                     <circle cx={x} cy={40} r={r} fill={col} stroke={isSelected?'#818cf8':'transparent'} strokeWidth={2}/>
                     {ver>0&&<text x={x} y={28} fontSize="7" fill="#4ade8088" textAnchor="middle">v{ver}</text>}
@@ -641,7 +638,7 @@ export default function ImprovePage() {
             <div style={{...T.label,color:'#2a5a30',marginBottom:'8px'}}>IMPROVEMENT INTENT</div>
             <textarea value={intent} onChange={e=>setIntent(e.target.value)}
               placeholder='Describe what to improve — e.g. "Strengthen competitive moat with a defensible advantage and long-term implications"'
-              style={{width:'100%',minHeight:'84px',padding:'11px',fontFamily:FONT_SANS,fontSize:'13px',color:'#cbd5e1',backgroundColor:'#040b14',border:'1px solid #0f1923',borderRadius:'4px',resize:'vertical',outline:'none',lineHeight:1.55,boxSizing:'border-box' as const}}/>
+              style={{width:'100%',minHeight:'120px',padding:'11px',fontFamily:FONT_SANS,fontSize:'13px',color:'#cbd5e1',backgroundColor:'#040b14',border:'1px solid #0f1923',borderRadius:'4px',resize:'vertical',outline:'none',lineHeight:1.55,boxSizing:'border-box' as const}}/>
 
             {/* Active model badge — machine metadata */}
             <div style={{padding:'5px 8px',backgroundColor:`${activeModel.color}11`,border:`1px solid ${activeModel.color}22`,borderRadius:'3px',margin:'8px 0',display:'flex',alignItems:'center',gap:'6px'}}>

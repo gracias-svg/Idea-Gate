@@ -48,7 +48,7 @@ Shared design tokens
 
 Predictable interaction patterns
 
-Single source of truth
+Reference material for principle extraction — NOT construction authority. See Grammar §13 Exception Protocol.
 
 Avoid
 
@@ -528,6 +528,6 @@ Implementation should align with
 
 17-claude-chat-design-context.md
 
-These documents collectively define the authoritative Design Intelligence Specification for IdeaGate.
+These documents collectively inform design proposals but carry no construction authority. Claude Code implements only the Grammar; this library never overrides it — per CLAUDE.md §3.
 
 Claude Code should implement features that conform to this specification while preserving maintainability, accessibility, and long-term extensibility.

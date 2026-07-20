@@ -305,4 +305,4 @@ Read and respect the following specifications before making recommendations:
 
 16-design-token-specification.md
 
-Treat these documents as the authoritative design specification for IdeaGate.
+Treat these documents as curated reference material, subordinate to the Grammar and Constitution. Where this library and the Grammar disagree, the Grammar wins — per CLAUDE.md §3 and the Exception Protocol (Grammar §13).

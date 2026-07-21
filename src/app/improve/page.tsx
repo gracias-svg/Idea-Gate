@@ -18,6 +18,7 @@ import { useRuntime, getTransitiveDownstream } from '@/lib/RuntimeContext';
 import { MODEL_REGISTRY } from '@/lib/model-registry';
 import Panel from '@/components/ui/Panel';
 import { stageDisplayNumber } from '@/lib/execution/adapters/orchestration';
+import ViewSwitcher from '@/components/improve/ViewSwitcher';
 
 // ── Model catalog ─────────────────────────────────────────────────────────────
 // tier: 'paid'  = billed per token via OpenRouter
@@ -408,13 +409,7 @@ export default function ImprovePage() {
       {/* ── Graph/Events/Reasoning tab bar ── */}
       <div style={{borderBottom:'1px solid #0a1a2e',flexShrink:0,backgroundColor:'#020c06'}}>
         <div style={{display:'flex'}}>
-          {(['graph','events','reasoning'] as const).map(p=>(
-            <button key={p} onClick={()=>setPanel(p)} style={{...B,padding:'6px 12px',fontSize:'9px',borderRadius:0,
-              backgroundColor:panel===p?'#040b14':'transparent',color:panel===p?'#4ade80':'#94a3b8',
-              borderBottom:panel===p?'1px solid #4ade80':'1px solid transparent',letterSpacing:'0.08em'}}>
-              {p==='graph'?'◈ ARTIFACT GRAPH':p==='events'?'▶ EVENT FEED':'⟳ REASONING CHAIN'}
-            </button>
-          ))}
+          <ViewSwitcher panel={panel} setPanel={setPanel} />
           <div style={{flex:1}}/>
           <span style={{fontSize:'9px',color:'#94a3b8',alignSelf:'center',marginRight:'12px'}}>
             {panel==='graph'&&`15 nodes · ${staleCount} stale · ${Object.keys(runtime.state.artifactVersions).length} improved`}

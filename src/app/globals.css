@@ -567,3 +567,27 @@ body {
   .ig-primary-btn { transition: none; }
   .ig-primary-btn:not(:disabled):active { transform: none; }
 }
+
+/* =========================================================
+   STUDIO (/improve) View Switcher — Sprint 05.
+   Trigger replaces the old 3-button tab row; its resting look is
+   unchanged (same bg/border/colour as the old active tab) but hover
+   and focus-visible need real pseudo-classes, so they live here.
+   Row highlight (mouse hover AND keyboard roving) is unified through
+   one React state in the component itself — no CSS :hover needed on
+   rows, only the transition that smooths it.
+   ========================================================= */
+.ig-view-trigger {
+  transition: background-color 120ms ease-out, color 120ms ease-out;
+}
+.ig-view-trigger:hover { background-color: #0a1509; }
+.ig-view-trigger:focus-visible {
+  outline: 1px solid #4ade80;
+  box-shadow: var(--ig-focus-ring);
+}
+.ig-view-row { transition: background-color 100ms ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ig-view-trigger,
+  .ig-view-row { transition: none; }
+}

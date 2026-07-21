@@ -144,16 +144,24 @@ export default function TopBar() {
         display:         'flex',
         alignItems:      'center',
         height:          '44px',
-        padding:         '0 14px',
-        gap:             '10px',
+        padding:         '0 var(--ig-space-4)',
+        gap:             'var(--ig-space-2)',
         backgroundColor: '#020c06',
         borderBottom:    '1px solid #0a1a2e',
         flexShrink:      0,
         ...MONO,
       }}>
-        {/* Stage indicator + refresh */}
-        <div style={{ display:'flex', alignItems:'center', gap:'6px', flexShrink:0 }}>
-          <div style={{ fontSize:'12px', color:'#475569' }}>
+        {/* Stage indicator + refresh — Sprint 06 T1: stage text now wrapped in its
+            own pill container so the "one radius scale" is visible at rest (it had
+            no container at all before). No box-shadow here — T3's elevation list
+            doesn't name the stage indicator, only the controls a user acts on. */}
+        <div style={{ display:'flex', alignItems:'center', gap:'var(--ig-space-1)', flexShrink:0 }}>
+          <div style={{
+            fontSize:'12px', color:'#475569',
+            padding:'4px 10px',
+            backgroundColor:'#040b14',
+            borderRadius:'var(--ig-radius-full)',
+          }}>
             Stage{' '}
             <span style={{ color:'#4ade80', fontWeight:700 }}>{stageDisplayNumber(currentStage)}</span>
             {' / '}
@@ -190,6 +198,7 @@ export default function TopBar() {
             fontSize:'12px', color:'#64748b',
             backgroundColor:'#040b14', border:'1px solid #0f1923',
             borderRadius:'3px', outline:'none',
+            boxShadow:'var(--ig-elev-1)',
           }}
         />
 
@@ -201,12 +210,13 @@ export default function TopBar() {
           style={{
             padding:'6px 16px', ...MONO, fontSize:'12px', fontWeight:700, letterSpacing:'0.06em',
             cursor: (!idea.trim() || isRunning) ? 'not-allowed' : 'pointer',
-            border:'none', borderRadius:'3px',
+            border:'none', borderRadius:'var(--ig-radius-full)',
             backgroundColor: isRunning ? '#0a1f0e' : '#4ade80',
             color:           isRunning ? '#4ade8066' : '#020609',
             flexShrink:0,
             opacity: (!idea.trim() || isRunning) ? 0.6 : 1,
             animation: isRunning ? 'topbar-pulse 1.5s infinite' : 'none',
+            boxShadow:'var(--ig-elev-1)',
           }}
         >
           {isRunning ? '⟳ Running…' : '▶ Run'}
@@ -231,11 +241,12 @@ export default function TopBar() {
               border: '1px solid rgba(255,255,255,0.12)',
               color: 'rgba(255,255,255,0.4)',
               padding: '4px 10px',
-              borderRadius: '3px',
+              borderRadius: 'var(--ig-radius-full)',
               cursor: 'pointer',
               fontSize: '11px',
               flexShrink: 0,
               ...MONO,
+              boxShadow:'var(--ig-elev-1)',
             }}
             title="Clear current run and start a new idea"
           >
@@ -276,7 +287,7 @@ export default function TopBar() {
           style={{
             display:'flex', alignItems:'center', gap:'4px',
             padding:'4px 9px', ...MONO, fontSize:'11px',
-            cursor:'pointer', border:'1px solid #1e293b', borderRadius:'3px',
+            cursor:'pointer', border:'1px solid #1e293b', borderRadius:'var(--ig-radius-full)',
             backgroundColor:'transparent', color:'#334155', flexShrink:0,
             transition:'all 0.1s',
           }}

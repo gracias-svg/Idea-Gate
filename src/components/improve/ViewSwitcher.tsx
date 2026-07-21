@@ -108,12 +108,17 @@ export default function ViewSwitcher({ panel, setPanel }: ViewSwitcherProps) {
           letterSpacing: '0.08em',
           fontFamily: "'JetBrains Mono','Fira Code',monospace",
           fontWeight: 500,
-          border: 'none',
-          borderRadius: 0,
+          // Sprint 06 T1/T3 — was a flush tab (radius 0 + green underline) matching
+          // the old 3-button tab row it replaced in Sprint 05. Now restyled to the
+          // top-chrome's unified pill + elevation language; the underline's job
+          // (showing this is the "current" control) is carried by the border +
+          // text color instead of a bottom rule.
+          border: '1px solid #4ade8033',
+          borderRadius: 'var(--ig-radius-full)',
           cursor: 'pointer',
           backgroundColor: '#040b14',
           color: '#4ade80',
-          borderBottom: '1px solid #4ade80',
+          boxShadow: 'var(--ig-elev-1)',
         }}
       >
         <span>{current.icon} {current.label}</span>

@@ -26,19 +26,32 @@ export function ModelSelectorTrigger({ selectedModelId, isOpen, disabled, onClic
       aria-expanded={isOpen}
       aria-haspopup="listbox"
       style={{
-        display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 10px',
-        backgroundColor: '#040b14', border: '1px solid #0f1923', borderRadius: '4px',
+        display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 10px 5px 6px',
+        backgroundColor: '#040b14', border: '1px solid #0f1923', borderRadius: 'var(--ig-radius-full)',
         cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, ...MONO,
+        boxShadow: 'var(--ig-elev-1)',
       }}
     >
-      <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: provider.color }} />
+      {/* Sprint 06 T2 — status dot integrated into a circular badge (avatar-style
+          identity slot) instead of a small dot floating beside the label. Ring +
+          fill both use the same provider color already driving the dot elsewhere
+          in this codebase (Sprint 04's model-card accent) — no new color introduced. */}
+      <span style={{
+        width: '16px', height: '16px', borderRadius: '50%',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        border: `1.5px solid ${provider.color}`,
+        backgroundColor: `${provider.color}26`,
+        flexShrink: 0,
+      }}>
+        <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: provider.color }} />
+      </span>
       <span style={{ fontSize: '11px', color: '#94a3b8' }}>
         {model ? model.displayName : 'Select AI Model'}
       </span>
       {model?.isFree && (
         <span style={{
           fontSize: '8px', fontWeight: 700, color: '#4ade80', border: '1px solid #4ade8055',
-          borderRadius: '3px', padding: '1px 5px',
+          borderRadius: 'var(--ig-radius-full)', padding: '1px 5px',
         }}>FREE</span>
       )}
       <span style={{

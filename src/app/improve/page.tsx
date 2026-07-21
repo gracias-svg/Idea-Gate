@@ -17,6 +17,7 @@ import { parseContent, parseContentDetailed } from '@/lib/parseContent';
 import { useRuntime, getTransitiveDownstream } from '@/lib/RuntimeContext';
 import { MODEL_REGISTRY } from '@/lib/model-registry';
 import Panel from '@/components/ui/Panel';
+import { stageDisplayNumber } from '@/lib/execution/adapters/orchestration';
 
 // ── Model catalog ─────────────────────────────────────────────────────────────
 // tier: 'paid'  = billed per token via OpenRouter
@@ -210,6 +211,17 @@ export default function ImprovePage() {
 
   // Panel tabs
   const [panel, setPanel] = useState<'graph'|'events'|'reasoning'>('graph');
+
+  // Lifecycle rail — hover focus + reduced-motion honouring (DIL 15 accessibility)
+  const [hoveredStage,  setHoveredStage]  = useState<number|null>(null);
+  const [reducedMotion, setReducedMotion] = useState(false);
+  useEffect(()=>{
+    const m = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const sync = ()=>setReducedMotion(m.matches);
+    sync();
+    m.addEventListener?.('change', sync);
+    return ()=>m.removeEventListener?.('change', sync);
+  },[]);
 
   useEffect(()=>{
     fetch('/api/data').then(r=>r.json()).then(d=>{
@@ -411,29 +423,71 @@ export default function ImprovePage() {
           </span>
         </div>
 
-        {/* Mini artifact graph — inline, compact */}
+        {/* ── Lifecycle rail — the enforced 15-stage lifecycle, IdeaGate's signature.
+             Progress reads left→right: completed · current · pending (DIL 09). Numbers
+             identify each stage; full names on hover (15 names cannot fit inline at
+             1440px). Idle is still; motion only on hover, and never under reduced-motion. ── */}
         {panel==='graph'&&(
           <div style={{padding:'8px 16px',height:'100px',overflow:'hidden'}}>
-            <svg viewBox="0 0 700 80" style={{width:'100%',height:'100%'}}>
-              {/* Simple linear stage display */}
+            <svg width="100%" height="84" style={{display:'block',overflow:'visible'}} role="img" aria-label="Lifecycle stage progress">
+              {/* Pass 1 — connector as progress track: filled up to the current stage, muted after */}
+              {Array.from({length:14},(_,k)=>{
+                const i = k+1;                         // segment joins node i-1 → node i
+                const completed = i <= stage;
+                return (
+                  <line key={`seg-${i}`}
+                    x1={`${(i-0.5)*(100/15)}%`} y1={38} x2={`${(i+0.5)*(100/15)}%`} y2={38}
+                    stroke={completed?'#4ade80':'#1e293b'} strokeOpacity={completed?0.5:1}
+                    strokeWidth={completed?2:1.5}/>
+                );
+              })}
+              {/* Pass 2 — stage nodes */}
               {Array.from({length:15},(_,i)=>{
                 const art = artifacts.find(a=>parseInt(a.split('-')[0],10)===i);
-                const isStale = art?runtime.state.staleArtifacts.has(art):false;
-                const ver = art?(runtime.state.artifactVersions[art]??0):0;
-                const isSelected = art&&selected===art;
-                const x = i*(700/15)+(700/30);
-                const col = isStale?'#f59e0b':isSelected?'#818cf8':ver>0?'#4ade80':'#1e293b';
-                const r = isSelected?8:5;
-                return(
-                  <g key={i} onClick={()=>art&&setSelected(art)} style={{cursor:art?'pointer':'default'}}>
-                    <title>{STAGE_LABELS[i] ?? `Stage ${i}`}</title>
-                    {i>0&&<line x1={x-700/15} y1={40} x2={x} y2={40} stroke="#1e293b" strokeWidth={1}/>}
-                    <circle cx={x} cy={40} r={r} fill={col} stroke={isSelected?'#818cf8':'transparent'} strokeWidth={2}/>
-                    {ver>0&&<text x={x} y={28} fontSize="7" fill="#4ade8088" textAnchor="middle">v{ver}</text>}
-                    <text x={x} y={60} fontSize="6.5" fill={isSelected?'#818cf8':isStale?'#f59e0b':'#334155'} textAnchor="middle">
-                      {STAGE_LABELS[i]?.split(' ')[0]?.slice(0,7)}
+                const isStale     = art?runtime.state.staleArtifacts.has(art):false;
+                const ver         = art?(runtime.state.artifactVersions[art]??0):0;
+                const isSelected  = !!art && selected===art;
+                const isCompleted = i < stage;
+                const isCurrent   = i === stage;
+                const isHovered   = hoveredStage===i;
+                const cx    = `${(i+0.5)*(100/15)}%`;
+                const rBase = isCurrent?12:10;
+                const fill  = isStale?'#f59e0b':(isCompleted||isCurrent)?'#4ade80':'#334155';
+                const numColor = isStale?'#020c06':(isCompleted||isCurrent)?'#04140b':'#cbd5e1';
+                const label = STAGE_LABELS[i] ?? `Stage ${i}`;
+                return (
+                  <g key={i}
+                     onMouseEnter={()=>setHoveredStage(i)}
+                     onMouseLeave={()=>setHoveredStage(null)}
+                     onClick={()=>art&&setSelected(art)}
+                     style={{cursor:art?'pointer':'default'}}>
+                    <title>{label}</title>
+                    {/* enlarged invisible hit/hover target */}
+                    <circle cx={cx} cy={38} r={16} fill="transparent"/>
+                    {/* lifting group — node + number + status badge rise together on hover */}
+                    <g style={{transform:(isHovered&&!reducedMotion)?'translateY(-2px)':'none',
+                               transition:reducedMotion?'none':'transform 140ms ease-out'}}>
+                      {isCurrent&&(
+                        <circle cx={cx} cy={38} r={rBase+5} fill="none" stroke="#4ade80" strokeOpacity={0.45} strokeWidth={1.5}/>
+                      )}
+                      <circle cx={cx} cy={38} r={rBase} fill={fill}
+                        stroke={isSelected?'#818cf8':'none'} strokeWidth={isSelected?2:0}/>
+                      <text x={cx} y={38} fontSize={10.5} fontWeight={600} fill={numColor}
+                        textAnchor="middle" dominantBaseline="central"
+                        style={{fontFamily:"'JetBrains Mono','Fira Code',monospace",pointerEvents:'none'}}>
+                        {stageDisplayNumber(i)}
+                      </text>
+                      {isStale
+                        ? <text x={cx} y={16} fontSize={8} fill="#f59e0b" textAnchor="middle" style={{pointerEvents:'none'}}>△</text>
+                        : ver>0 && <text x={cx} y={16} fontSize={8} fill="#4ade8099" textAnchor="middle" style={{pointerEvents:'none'}}>v{ver}</text>}
+                    </g>
+                    {/* hover tooltip — full stage name, dark outline keeps it legible over any node */}
+                    <text x={cx} y={66} fontSize={10.5} fill="#e2e8f0" textAnchor="middle"
+                      stroke="#020c06" strokeWidth={3} paintOrder="stroke"
+                      opacity={isHovered?1:0}
+                      style={{transition:reducedMotion?'none':'opacity 140ms ease-out',pointerEvents:'none'}}>
+                      {label}
                     </text>
-                    {isStale&&<text x={x} y={72} fontSize="7" fill="#f59e0b" textAnchor="middle">△</text>}
                   </g>
                 );
               })}

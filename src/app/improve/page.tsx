@@ -398,13 +398,13 @@ export default function ImprovePage() {
         <div style={{display:'flex'}}>
           {(['graph','events','reasoning'] as const).map(p=>(
             <button key={p} onClick={()=>setPanel(p)} style={{...B,padding:'6px 12px',fontSize:'9px',borderRadius:0,
-              backgroundColor:panel===p?'#040b14':'transparent',color:panel===p?'#4ade80':'#334155',
+              backgroundColor:panel===p?'#040b14':'transparent',color:panel===p?'#4ade80':'#94a3b8',
               borderBottom:panel===p?'1px solid #4ade80':'1px solid transparent',letterSpacing:'0.08em'}}>
               {p==='graph'?'◈ ARTIFACT GRAPH':p==='events'?'▶ EVENT FEED':'⟳ REASONING CHAIN'}
             </button>
           ))}
           <div style={{flex:1}}/>
-          <span style={{fontSize:'9px',color:'#1e293b',alignSelf:'center',marginRight:'12px'}}>
+          <span style={{fontSize:'9px',color:'#94a3b8',alignSelf:'center',marginRight:'12px'}}>
             {panel==='graph'&&`15 nodes · ${staleCount} stale · ${Object.keys(runtime.state.artifactVersions).length} improved`}
             {panel==='events'&&`${runtime.state.events.length} events · BroadcastChannel active`}
             {panel==='reasoning'&&`${runtime.state.reasoningChain.length} entries`}

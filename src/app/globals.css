@@ -524,3 +524,46 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .mc-edge-pulse { animation: none; }
 }
+
+/* =========================================================
+   STUDIO (/improve) right-panel controls — Sprint 04 (E1/E3).
+   :hover / :focus-visible / :active cannot live in inline styles,
+   so the presets chip's resting visual state moves here. Radius
+   unifies on --ig-radius-sm (4px), matching the panel's textarea
+   and primary button. Colours reuse existing panel tokens; keyboard
+   focus pairs the accent outline with the Grammar's --ig-focus-ring
+   halo (§3) so it is unmistakable without inventing a value.
+   ========================================================= */
+.ig-preset-chip {
+  border: none;
+  border-radius: var(--ig-radius-sm);
+  background-color: #040b14;
+  color: #64748b;
+  outline: 1px solid #1e293b;
+  cursor: pointer;
+  transition: background-color 140ms ease-out, color 140ms ease-out, outline-color 140ms ease-out;
+}
+.ig-preset-chip:hover {
+  background-color: #0d1117;
+  color: #94a3b8;
+  outline-color: #334155;
+}
+.ig-preset-chip:focus-visible {
+  outline: 1px solid #4ade80;
+  box-shadow: var(--ig-focus-ring);
+}
+
+/* Primary action — press/active feedback via transform+filter, so it
+   composes with the button's stateful inline background (enabled vs
+   disabled) rather than fighting it. No new colour token introduced. */
+.ig-primary-btn {
+  transition: transform 120ms ease-out, filter 120ms ease-out;
+}
+.ig-primary-btn:not(:disabled):hover  { filter: brightness(1.12); }
+.ig-primary-btn:not(:disabled):active { transform: translateY(1px); filter: brightness(0.94); }
+
+@media (prefers-reduced-motion: reduce) {
+  .ig-preset-chip,
+  .ig-primary-btn { transition: none; }
+  .ig-primary-btn:not(:disabled):active { transform: none; }
+}

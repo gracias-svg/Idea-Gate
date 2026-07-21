@@ -572,7 +572,7 @@ export default function ImprovePage() {
 
           {selected&&downstreamCount>0&&(
             <div style={{margin:'8px 12px'}}>
-              <Panel title={`DOWNSTREAM · ${downstreamCount}`} elevation={1} density="compact">
+              <Panel title={`DOWNSTREAM · ${downstreamCount}`} elevation={1} density="compact" className="rounded-sm">
                 {getTransitiveDownstream(selected).slice(0,5).map(n=>(
                   <div key={n} style={{fontSize:'var(--ig-t-caption-size)',fontWeight:500,color:runtime.isStale(n)?'#f59e0b':'#64748b',marginBottom:'2px'}}>
                     ↓ {humanName(n)} {runtime.isStale(n)?'△':''}
@@ -698,7 +698,11 @@ export default function ImprovePage() {
 
             {/* Active model badge — machine metadata */}
             <div style={{margin:'8px 0'}}>
-              <Panel elevation={1} density="compact">
+              <Panel elevation={1} density="compact" className="relative overflow-hidden rounded-sm">
+                {/* Identity signal — a 2px left edge in the active model's colour.
+                    A quiet marker on Panel's own material, not a tinted fill: it
+                    identifies the active collaborator without advertising it (DIL 05). */}
+                <div style={{position:'absolute',left:0,top:0,bottom:0,width:'2px',backgroundColor:activeModel.color}}/>
                 <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
                   <div style={{width:'5px',height:'5px',borderRadius:'50%',backgroundColor:activeModel.color,flexShrink:0}}/>
                   <div style={{flex:1,...T.caption}}>
@@ -712,7 +716,7 @@ export default function ImprovePage() {
             {/* Refinements below recede — quieter labels, more whitespace between groups. */}
             <div style={{...T.label,color:'#2a5a30',marginTop:'22px',marginBottom:'7px'}}>PRESETS</div>
             <div style={{display:'flex',flexWrap:'wrap',gap:'4px'}}>
-              {PRESETS.map(p=><button key={p.label} onClick={()=>setIntent(p.intent)} style={{...B,padding:'3px 7px',fontSize:'var(--ig-t-caption-size)',fontWeight:500,backgroundColor:'#040b14',color:'#64748b',outline:'1px solid #1e293b'}}>{p.label}</button>)}
+              {PRESETS.map(p=><button key={p.label} onClick={()=>setIntent(p.intent)} className="ig-preset-chip" style={{...MONO,padding:'3px 7px',fontSize:'var(--ig-t-caption-size)',fontWeight:500}}>{p.label}</button>)}
             </div>
 
             {/* Reference docs */}
@@ -760,7 +764,7 @@ export default function ImprovePage() {
             <div style={{...T.caption,color:'#334155',marginBottom:'22px'}}>{scope==='block'?'Selected section only':scope==='stage'?'Full artifact for this stage':'Cross-artifact PM consistency'}</div>
 
             {/* Improve button — the Direct aide's single prominent action. */}
-            <button onClick={handleImprove} disabled={!selected||!intent.trim()||uiState==='loading'}
+            <button onClick={handleImprove} disabled={!selected||!intent.trim()||uiState==='loading'} className="ig-primary-btn"
               style={{width:'100%',padding:'11px 0',fontSize:'12px',...MONO,cursor:'pointer',borderRadius:'4px',border:'none',letterSpacing:'0.1em',fontWeight:700,
                 backgroundColor:(!selected||!intent.trim())?'#0a1509':'#0d2a10',
                 color:(!selected||!intent.trim())?'#1a3a20':'#4ade80',outline:'1px solid #1a3a20'}}>

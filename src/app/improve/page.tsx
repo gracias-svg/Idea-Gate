@@ -16,6 +16,7 @@ import { useGlobalStore, getModelMeta, isModelFree } from '@/lib/GlobalStore';
 import { parseContent, parseContentDetailed } from '@/lib/parseContent';
 import { useRuntime, getTransitiveDownstream } from '@/lib/RuntimeContext';
 import { MODEL_REGISTRY } from '@/lib/model-registry';
+import Panel from '@/components/ui/Panel';
 
 // ── Model catalog ─────────────────────────────────────────────────────────────
 // tier: 'paid'  = billed per token via OpenRouter
@@ -516,13 +517,14 @@ export default function ImprovePage() {
           })}
 
           {selected&&downstreamCount>0&&(
-            <div style={{margin:'8px 12px',padding:'8px',backgroundColor:'#040b14',border:'1px solid #0a2a14',borderRadius:'3px'}}>
-              <div style={{...T.label,color:'#2a5a30',marginBottom:'5px'}}>DOWNSTREAM · {downstreamCount}</div>
-              {getTransitiveDownstream(selected).slice(0,5).map(n=>(
-                <div key={n} style={{fontSize:'var(--ig-t-caption-size)',fontWeight:500,color:runtime.isStale(n)?'#f59e0b':'#64748b',marginBottom:'2px'}}>
-                  ↓ {humanName(n)} {runtime.isStale(n)?'△':''}
-                </div>
-              ))}
+            <div style={{margin:'8px 12px'}}>
+              <Panel title={`DOWNSTREAM · ${downstreamCount}`} elevation={1} density="compact">
+                {getTransitiveDownstream(selected).slice(0,5).map(n=>(
+                  <div key={n} style={{fontSize:'var(--ig-t-caption-size)',fontWeight:500,color:runtime.isStale(n)?'#f59e0b':'#64748b',marginBottom:'2px'}}>
+                    ↓ {humanName(n)} {runtime.isStale(n)?'△':''}
+                  </div>
+                ))}
+              </Panel>
             </div>
           )}
         </div>
@@ -641,12 +643,16 @@ export default function ImprovePage() {
               style={{width:'100%',minHeight:'120px',padding:'11px',fontFamily:FONT_SANS,fontSize:'13px',color:'#cbd5e1',backgroundColor:'#040b14',border:'1px solid #0f1923',borderRadius:'4px',resize:'vertical',outline:'none',lineHeight:1.55,boxSizing:'border-box' as const}}/>
 
             {/* Active model badge — machine metadata */}
-            <div style={{padding:'5px 8px',backgroundColor:`${activeModel.color}11`,border:`1px solid ${activeModel.color}22`,borderRadius:'3px',margin:'8px 0',display:'flex',alignItems:'center',gap:'6px'}}>
-              <div style={{width:'5px',height:'5px',borderRadius:'50%',backgroundColor:activeModel.color,flexShrink:0}}/>
-              <div style={{flex:1,...T.caption}}>
-                <span style={{color:activeModel.color,fontWeight:700}}>{activeModel.label}</span>
-                <span style={{color:'#334155'}}> · {activeModel.provider} · {activeModel.cost} · {activeModel.use}</span>
-              </div>
+            <div style={{margin:'8px 0'}}>
+              <Panel elevation={1} density="compact">
+                <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
+                  <div style={{width:'5px',height:'5px',borderRadius:'50%',backgroundColor:activeModel.color,flexShrink:0}}/>
+                  <div style={{flex:1,...T.caption}}>
+                    <span style={{color:activeModel.color,fontWeight:700}}>{activeModel.label}</span>
+                    <span style={{color:'#334155'}}> · {activeModel.provider} · {activeModel.cost} · {activeModel.use}</span>
+                  </div>
+                </div>
+              </Panel>
             </div>
 
             {/* Refinements below recede — quieter labels, more whitespace between groups. */}

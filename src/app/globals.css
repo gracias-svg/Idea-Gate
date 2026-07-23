@@ -587,6 +587,202 @@ body {
 }
 .ig-view-row { transition: background-color 100ms ease-out; }
 
+/* =========================================================
+   STUDIO (/improve) Workspace panel — Sprint 07 (W6).
+   New activity-feed rows slide in from the top on arrival, so a
+   fresh event reads as "just happened" rather than appearing inert
+   in a list. Fires once per row on mount only — idle rows never move.
+   ========================================================= */
+@keyframes ig-ws-row-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.ig-ws-row-in {
+  animation: ig-ws-row-in 150ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ig-ws-row-in { animation: none; }
+}
+
+/* =========================================================
+   TipTapRenderer (Mission 1 — Document Render Swap, read-only).
+   Scoped visual-parity target: improve/page.tsx MD()/ir() (lines 135–183).
+   Gated behind GlobalSettings.useTipTapRenderer (default false) — this
+   block only takes effect when a caller renders <TipTapRenderer>, never
+   touches the legacy .MD output. Two intentional, expected divergences
+   from legacy (both are legacy renderer LIMITATIONS, not regressions):
+     - fenced code blocks: legacy has no multi-line block awareness and
+       renders ``` lines as literal paragraph text. TipTap renders a real
+       <pre><code> block. Styled below to fit the design system.
+     - tables: legacy dumps each `|...|` line as raw mono text (no real
+       table). TipTap + tiptap-markdown renders a genuine <table>. Styled
+       below using the same mono "machine voice" as the legacy pipe-text
+       did, so it reads as an upgrade, not a departure from IdeaGate voice.
+   Headings/lists/blockquote/hr/inline code are mapped 1:1 to the T.* type
+   scale + colors used by MD()/ir() so the toggle is visually inert for
+   the common case (prose artifacts with no tables/fences).
+   ========================================================= */
+.ig-tiptap-render .ProseMirror {
+  outline: none;
+  cursor: default;
+  font-family: var(--ig-font-sans);
+  font-size: var(--ig-t-body-size);
+}
+.ig-tiptap-render .ProseMirror > *:first-child { margin-top: 0 !important; }
+
+.ig-tiptap-render .ProseMirror h1 {
+  font-family: var(--ig-font-sans);
+  font-size: var(--ig-t-display-size);
+  font-weight: 700;
+  letter-spacing: var(--ig-t-display-tracking);
+  color: #f1f5f9;
+  margin: 30px 0 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #1e293b;
+}
+.ig-tiptap-render .ProseMirror h2 {
+  font-family: var(--ig-font-sans);
+  font-size: var(--ig-t-title-size);
+  font-weight: 600;
+  color: #e2e8f0;
+  margin: 24px -6px 8px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background-color: transparent; /* arrival highlight applied inline by TipTapRenderer */
+}
+.ig-tiptap-render .ProseMirror h3 {
+  font-family: var(--ig-font-sans);
+  font-size: var(--ig-t-body-size);
+  font-weight: 700;
+  color: #cbd5e1;
+  margin: 18px 0 5px;
+}
+.ig-tiptap-render .ProseMirror h4,
+.ig-tiptap-render .ProseMirror h5,
+.ig-tiptap-render .ProseMirror h6 {
+  font-family: var(--ig-font-sans);
+  font-size: var(--ig-t-body-size);
+  font-weight: 600;
+  color: #94a3b8;
+  margin: 12px 0 3px;
+}
+.ig-tiptap-render .ProseMirror p {
+  font-family: var(--ig-font-sans);
+  font-size: var(--ig-t-body-size);
+  line-height: var(--ig-t-body-leading);
+  color: #cbd5e1;
+  margin: 8px 0;
+}
+.ig-tiptap-render .ProseMirror strong { color: #e2e8f0; font-weight: 700; }
+.ig-tiptap-render .ProseMirror code {
+  font-family: var(--ig-font-mono);
+  background: #0d1117;
+  color: #4ade80;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 0.85em;
+}
+.ig-tiptap-render .ProseMirror pre {
+  background: #0d1117;
+  border: 1px solid #1e293b;
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin: 10px 0;
+  overflow-x: auto;
+}
+.ig-tiptap-render .ProseMirror pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.85em;
+  color: #94e2af;
+}
+.ig-tiptap-render .ProseMirror blockquote {
+  font-family: var(--ig-font-sans);
+  font-size: var(--ig-t-body-size);
+  line-height: var(--ig-t-body-leading);
+  color: #94a3b8;
+  margin: 10px 0;
+  padding: 8px 14px;
+  border-left: 3px solid #4ade8044;
+  background: #040f08;
+}
+.ig-tiptap-render .ProseMirror blockquote p { margin: 0; color: inherit; }
+.ig-tiptap-render .ProseMirror hr {
+  border: none;
+  border-top: 1px solid #1e293b;
+  margin: 20px 0;
+}
+.ig-tiptap-render .ProseMirror ul,
+.ig-tiptap-render .ProseMirror ol {
+  list-style: none;
+  margin: 4px 0;
+  padding-left: 0;
+}
+.ig-tiptap-render .ProseMirror ul ul,
+.ig-tiptap-render .ProseMirror ul ol,
+.ig-tiptap-render .ProseMirror ol ul,
+.ig-tiptap-render .ProseMirror ol ol { margin-left: 16px; }
+.ig-tiptap-render .ProseMirror ul > li {
+  display: flex;
+  gap: 9px;
+  margin: 4px 0;
+  font-family: var(--ig-font-sans);
+  font-size: var(--ig-t-body-size);
+  line-height: var(--ig-t-body-leading);
+  color: #cbd5e1;
+}
+.ig-tiptap-render .ProseMirror ul > li::before {
+  content: '▸';
+  color: #4ade8066;
+  flex-shrink: 0;
+  font-size: 13px;
+  line-height: var(--ig-t-body-leading);
+}
+.ig-tiptap-render .ProseMirror ol {
+  counter-reset: ig-ol;
+}
+.ig-tiptap-render .ProseMirror ol > li {
+  display: flex;
+  gap: 10px;
+  margin: 4px 0;
+  font-family: var(--ig-font-sans);
+  font-size: var(--ig-t-body-size);
+  line-height: var(--ig-t-body-leading);
+  color: #cbd5e1;
+}
+.ig-tiptap-render .ProseMirror ol > li::before {
+  counter-increment: ig-ol;
+  content: counter(ig-ol) '.';
+  font-family: var(--ig-font-mono);
+  font-size: 13px;
+  color: #64748b;
+  flex-shrink: 0;
+  min-width: 22px;
+  text-align: right;
+  line-height: var(--ig-t-body-leading);
+}
+.ig-tiptap-render .ProseMirror li > p { margin: 0; display: inline; }
+.ig-tiptap-render .ProseMirror table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 12px 0;
+  font-family: var(--ig-font-mono);
+  font-size: 11px;
+}
+.ig-tiptap-render .ProseMirror th,
+.ig-tiptap-render .ProseMirror td {
+  border-bottom: 1px solid #0f1923;
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: top;
+  color: #64748b;
+}
+.ig-tiptap-render .ProseMirror th {
+  color: #94a3b8;
+  font-weight: 600;
+  border-bottom: 1px solid #1e293b;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ig-view-trigger,
   .ig-view-row { transition: none; }

@@ -19,6 +19,15 @@ import { MODEL_REGISTRY } from '@/lib/model-registry';
 import Panel from '@/components/ui/Panel';
 import { stageDisplayNumber } from '@/lib/execution/adapters/orchestration';
 import ViewSwitcher from '@/components/improve/ViewSwitcher';
+import TipTapRenderer from '@/components/improve/TipTapRenderer';
+import { humanName } from '@/lib/artifactDisplay';
+import { parseSections } from '@/lib/parseSections';
+import { scrollElementIntoView } from '@/lib/smoothScroll';
+import { workspaceMotion } from '@/components/workspace/motion';
+import WorkspacePanel from '@/components/workspace/WorkspacePanel';
+import AttachmentsPanel from '@/components/workspace/AttachmentsPanel';
+import { CollaboratorSlot } from '@/components/workspace/CollaboratorSlots';
+import { LocalProjectRepository, ensureDefaultProject, Project, ProjectRepository } from '@/lib/projectRepository';
 
 // ── Model catalog ─────────────────────────────────────────────────────────────
 // tier: 'paid'  = billed per token via OpenRouter
@@ -139,15 +148,28 @@ function ir(text:string,k:string):React.ReactNode[]{
 // Geist Sans, comfortable line-height, real paragraph rhythm. Headings collapse onto the
 // --ig-t-* scale (display / title / content). Tabular rows stay mono (machine voice).
 // `fs` is retained for call-site compatibility but the body reads from the type scale.
-function MD({content,fs=12}:{content:string;fs?:number}){
+// `anchors` (Sprint 07 W3): when true, H2 headings get an `id` computed via
+// parseSections — the SAME function/order the Workspace tree uses to cache
+// per-file sections, so ids always match the tree's scroll-click targets.
+// Only passed for the single primary reading pane (never split/original/
+// improved previews) to avoid duplicate DOM ids when the same heading text
+// renders twice on screen. `arrivalId` briefly highlights the just-scrolled-to
+// heading (workspaceMotion.arrivalAccentMs), honouring reducedMotion.
+function MD({content,fs=12,anchors=false,arrivalId=null,reducedMotion=false}:{content:string;fs?:number;anchors?:boolean;arrivalId?:string|null;reducedMotion?:boolean}){
   void fs;
+  const sectionIds = anchors ? parseSections(content) : null;
+  let h2Cursor = 0;
   return(
     <div>{content.split('\n').map((line,i)=>{
       const t=line.trim(),k=`l${i}`;
       if(!t)return<div key={k}style={{height:'10px'}}/>;
       if(t==='---'||t==='***')return<div key={k}style={{borderTop:'1px solid #1e293b',margin:'20px 0'}}/>;
       if(t.startsWith('# '))return<div key={k}style={{...T.display,marginTop:i===0?0:'30px',marginBottom:'14px',paddingBottom:'10px',borderBottom:'1px solid #1e293b',color:'#f1f5f9'}}>{ir(t.slice(2),k)}</div>;
-      if(t.startsWith('## '))return<div key={k}style={{...T.title,marginTop:'24px',marginBottom:'8px',color:'#e2e8f0'}}>{ir(t.slice(3),k)}</div>;
+      if(t.startsWith('## ')){
+        const id = sectionIds ? sectionIds[h2Cursor++]?.anchorId : undefined;
+        const lit = !!id && id===arrivalId;
+        return<div key={k} id={id} style={{...T.title,marginTop:'24px',marginBottom:'8px',padding:'2px 6px',marginLeft:'-6px',borderRadius:'3px',color:'#e2e8f0',backgroundColor:lit?'#0d1a10':'transparent',transition:reducedMotion?'none':`background-color ${workspaceMotion.arrivalAccentMs}ms ease-out`}}>{ir(t.slice(3),k)}</div>;
+      }
       if(t.startsWith('### '))return<div key={k}style={{...T.body,fontWeight:700,marginTop:'18px',marginBottom:'5px',color:'#cbd5e1'}}>{ir(t.slice(4),k)}</div>;
       if(t.startsWith('#### '))return<div key={k}style={{...T.body,fontWeight:600,marginTop:'12px',marginBottom:'3px',color:'#94a3b8'}}>{ir(t.slice(5),k)}</div>;
       if(t.startsWith('> '))return<div key={k}style={{...T.body,margin:'10px 0',padding:'8px 14px',borderLeft:'3px solid #4ade8044',background:'#040f08',color:'#94a3b8'}}>{ir(t.slice(2),k)}</div>;
@@ -161,10 +183,28 @@ function MD({content,fs=12}:{content:string;fs?:number}){
   );
 }
 
+// ── Renderer switch (Mission 1 — Document Render Swap, read-only) ──────────────
+// Drop-in for every <MD .../> call site. Reads GlobalSettings.useTipTapRenderer
+// (default false) and picks the renderer; same props either way, so this is the
+// ONLY change any call site needs. MD()/ir() above are untouched — when the flag
+// is off (default), behavior is byte-for-byte what shipped before this mission.
+function Doc(props:{content:string;fs?:number;anchors?:boolean;arrivalId?:string|null;reducedMotion?:boolean}){
+  const{state:{settings}}=useGlobalStore();
+  return settings.useTipTapRenderer ? <TipTapRenderer {...props}/> : <MD {...props}/>;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
-const stageNum   = (f:string) => parseInt(f.split('-')[0],10)||0;
-const stageColor = (f:string) => { const n=stageNum(f); return n<=2?'#22c55e':n<=5?'#38bdf8':n<=9?'#a78bfa':n<=11?'#fb923c':'#fde047'; };
-const humanName  = (f:string) => f.replace('.md','').replace(/^\d+-/,'').replace(/-/g,' ');
+// stageNum/stageColor/humanName now live in @/lib/artifactDisplay (Sprint 07 —
+// shared with the Workspace tree so the two never drift). humanName imported above.
+
+// Static collaborator-slot shell (Sprint 07 W7) — no real multi-collaborator
+// backend exists yet, so these are generic unassigned slots only, never named
+// fake people. Count is a placeholder judgment call, not derived from data.
+const COLLABORATOR_SLOTS: CollaboratorSlot[] = [
+  { id:'slot-1', collaborator:null },
+  { id:'slot-2', collaborator:null },
+  { id:'slot-3', collaborator:null },
+];
 
 // Stage-based improvement suggestions (replaces dead "select an artifact" state)
 const STAGE_SUGGESTIONS = [
@@ -224,6 +264,74 @@ export default function ImprovePage() {
     return ()=>m.removeEventListener?.('change', sync);
   },[]);
 
+  // ── Workspace panel (Sprint 07) ──────────────────────────────────────────
+  // Project selector — thin local name registry (see projectRepository.ts).
+  // Never touches the actual lifecycle run; that stays TopBar "New Idea".
+  const [projectRepo] = useState<ProjectRepository>(() => new LocalProjectRepository());
+  const [activeProject, setActiveProject] = useState<Project | null>(null);
+  useEffect(() => { setActiveProject(ensureDefaultProject(projectRepo, 'Untitled Project')); }, [projectRepo]);
+  const handleRenameProject = useCallback((name: string) => {
+    if (!activeProject) return;
+    const updated = projectRepo.rename(activeProject.id, name);
+    if (updated) setActiveProject(updated);
+  }, [activeProject, projectRepo]);
+
+  // Scroll-spy + click-to-scroll (W3) — scoped to the single primary reading
+  // pane only (uiState==='idle'). readingContainerRef is the scroll root;
+  // pendingScrollAnchorRef defers a click-triggered scroll until the target
+  // artifact's content has actually loaded (async fetch on selection change).
+  const [activeSectionId,  setActiveSectionId]  = useState<string|null>(null);
+  const [arrivalSectionId, setArrivalSectionId] = useState<string|null>(null);
+  const readingContainerRef = useRef<HTMLDivElement>(null);
+  const pendingScrollAnchorRef = useRef<string|null>(null);
+
+  const performScrollToAnchor = useCallback((anchorId: string) => {
+    const container = readingContainerRef.current;
+    if (!container) return;
+    const target = container.querySelector<HTMLElement>(`#${CSS.escape(anchorId)}`);
+    if (!target) return;
+    scrollElementIntoView(container, target, workspaceMotion.scrollToSectionMs, reducedMotion).then(() => {
+      setArrivalSectionId(anchorId);
+      window.setTimeout(() => setArrivalSectionId(id => (id === anchorId ? null : id)), workspaceMotion.arrivalAccentMs);
+    });
+  }, [reducedMotion]);
+
+  const handleSectionClick = useCallback((file: string, anchorId: string) => {
+    if (selected !== file) {
+      pendingScrollAnchorRef.current = anchorId;
+      setSelected(file);
+    } else {
+      performScrollToAnchor(anchorId);
+    }
+  }, [selected, performScrollToAnchor]);
+
+  // Resolve a deferred scroll once the newly-selected artifact's content has loaded
+  useEffect(() => {
+    if (fileLoading || !rawContent) return;
+    const anchor = pendingScrollAnchorRef.current;
+    if (!anchor) return;
+    pendingScrollAnchorRef.current = null;
+    requestAnimationFrame(() => performScrollToAnchor(anchor));
+  }, [fileLoading, rawContent, performScrollToAnchor]);
+
+  // Scroll-spy — highlight the tree's active section as the reader scrolls manually
+  useEffect(() => {
+    if (uiState !== 'idle' || !rawContent) return;
+    const container = readingContainerRef.current;
+    if (!container) return;
+    const headings = Array.from(container.querySelectorAll<HTMLElement>('[id]'));
+    if (headings.length === 0) { setActiveSectionId(null); return; }
+    const observer = new IntersectionObserver(
+      entries => {
+        const visible = entries.filter(e => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        if (visible[0]) setActiveSectionId(visible[0].target.id);
+      },
+      { root: container, rootMargin: '0px 0px -70% 0px', threshold: 0 },
+    );
+    headings.forEach(h => observer.observe(h));
+    return () => observer.disconnect();
+  }, [uiState, rawContent]);
+
   useEffect(()=>{
     fetch('/api/data').then(r=>r.json()).then(d=>{
       setArtifacts(d.artifacts??[]);
@@ -231,9 +339,23 @@ export default function ImprovePage() {
     }).catch(()=>{});
   },[]);
 
+  // Workflow Proof (Cmd+K) — "jump to artifact" entry point. The palette
+  // lives outside this page's component tree (rendered globally in
+  // layout.tsx), so it can't call setSelected directly; it navigates here
+  // with ?artifact=<file> instead, reusing the exact same setSelected this
+  // page's own tree/click already calls. No new selection capability.
+  // Reads window.location directly (not next/navigation's useSearchParams)
+  // to avoid forcing this whole page into a Suspense boundary for one
+  // one-shot param read.
+  useEffect(() => {
+    if (artifacts.length === 0) return;
+    const requested = new URLSearchParams(window.location.search).get('artifact');
+    if (requested && artifacts.includes(requested)) setSelected(requested);
+  }, [artifacts]);
+
   // Load artifact — now uses parseContentDetailed for warning visibility
   useEffect(()=>{
-    setResult(null); setUiState('idle'); setError(null); setRawContent(null); setParseWarn(null);
+    setResult(null); setUiState('idle'); setError(null); setRawContent(null); setParseWarn(null); setActiveSectionId(null);
     if (!selected) return;
     setFileLoading(true);
     fetch(`/api/improve?file=${encodeURIComponent(selected)}`).then(r=>r.json())
@@ -541,41 +663,38 @@ export default function ImprovePage() {
       {/* ── Main layout ── */}
       <div style={{flex:1,display:'flex',overflow:'hidden'}}>
 
-        {/* Left sidebar */}
-        <div style={{width:'210px',flexShrink:0,borderRight:'1px solid #0a1a2e',backgroundColor:'#020c06',overflowY:'auto',display:'flex',flexDirection:'column'}}>
-          <div style={{padding:'12px 14px 8px',...T.label,color:'#2a5a30'}}>ARTIFACTS · {artifacts.length}</div>
-
-          {/* Suggested starting points now live in the hero (empty state) — the rail keeps
-              the full artifact list as its single primary action (One Hero, Two Aides). */}
-
-          {artifacts.map(f=>{
-            const active=selected===f,col=stageColor(f);
-            const isStale=runtime.isStale(f), ver=runtime.getVersion(f);
-            return(
-              <div key={f} style={{display:'flex',borderLeft:`2px solid ${active?col:isStale?'#f59e0b33':'transparent'}`,backgroundColor:active?'#0a1509':'transparent'}}>
-                <button onClick={()=>setSelected(f)} style={{flex:1,padding:'7px 12px',textAlign:'left',cursor:'pointer',border:'none',...MONO,fontSize:'var(--ig-t-caption-size)',fontWeight:500,backgroundColor:'transparent',color:active?col:isStale?'#f59e0b':'#64748b'}}>
-                  <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
-                    <span style={{width:'5px',height:'5px',borderRadius:'50%',backgroundColor:isStale?'#f59e0b':ver>0?'#4ade80':col,flexShrink:0,display:'inline-block'}}/>
-                    <span style={{lineHeight:1.4}}>{humanName(f)}</span>
-                    {ver>0&&<span style={{fontSize:'8px',color:'#4ade8066'}}>v{ver}</span>}
-                    {isStale&&<span style={{fontSize:'7px',color:'#f59e0b88'}}>△</span>}
-                  </div>
-                </button>
+        {/* Left sidebar — Workspace panel (Sprint 07, replaces the old flat ARTIFACTS list) */}
+        <div style={{width:'210px',flexShrink:0,borderRight:'1px solid #0a1a2e',backgroundColor:'#020c06',overflow:'hidden'}}>
+          <WorkspacePanel
+            artifacts={artifacts}
+            currentStage={stage}
+            selected={selected}
+            activeSectionId={activeSectionId}
+            isStale={runtime.isStale}
+            getVersion={runtime.getVersion}
+            onSelectArtifact={setSelected}
+            onSectionClick={handleSectionClick}
+            reducedMotion={reducedMotion}
+            projectName={activeProject?.name ?? 'Untitled Project'}
+            onRenameProject={handleRenameProject}
+            referenceDocCount={docs.length}
+            projectRepo={projectRepo}
+            activeProjectId={activeProject?.id ?? null}
+            onProjectChange={setActiveProject}
+            collaboratorSlots={COLLABORATOR_SLOTS}
+            events={runtime.state.events}
+            treeFooter={selected&&downstreamCount>0&&(
+              <div style={{margin:'8px 12px'}}>
+                <Panel title={`DOWNSTREAM · ${downstreamCount}`} elevation={1} density="compact" className="rounded-sm">
+                  {getTransitiveDownstream(selected).slice(0,5).map(n=>(
+                    <div key={n} style={{fontSize:'var(--ig-t-caption-size)',fontWeight:500,color:runtime.isStale(n)?'#f59e0b':'#64748b',marginBottom:'2px'}}>
+                      ↓ {humanName(n)} {runtime.isStale(n)?'△':''}
+                    </div>
+                  ))}
+                </Panel>
               </div>
-            );
-          })}
-
-          {selected&&downstreamCount>0&&(
-            <div style={{margin:'8px 12px'}}>
-              <Panel title={`DOWNSTREAM · ${downstreamCount}`} elevation={1} density="compact" className="rounded-sm">
-                {getTransitiveDownstream(selected).slice(0,5).map(n=>(
-                  <div key={n} style={{fontSize:'var(--ig-t-caption-size)',fontWeight:500,color:runtime.isStale(n)?'#f59e0b':'#64748b',marginBottom:'2px'}}>
-                    ↓ {humanName(n)} {runtime.isStale(n)?'△':''}
-                  </div>
-                ))}
-              </Panel>
-            </div>
-          )}
+            )}
+          />
         </div>
 
         {/* Centre content */}
@@ -630,7 +749,7 @@ export default function ImprovePage() {
           {selected&&fileLoading&&<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{fontSize:'11px',color:'#475569'}}>Loading artifact…</span></div>}
 
           {selected&&!fileLoading&&uiState==='idle'&&rawContent&&(
-            <div style={{...heroSurface,padding:'32px 40px'}}>
+            <div ref={readingContainerRef} style={{...heroSurface,padding:'32px 40px'}}>
               <div style={readingMeasure}>
                 <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'20px'}}>
                   <div style={{...T.label,color:'#2a5a30'}}>CURRENT · {selected}</div>
@@ -638,7 +757,7 @@ export default function ImprovePage() {
                   {runtime.getVersion(selected)>0&&<div style={{...T.caption,color:'#4ade80',padding:'1px 6px',border:'1px solid #4ade8033',borderRadius:'2px'}}>v{runtime.getVersion(selected)}</div>}
                 </div>
                 {parseWarn&&<div style={{marginBottom:'16px',padding:'7px 10px',backgroundColor:'#0a0a00',border:'1px solid #f59e0b33',borderRadius:'3px',...T.caption,color:'#f59e0b88'}}>{parseWarn}</div>}
-                <MD content={rawContent} fs={12}/>
+                <Doc content={rawContent} fs={12} anchors arrivalId={arrivalSectionId} reducedMotion={reducedMotion}/>
               </div>
             </div>
           )}
@@ -668,16 +787,16 @@ export default function ImprovePage() {
             <div style={{flex:1,display:'flex',overflow:'hidden'}}>
               <div style={{flex:1,overflowY:'auto',padding:'24px 28px',borderRight:'1px solid #0a1a2e'}}>
                 <div style={{...T.label,color:'#2a5a30',marginBottom:'16px'}}>ORIGINAL</div>
-                <MD content={result.original} fs={12}/>
+                <Doc content={result.original} fs={12}/>
               </div>
               <div style={{flex:1,overflowY:'auto',padding:'24px 28px'}}>
                 <div style={{...T.label,color:'#4ade8099',marginBottom:'16px'}}>IMPROVED · {result.modelKey}</div>
-                <MD content={result.improved} fs={12}/>
+                <Doc content={result.improved} fs={12}/>
               </div>
             </div>
           )}
-          {result&&uiState==='previewed'&&view==='original'&&<div style={{...heroSurface,padding:'24px 32px'}}><div style={readingMeasure}><MD content={result.original} fs={12}/></div></div>}
-          {result&&uiState==='previewed'&&view==='improved'&&<div style={{...heroSurface,padding:'24px 32px'}}><div style={readingMeasure}><MD content={result.improved} fs={13}/></div></div>}
+          {result&&uiState==='previewed'&&view==='original'&&<div style={{...heroSurface,padding:'24px 32px'}}><div style={readingMeasure}><Doc content={result.original} fs={12}/></div></div>}
+          {result&&uiState==='previewed'&&view==='improved'&&<div style={{...heroSurface,padding:'24px 32px'}}><div style={readingMeasure}><Doc content={result.improved} fs={13}/></div></div>}
 
           {error&&<div style={{padding:'8px 16px',backgroundColor:'#150005',borderTop:'1px solid #f8717133',flexShrink:0,fontSize:'11px',color:'#f87171'}}>⚠ {error}</div>}
         </div>
@@ -714,25 +833,18 @@ export default function ImprovePage() {
               {PRESETS.map(p=><button key={p.label} onClick={()=>setIntent(p.intent)} className="ig-preset-chip" style={{...MONO,padding:'3px 7px',fontSize:'var(--ig-t-caption-size)',fontWeight:500}}>{p.label}</button>)}
             </div>
 
-            {/* Reference docs */}
-            <div style={{...T.label,color:'#2a5a30',marginTop:'22px',marginBottom:'7px'}}>
-              REFERENCE DOCS{docs.length>0&&<span style={{color:'#818cf855',marginLeft:'6px'}}>{docs.length} loaded</span>}
+            {/* Reference docs — Sprint 07 (W5): same uploader/state, now with real per-type chips */}
+            <div style={{marginTop:'22px'}}>
+              <AttachmentsPanel
+                docs={docs}
+                uplLoading={uplLoading}
+                uplError={uplError}
+                uploadRef={uploadRef}
+                onUpload={handleUpload}
+                onRemove={name=>setDocs(p=>p.filter(x=>x.name!==name))}
+                reducedMotion={reducedMotion}
+              />
             </div>
-            {docs.map(d=>(
-              <div key={d.name} style={{padding:'5px 8px',backgroundColor:'#040b14',border:'1px solid #818cf822',borderRadius:'3px',marginBottom:'4px',display:'flex',alignItems:'center',gap:'6px'}}>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:'var(--ig-t-caption-size)',color:'#818cf8',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>◆ {d.name}</div>
-                  <div style={{fontSize:'8px',color:'#475569'}}>{d.chars.toLocaleString()} chars</div>
-                </div>
-                <button onClick={()=>setDocs(p=>p.filter(x=>x.name!==d.name))} style={{background:'none',border:'none',color:'#334155',cursor:'pointer',fontSize:'14px',lineHeight:1}}>×</button>
-              </div>
-            ))}
-            <label style={{display:'block',padding:'8px',backgroundColor:'#040b14',border:'1px dashed #1e293b',borderRadius:'3px',cursor:'pointer',marginBottom:'10px',textAlign:'center' as const}}>
-              <div style={{fontSize:'10px',color:uplLoading?'#475569':'#64748b'}}>{uplLoading?'⟳ Extracting…':'+ Upload Reference Document'}</div>
-              <div style={{fontSize:'8px',color:'#334155',marginTop:'2px'}}>PDF · DOCX · TXT · MD · multiple allowed</div>
-              <input ref={uploadRef} type="file" accept=".pdf,.docx,.txt,.md,.csv" multiple onChange={handleUpload} style={{display:'none'}}/>
-            </label>
-            {uplError&&<div style={{fontSize:'9px',color:'#f87171',marginBottom:'7px',lineHeight:1.5}}>⚠ {uplError}</div>}
 
             {/* Extent */}
             <div style={{...T.label,color:'#2a5a30',marginTop:'22px',marginBottom:'6px'}}>EXTENT</div>

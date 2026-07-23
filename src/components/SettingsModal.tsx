@@ -86,6 +86,7 @@ const SEARCH_INDEX: SearchEntry[] = [
   // Advanced
   { label:'Persistence Mode',   description:'Where settings are stored. Supabase becomes available in V3.4 after account creation.',      category:'advanced',       categoryLabel:'Advanced'       },
   { label:'Debug Mode',         description:'Show content parser method badges on artifacts and enable verbose console logging.',          category:'advanced',       categoryLabel:'Advanced'       },
+  { label:'TipTap Renderer (Studio)', description:'Render Studio artifacts via TipTap instead of the legacy renderer. Read-only preview — Mission 1. Off by default.', category:'advanced',       categoryLabel:'Advanced'       },
 ];
 
 // ── Category definitions ──────────────────────────────────────────────────────
@@ -542,6 +543,9 @@ function CAdvanced(){
     </Row>
     <Row label="Debug Mode" description="Show content parser method badges on artifacts and enable verbose console logging.">
       <Toggle value={s.debugMode} onChange={v=>updateSettings({debugMode:v})}/>
+    </Row>
+    <Row label="TipTap Renderer (Studio)" description="Render Studio artifacts via TipTap instead of the legacy renderer. Read-only preview — Mission 1. Off by default.">
+      <Toggle value={s.useTipTapRenderer} onChange={v=>updateSettings({useTipTapRenderer:v})}/>
     </Row>
     <div style={{marginTop:'18px',paddingTop:'14px',borderTop:`1px solid ${S.border}`}}>
       <div style={{fontSize:'10px',color:'#2a5a30',fontWeight:700,letterSpacing:'0.1em',marginBottom:'10px'}}>BACKUP & MIGRATION</div>

@@ -194,6 +194,11 @@ export interface GlobalSettings {
   // ── SYSTEM: ADVANCED ─────────────────────────────── [P]
   persistenceMode:    'local' | 'supabase';     // [P] Storage backend
   debugMode:          boolean;                  // [P] Parse badges, verbose console logging
+  useTipTapRenderer:  boolean;                  // [P] Mission 1: render /improve artifacts via
+                                                  // TipTap (read-only) instead of the legacy
+                                                  // regex renderer. Default false — legacy stays
+                                                  // the default render path. /improve only; Desk
+                                                  // and Office are unaffected regardless of value.
 
   // ── INTERNAL (not shown in UI, controlled by Operating Mode) ────────────────
   reasoningDepth:     'brief' | 'detailed';     // Internal — set by operatingMode preset
@@ -242,6 +247,7 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   // System
   persistenceMode:    'local',
   debugMode:          false,
+  useTipTapRenderer:  false,
   // Internal
   reasoningDepth:     'detailed',
 };

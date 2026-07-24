@@ -366,8 +366,31 @@ export function GlobalStore({ children }: { children: ReactNode }) {
     } catch { /* ignore corrupt storage */ }
   }, []);
 
-  // Persist on every state change
+  // Persist on every state change.
+  //
+  // ROOT CAUSE (diagnosed): this effect used to fire unconditionally on
+  // every state change, including the very first commit — before the
+  // hydrate effect's dispatch above has actually been applied. Both
+  // effects run in the same passive-effect pass on mount; the hydrate
+  // effect only *schedules* its HYDRATE dispatch (dispatch never applies
+  // synchronously), so this effect's very first run still closed over the
+  // pre-hydration `state` (== INITIAL_STATE, all defaults) and wrote that
+  // straight over whatever the user had actually saved — clobbering a
+  // just-read `true` value back to `false` before hydration's own re-render
+  // ever had a chance to persist the correct value. Under React 18
+  // StrictMode (default-on, confirmed via next.config.js having no
+  // reactStrictMode override), effects double-invoke on mount, which
+  // compounds this into a deterministic revert rather than an occasional
+  // flake: a second hydrate pass can read back its own not-yet-corrected
+  // clobber from the first pass, permanently losing the stored value.
+  // Fix: skip persisting while `state` is still referentially the exact
+  // INITIAL_STATE object — i.e. before any dispatch (hydrate or otherwise)
+  // has actually been applied to it. This is robust to StrictMode's
+  // double-invocation (both passes are skipped, no partial write is ever
+  // possible) and doesn't touch the settings schema, storage key, or data
+  // shape — only when the first real write happens.
   useEffect(() => {
+    if (state === INITIAL_STATE) return;
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     } catch { /* ignore storage quota errors */ }

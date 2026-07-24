@@ -627,6 +627,10 @@ body {
   cursor: default;
   font-family: var(--ig-font-sans);
   font-size: var(--ig-t-body-size);
+  background: transparent; /* inherit the canvas background from the parent
+                               container, matching the legacy MD() renderer —
+                               without this the browser's UA default white
+                               shows through on the contenteditable root. */
 }
 .ig-tiptap-render .ProseMirror > *:first-child { margin-top: 0 !important; }
 
@@ -781,6 +785,46 @@ body {
   color: #94a3b8;
   font-weight: 600;
   border-bottom: 1px solid #1e293b;
+}
+
+/* =========================================================
+   Selection Bubble Menu (Mission 2 — read-only selection actions).
+   Positioned via native Selection API geometry computed in
+   TipTapRenderer.tsx — no @tiptap/extension-bubble-menu, no ProseMirror
+   selection state involved (Phase A confirmed the extension never fires
+   on editable:false). Renders only when TipTapRenderer receives
+   `onPresetSelect` (main reading pane only) and is therefore inert
+   whenever the legacy MD() renderer is active (flag off) or on the
+   split/original/improved preview panes (flag on, prop withheld).
+   `.ig-tiptap-render` becomes the positioning context for the bubble's
+   `position: absolute` — scrolls naturally with the reading pane since
+   it's a normal in-flow descendant, no extra scroll listener needed.
+   ========================================================= */
+.ig-tiptap-render {
+  position: relative;
+}
+.ig-selection-bubble {
+  position: absolute;
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  border-radius: var(--ig-radius-md);
+  background-color: var(--ig-surface-overlay);
+  box-shadow: var(--ig-elev-overlay);
+  z-index: 20;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 80ms ease-in, transform 80ms ease-in;
+}
+.ig-selection-bubble[data-visible="true"] {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 120ms ease-out, transform 120ms ease-out;
+}
+.ig-selection-bubble-chip.ig-preset-chip {
+  padding: 6px 10px;
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 @media (prefers-reduced-motion: reduce) {

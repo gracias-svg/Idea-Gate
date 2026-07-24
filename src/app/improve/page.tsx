@@ -188,7 +188,10 @@ function MD({content,fs=12,anchors=false,arrivalId=null,reducedMotion=false}:{co
 // (default false) and picks the renderer; same props either way, so this is the
 // ONLY change any call site needs. MD()/ir() above are untouched — when the flag
 // is off (default), behavior is byte-for-byte what shipped before this mission.
-function Doc(props:{content:string;fs?:number;anchors?:boolean;arrivalId?:string|null;reducedMotion?:boolean}){
+// Mission 2: `onPresetSelect` is additive — MD() ignores it (never destructured),
+// TipTapRenderer treats it as optional (bubble simply doesn't render without it).
+// Only the primary reading pane call site below passes it.
+function Doc(props:{content:string;fs?:number;anchors?:boolean;arrivalId?:string|null;reducedMotion?:boolean;onPresetSelect?:(intent:string)=>void}){
   const{state:{settings}}=useGlobalStore();
   return settings.useTipTapRenderer ? <TipTapRenderer {...props}/> : <MD {...props}/>;
 }
@@ -757,7 +760,7 @@ export default function ImprovePage() {
                   {runtime.getVersion(selected)>0&&<div style={{...T.caption,color:'#4ade80',padding:'1px 6px',border:'1px solid #4ade8033',borderRadius:'2px'}}>v{runtime.getVersion(selected)}</div>}
                 </div>
                 {parseWarn&&<div style={{marginBottom:'16px',padding:'7px 10px',backgroundColor:'#0a0a00',border:'1px solid #f59e0b33',borderRadius:'3px',...T.caption,color:'#f59e0b88'}}>{parseWarn}</div>}
-                <Doc content={rawContent} fs={12} anchors arrivalId={arrivalSectionId} reducedMotion={reducedMotion}/>
+                <Doc content={rawContent} fs={12} anchors arrivalId={arrivalSectionId} reducedMotion={reducedMotion} onPresetSelect={setIntent}/>
               </div>
             </div>
           )}

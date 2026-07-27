@@ -802,6 +802,73 @@ body {
 }
 
 /* =========================================================
+   Paper document theme (Mission 4 V1) — scoped to data-document-theme="paper".
+   Applied when the readingContainerRef div carries that attribute (page.tsx).
+   Only colour tokens that differ from the dark baseline are overridden here.
+   ========================================================= */
+[data-document-theme="paper"] .ig-tiptap-render .ProseMirror {
+  color: #2d3748;
+  caret-color: #2d6a4f;
+}
+[data-document-theme="paper"] .ig-tiptap-render .ProseMirror ::selection {
+  background: rgba(74, 222, 128, 0.22);
+}
+[data-document-theme="paper"] .ig-tiptap-render .ProseMirror h1 {
+  color: #1a202c;
+  border-bottom-color: #d4c5b5;
+}
+[data-document-theme="paper"] .ig-tiptap-render .ProseMirror h2 {
+  color: #2d3748;
+}
+[data-document-theme="paper"] .ig-tiptap-render .ProseMirror h3 {
+  color: #4a5568;
+}
+[data-document-theme="paper"] .ig-tiptap-render .ProseMirror h4,
+[data-document-theme="paper"] .ig-tiptap-render .ProseMirror h5,
+[data-document-theme="paper"] .ig-tiptap-render .ProseMirror h6 {
+  color: #718096;
+}
+[data-document-theme="paper"] .ig-tiptap-render .ProseMirror p {
+  color: #374151;
+}
+[data-document-theme="paper"] .ig-tiptap-render .ProseMirror strong {
+  color: #1a202c;
+}
+[data-document-theme="paper"] .ig-tiptap-render .ProseMirror code {
+  background: #f0ebe4;
+  color: #2d6a4f;
+}
+[data-document-theme="paper"] .ig-tiptap-render .ProseMirror pre {
+  background: #f0ebe4;
+  border-color: #d4c5b5;
+}
+[data-document-theme="paper"] .ig-tiptap-render .ProseMirror pre code {
+  color: #2d6a4f;
+}
+[data-document-theme="paper"] .ig-tiptap-render .ProseMirror blockquote {
+  color: #4a5568;
+  background: rgba(74, 222, 128, 0.06);
+  border-left-color: rgba(74, 222, 128, 0.4);
+}
+[data-document-theme="paper"] .ig-tiptap-render .ProseMirror hr {
+  border-top-color: #d4c5b5;
+}
+[data-document-theme="paper"] .ig-tiptap-render .ProseMirror ul > li {
+  color: #374151;
+}
+[data-document-theme="paper"] .ig-tiptap-render .ProseMirror ol > li {
+  color: #374151;
+}
+[data-document-theme="paper"] .ig-tiptap-render .ProseMirror th {
+  color: #4a5568;
+  border-bottom-color: #d4c5b5;
+}
+[data-document-theme="paper"] .ig-tiptap-render .ProseMirror td {
+  color: #64748b;
+  border-bottom-color: #e5ddd5;
+}
+
+/* =========================================================
    Selection Bubble Menu (Mission 2 — read-only selection actions).
    Positioned via native Selection API geometry computed in
    TipTapRenderer.tsx — no @tiptap/extension-bubble-menu, no ProseMirror
@@ -818,22 +885,14 @@ body {
   position: relative;
 }
 .ig-selection-bubble {
+  /* V4 — framer-motion handles entrance/exit animation; CSS transitions removed.
+     Visual treatment (background, border, border-radius, box-shadow) is applied
+     inline in TipTapRenderer via documentTheme-aware props. */
   position: absolute;
   display: flex;
-  gap: 2px;
-  padding: 4px;
-  border-radius: var(--ig-radius-md);
-  background-color: var(--ig-surface-overlay);
-  box-shadow: var(--ig-elev-overlay);
+  gap: 4px;
+  padding: 4px 6px;
   z-index: 20;
-  opacity: 0;
-  transform: translateY(4px);
-  transition: opacity 80ms ease-in, transform 80ms ease-in;
-}
-.ig-selection-bubble[data-visible="true"] {
-  opacity: 1;
-  transform: translateY(0);
-  transition: opacity 120ms ease-out, transform 120ms ease-out;
 }
 .ig-selection-bubble-chip.ig-preset-chip {
   padding: 6px 10px;

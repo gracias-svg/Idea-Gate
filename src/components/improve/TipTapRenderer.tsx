@@ -24,6 +24,7 @@
 import React, {
   useCallback, useEffect, useLayoutEffect, useRef, useState,
 } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useEditor, EditorContent } from '@tiptap/react';
 import type { Editor } from '@tiptap/core';
 import StarterKit               from '@tiptap/starter-kit';
@@ -34,13 +35,14 @@ import { TableCell }            from '@tiptap/extension-table-cell';
 import { TableHeader }          from '@tiptap/extension-table-header';
 import {
   Bold, Italic, Underline, Strikethrough, Code,
-  List, ListOrdered, Quote,
+  List, ListOrdered, Quote, Sparkles,
   type LucideIcon,
 } from 'lucide-react';
 import { Toggle } from '@/components/ui/toggle';
 import { cn } from '@/lib/utils';
 import { parseSections } from '@/lib/parseSections';
 import { workspaceMotion } from '@/components/workspace/motion';
+import { useGlobalStore } from '@/lib/GlobalStore';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -77,11 +79,12 @@ const EMPTY_TOOLBAR: ToolbarState = {
 // Hidden when editable=false — zero DOM impact on read-only path.
 
 interface ToolbarProps {
-  editor:   Editor | null;
-  visible:  boolean;
+  editor:        Editor | null;
+  visible:       boolean;
+  documentTheme: 'dark' | 'paper';
 }
 
-function FormattingToolbar({ editor, visible }: ToolbarProps) {
+function FormattingToolbar({ editor, visible, documentTheme }: ToolbarProps) {
   // Reactive toolbar state — updated on BOTH selectionUpdate and transaction
   // per Constitution §11 and §27. Using explicit event listeners rather than
   // useEditorState to guarantee both event types fire.
@@ -145,16 +148,23 @@ function FormattingToolbar({ editor, visible }: ToolbarProps) {
 
   if (!visible) return null;
 
+  // V3 — floating toolbar: visual tokens adapt to document theme
+  const isPaper = documentTheme === 'paper';
+
   return (
-    // Constitution §11 — sticky above document body, 36px height, opacity-only entrance
+    // V3 — floating card above document body, 40px height, elevated border-radius
+    // animation: opacity-only 120ms per Constitution §13
     <div
       style={{
         position: 'sticky', top: 0, zIndex: 10,
-        background: 'var(--ig-surface-raised)',
-        boxShadow: 'var(--ig-elev-1)',
-        borderBottom: '1px solid var(--ig-border-subtle)',
-        height: '36px',
-        padding: '0 12px',
+        // Floating card look: margin insets the bar from the container edges
+        margin: '8px 16px 0',
+        background: isPaper ? 'rgba(253,248,243,0.97)' : 'var(--ig-surface-overlay)',
+        boxShadow: 'var(--ig-elev-2)',
+        border: `1px solid ${isPaper ? 'rgba(74,222,128,0.15)' : 'rgba(74,222,128,0.1)'}`,
+        borderRadius: 'var(--ig-radius-md)',
+        height: '40px',
+        padding: '0 10px',
         display: 'flex',
         alignItems: 'center',
         gap: '2px',
@@ -179,16 +189,20 @@ function FormattingToolbar({ editor, visible }: ToolbarProps) {
       <Divider />
       <Btn pressed={ts.blockquote} onClick={() => editor?.chain().focus().toggleBlockquote().run()} icon={Quote}        label="Blockquote" />
 
-      {/* Zone B — AI placeholder (Constitution §11 right zone, non-functional M3) */}
-      <button
-        type="button"
-        className="ig-preset-chip"
-        style={{ marginLeft: 'auto', padding: '4px 10px', fontSize: '12px', cursor: 'default', opacity: 0.5 }}
-        tabIndex={-1}
-        aria-hidden
-      >
-        ✦ AI
-      </button>
+      {/* Zone B — AI entry point placeholder (Constitution §11 right zone, non-functional M3) */}
+      <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '4px' }}>
+        <Sparkles
+          size={13}
+          style={{ color: 'var(--ig-text-tertiary)', opacity: 0.5 }}
+          aria-hidden
+        />
+        <span style={{
+          fontFamily: 'var(--ig-font-mono)', fontSize: '11px', fontWeight: 500,
+          color: 'var(--ig-text-tertiary)', opacity: 0.5, letterSpacing: '0.04em',
+        }}>
+          AI
+        </span>
+      </div>
     </div>
   );
 }
@@ -219,6 +233,10 @@ export default function TipTapRenderer({
   onSave,
 }: TipTapRendererProps) {
   void fs;
+  // V3/V4 — read document theme directly from GlobalStore (avoids prop-drilling)
+  const { state: { settings: gs } } = useGlobalStore();
+  const documentTheme = gs.documentTheme;
+
   const containerRef = useRef<HTMLDivElement>(null);
   const bubbleRef    = useRef<HTMLDivElement>(null);
 
@@ -294,7 +312,6 @@ export default function TipTapRenderer({
 
   // ── Mission 2: Selection Bubble (unchanged from M2) ───────────────────────
   const [bubble, setBubble] = useState<BubbleState>({ visible: false, top: 0, anchorX: 0 });
-  const [shouldRender, setShouldRender] = useState(false);
   const [bubbleLeft, setBubbleLeft] = useState(0);
 
   useEffect(() => {
@@ -327,15 +344,9 @@ export default function TipTapRenderer({
     return () => document.removeEventListener('selectionchange', handleSelectionChange);
   }, []);
 
-  useEffect(() => {
-    if (bubble.visible) { setShouldRender(true); return; }
-    const exitMs = reducedMotion ? 0 : 80;
-    const t = window.setTimeout(() => setShouldRender(false), exitMs);
-    return () => window.clearTimeout(t);
-  }, [bubble.visible, reducedMotion]);
-
+  // V4 — useLayoutEffect clamps bubble position; fires when visible or anchor moves
   useLayoutEffect(() => {
-    if (!shouldRender) return;
+    if (!bubble.visible) return;
     const container = containerRef.current;
     const el = bubbleRef.current;
     if (!container || !el) return;
@@ -345,7 +356,7 @@ export default function TipTapRenderer({
     const maxLeft = Math.max(margin, containerWidth - bubbleWidth - margin);
     const left = Math.max(margin, Math.min(bubble.anchorX - bubbleWidth / 2, maxLeft));
     setBubbleLeft(left);
-  }, [shouldRender, bubble.anchorX, bubble.top]);
+  }, [bubble.visible, bubble.anchorX, bubble.top]);
 
   const handlePresetClick = (intent: string) => {
     if (!onPresetSelect) return;
@@ -362,37 +373,50 @@ export default function TipTapRenderer({
       onKeyDown={handleKeyDown}    // ⌘S wired here (Mission 3)
       style={{ display: 'flex', flexDirection: 'column' }}
     >
-      {/* Formatting toolbar — visible only when editable (Constitution §11) */}
-      <FormattingToolbar editor={editor} visible={editable} />
+      {/* V3 — Formatting toolbar — visible only when editable (Constitution §11) */}
+      <FormattingToolbar editor={editor} visible={editable} documentTheme={documentTheme} />
 
       {editor && <EditorContent editor={editor} />}
 
-      {/* Selection bubble (Mission 2 — unchanged) */}
-      {onPresetSelect && shouldRender && (
-        <div
-          ref={bubbleRef}
-          className="ig-selection-bubble"
-          data-visible={bubble.visible ? 'true' : 'false'}
-          role="toolbar"
-          aria-label="Selection actions"
-          style={{
-            top: bubble.top,
-            left: bubbleLeft,
-            transform: reducedMotion ? 'none' : undefined,
-          }}
-        >
-          {BUBBLE_PRESETS.map(p => (
-            <button
-              key={p.label}
-              type="button"
-              className="ig-preset-chip ig-selection-bubble-chip"
-              onMouseDown={e => e.preventDefault()}
-              onClick={() => handlePresetClick(p.intent)}
+      {/* V4 — Selection bubble: framer-motion AnimatePresence entrance/exit */}
+      {onPresetSelect && (
+        <AnimatePresence>
+          {bubble.visible && (
+            <motion.div
+              ref={bubbleRef}
+              role="toolbar"
+              aria-label="Selection actions"
+              className="ig-selection-bubble"
+              initial={reducedMotion ? false : { opacity: 0, scale: 0.92, y: 4 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={reducedMotion ? undefined : { opacity: 0, scale: 0.92, y: 4 }}
+              transition={{ duration: 0.12, ease: 'easeOut' }}
+              style={{
+                top: bubble.top,
+                left: bubbleLeft,
+                // V4 — elevated pill: border + shadow for depth; no blur (CLAUDE.md §9)
+                background: documentTheme === 'paper'
+                  ? 'rgba(253,248,243,0.97)'
+                  : 'var(--ig-surface-overlay)',
+                border: `1px solid ${documentTheme === 'paper' ? 'rgba(74,222,128,0.2)' : 'rgba(74,222,128,0.18)'}`,
+                boxShadow: 'var(--ig-elev-overlay)',
+                borderRadius: 'var(--ig-radius-full)',
+              }}
             >
-              {p.label}
-            </button>
-          ))}
-        </div>
+              {BUBBLE_PRESETS.map(p => (
+                <button
+                  key={p.label}
+                  type="button"
+                  className="ig-preset-chip ig-selection-bubble-chip"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => handlePresetClick(p.intent)}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
       )}
     </div>
   );

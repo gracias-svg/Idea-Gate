@@ -199,6 +199,9 @@ export interface GlobalSettings {
                                                   // regex renderer. Default false — legacy stays
                                                   // the default render path. /improve only; Desk
                                                   // and Office are unaffected regardless of value.
+  documentTheme:      'dark' | 'paper';           // [P] Mission 4: reading surface theme.
+                                                  // 'dark' = existing dark canvas (unchanged).
+                                                  // 'paper' = warm white card, prose-first.
 
   // ── INTERNAL (not shown in UI, controlled by Operating Mode) ────────────────
   reasoningDepth:     'brief' | 'detailed';     // Internal — set by operatingMode preset
@@ -248,6 +251,7 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   persistenceMode:    'local',
   debugMode:          false,
   useTipTapRenderer:  false,
+  documentTheme:      'dark',
   // Internal
   reasoningDepth:     'detailed',
 };

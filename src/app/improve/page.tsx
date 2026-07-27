@@ -12,7 +12,7 @@
 // - RuntimeContext integration preserved
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, Moon, Sun } from 'lucide-react';
 import { useGlobalStore, getModelMeta, isModelFree } from '@/lib/GlobalStore';
 import { parseContent, parseContentDetailed } from '@/lib/parseContent';
 import { useRuntime, getTransitiveDownstream } from '@/lib/RuntimeContext';
@@ -811,15 +811,58 @@ export default function ImprovePage() {
           {selected&&fileLoading&&<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{fontSize:'11px',color:'#475569'}}>Loading artifact…</span></div>}
 
           {selected&&!fileLoading&&uiState==='idle'&&rawContent&&(
-            <div ref={readingContainerRef} style={{...heroSurface,padding:'32px 40px'}}>
-              <div style={readingMeasure}>
+            <div
+              ref={readingContainerRef}
+              data-document-theme={gs.documentTheme}
+              style={{
+                ...heroSurface,
+                padding:'32px 40px',
+                // V1 — paper mode: warm off-white outer field so the card reads as elevated
+                backgroundColor: gs.documentTheme === 'paper' ? '#E5E0DA' : undefined,
+              }}
+            >
+              {/* V1 — paper mode: inner card lifts off the warm field */}
+              <div style={{
+                ...readingMeasure,
+                ...(gs.documentTheme === 'paper' ? {
+                  maxWidth:'760px',
+                  background:'#FDF8F3',
+                  borderRadius:'var(--ig-radius-lg)',
+                  boxShadow:'0 4px 32px 0 rgba(0,0,0,0.12), 0 1px 4px 0 rgba(0,0,0,0.08)',
+                  padding:'40px 48px',
+                } : {}),
+              }}>
                 {/* B4 — Document Identity Header (Constitution §4) */}
                 <div style={{marginBottom:'16px'}}>
-                  {/* Title row: parsed H1 or humanName fallback, + save state indicator */}
-                  <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'4px'}}>
-                    <div style={{fontFamily:'var(--ig-font-sans)',fontSize:'17px',fontWeight:600,color:'#e2e8f0',flex:1,lineHeight:1.25}}>
+                  {/* Title row: parsed H1 or humanName fallback + V2 pill + save state */}
+                  <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'6px'}}>
+                    {/* V5 — title: 22px / 700 / -0.3px tracking */}
+                    <div style={{
+                      fontFamily:'var(--ig-font-sans)',fontSize:'22px',fontWeight:700,
+                      letterSpacing:'-0.3px',lineHeight:1.2,flex:1,
+                      color: gs.documentTheme === 'paper' ? '#1a202c' : '#e2e8f0',
+                    }}>
                       {/^#\s+(.+)/m.exec(rawContent)?.[1] ?? humanName(selected)}
                     </div>
+                    {/* V2 — Moon/Sun theme toggle pill (56 × 22 px) */}
+                    <button
+                      type="button"
+                      onClick={() => updateSettings({ documentTheme: gs.documentTheme === 'paper' ? 'dark' : 'paper' })}
+                      aria-label={gs.documentTheme === 'paper' ? 'Switch to dark theme' : 'Switch to paper theme'}
+                      title={gs.documentTheme === 'paper' ? 'Dark mode' : 'Paper mode'}
+                      style={{
+                        flexShrink:0,display:'flex',alignItems:'center',gap:'4px',
+                        width:'56px',height:'22px',
+                        borderRadius:'var(--ig-radius-full)',
+                        border:'1px solid rgba(74,222,128,0.2)',
+                        background: gs.documentTheme === 'paper' ? 'rgba(253,248,243,0.6)' : 'rgba(255,255,255,0.04)',
+                        cursor:'pointer',padding:'0 6px',
+                      }}
+                    >
+                      <Moon size={11} color={gs.documentTheme === 'dark' ? '#4ade80' : '#94a3b8'} />
+                      <div style={{flex:1}}/>
+                      <Sun size={11} color={gs.documentTheme === 'paper' ? '#f59e0b' : '#64748b'} />
+                    </button>
                     {/* Save state indicator — right-aligned (§7) */}
                     <div style={{flexShrink:0,display:'flex',alignItems:'center',gap:'5px'}}>
                       {saveState==='dirty'&&(
@@ -837,14 +880,21 @@ export default function ImprovePage() {
                       </>)}
                     </div>
                   </div>
-                  {/* Stage label */}
-                  <div style={{fontSize:'11px',color:'#64748b',marginBottom:'4px'}}>
+                  {/* V5 — stage label: 11px / 500 / uppercase / 0.8px tracking / 0.7 opacity */}
+                  <div style={{
+                    fontFamily:FONT_MONO,fontSize:'11px',fontWeight:500,
+                    textTransform:'uppercase',letterSpacing:'0.8px',
+                    color: gs.documentTheme === 'paper' ? '#4a5568' : '#64748b',
+                    opacity:0.7,marginBottom:'4px',
+                  }}>
                     {STAGE_LABELS[parseInt(selected.split('-')[0],10)] ?? ''}
                   </div>
                 </div>
-                {/* Existing kicker */}
+                {/* V5 — kicker: 10.5px / JetBrains Mono / 0.5 opacity */}
                 <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'20px'}}>
-                  <div style={{...T.label,color:'#2a5a30'}}>CURRENT · {selected}</div>
+                  <div style={{fontFamily:FONT_MONO,fontSize:'10.5px',fontWeight:500,textTransform:'uppercase',letterSpacing:'var(--ig-t-label-tracking)',color:'#2a5a30',opacity:0.5}}>
+                    CURRENT · {selected}
+                  </div>
                   {runtime.isStale(selected)&&<div style={{...T.caption,color:'#f59e0b',padding:'1px 6px',border:'1px solid #f59e0b33',borderRadius:'2px'}}>△ STALE</div>}
                   {runtime.getVersion(selected)>0&&<div style={{...T.caption,color:'#4ade80',padding:'1px 6px',border:'1px solid #4ade8033',borderRadius:'2px'}}>v{runtime.getVersion(selected)}</div>}
                 </div>

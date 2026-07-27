@@ -3,83 +3,198 @@
 // src/components/improve/TipTapRenderer.tsx
 //
 // MISSION 1 — Document Render Swap (Phase B, read-only).
-//
-// Renders the exact same canonical markdown content that page.tsx's
-// MD()/ir() renders (improve/page.tsx:135–183), through TipTap +
-// tiptap-markdown instead of the hand-rolled line-by-line regex renderer.
-// Markdown stays the canonical source of truth — this component parses it
-// to a ProseMirror doc for DISPLAY ONLY and never writes anything back.
-//
-// Scope, explicitly:
-//   - editable: false, always. No BubbleMenu extension. No toolbar.
-//   - No save pipeline, no Document Runtime, no Block Registry — those are
-//     Mission 3/4+, not built here.
-//   - Only ever mounted when GlobalSettings.useTipTapRenderer === true
-//     (default false — legacy MD()/ir() stays the default render path).
-//   - /improve only. Desk (src/app/desk/page.tsx) has its own, separate
-//     ir() implementation and is out of scope for this mission.
-//
-// Visual parity: see the `.ig-tiptap-render` block in globals.css for the
-// full legacy → TipTap CSS mapping and the two documented, expected
-// divergences (fenced code blocks, GFM tables — both were unhandled/broken
-// in the legacy line-based renderer, so TipTap renders them for real
-// rather than reproducing the legacy gap).
-//
-// Anchor/arrival parity: `anchors` + `arrivalId` reproduce the Workspace
-// tree's click-to-scroll behavior (page.tsx:273/283/284) by assigning H2
-// ids via parseSections() — the SAME function/order the sidebar uses — and
-// flashing the arrived-at heading's background, exactly mirroring MD()'s
-// inline transition. Only wired for the primary reading pane at the
-// call site, matching MD()'s own `anchors` convention.
-//
 // MISSION 2 — Selection Bubble Menu (additive, read-only-safe).
+// MISSION 3 — Collaborative Document Editor (additive, editable mode).
 //
-// Phase A confirmed @tiptap/extension-bubble-menu does not fire on an
-// editable:false editor: ProseMirror's DOMObserver never dispatches a
-// selection-updating transaction for non-editable views, so the plugin's
-// `selectionChanged` gate never trips. This uses Option B instead — the
-// native browser Selection API + geometry math, entirely outside
-// ProseMirror/TipTap's own state. `editor.isEditable` is never touched,
-// no ProseMirror transaction is ever dispatched, no `editor.commands.*`
-// call exists anywhere below. Only reads `window.getSelection()` and
-// writes to `onPresetSelect` (the caller's own `setIntent`) — canonical
-// markdown and the editor's document are never touched. The bubble only
-// renders when `onPresetSelect` is passed (main reading pane call site
-// only, per Mission 2 scope — split/original/improved preview panes
-// intentionally do not receive it, so they never render a bubble).
+// All three missions are additive. When editable=false (default), behaviour
+// is byte-for-byte what shipped after Mission 2. When editable=true, the
+// editor is writable, the formatting toolbar renders, and the ⌘S / autosave
+// pipeline is active.
+//
+// Constitution references:
+//   §5   — editing philosophy (no mode toggle; doc always editable when flag active)
+//   §5.1 — caret-color: var(--ig-emerald) (CSS, not JS)
+//   §6   — ::selection override, rgba(74,222,128,0.18)
+//   §7   — save state machine; autosave 8s debounce
+//   §11  — formatting toolbar spec (two zones; selectionUpdate + transaction)
+//   §13  — toolbar entrance 120ms ease-out, opacity only
+//   §14  — lucide-react 14px icons, every icon-only button has aria-label
+//   §27  — one editor instance per artifact; toolbar on selectionUpdate+transaction
 
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, {
+  useCallback, useEffect, useLayoutEffect, useRef, useState,
+} from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
-import { Markdown } from 'tiptap-markdown';
-import { Table } from '@tiptap/extension-table';
-import { TableRow } from '@tiptap/extension-table-row';
-import { TableCell } from '@tiptap/extension-table-cell';
-import { TableHeader } from '@tiptap/extension-table-header';
+import type { Editor } from '@tiptap/core';
+import StarterKit               from '@tiptap/starter-kit';
+import { Markdown }             from 'tiptap-markdown';
+import { Table }                from '@tiptap/extension-table';
+import { TableRow }             from '@tiptap/extension-table-row';
+import { TableCell }            from '@tiptap/extension-table-cell';
+import { TableHeader }          from '@tiptap/extension-table-header';
+import {
+  Bold, Italic, Underline, Strikethrough, Code,
+  List, ListOrdered, Quote,
+  type LucideIcon,
+} from 'lucide-react';
+import { Toggle } from '@/components/ui/toggle';
+import { cn } from '@/lib/utils';
 import { parseSections } from '@/lib/parseSections';
 import { workspaceMotion } from '@/components/workspace/motion';
 
+// ── Types ─────────────────────────────────────────────────────────────────────
+
 interface TipTapRendererProps {
   content:          string;
-  fs?:              number;          // kept for MD() call-site parity; unused (MD does `void fs` too)
+  fs?:              number;           // kept for MD() call-site parity; unused
   anchors?:         boolean;
   arrivalId?:       string | null;
   reducedMotion?:   boolean;
-  // Mission 2 — populates the caller's intent textarea (page.tsx's setIntent)
-  // when a selection bubble preset is clicked. Optional and additive: when
-  // omitted, the selectionchange listener still attaches (harmless — it only
-  // computes local component state) but the bubble is never rendered, so
-  // omitting this prop is a strict no-op for every existing call site.
-  onPresetSelect?: (intent: string) => void;
+  /** Mission 2 — populates caller's intent textarea (page.tsx setIntent). */
+  onPresetSelect?:  (intent: string) => void;
+  /** Mission 3 — editable mode. default false. When false: identical to pre-M3. */
+  editable?:        boolean;
+  /** Mission 3 — called on every editor update with the current markdown string. */
+  onContentChange?: (md: string) => void;
+  /** Mission 3 — called on ⌘S with the current markdown string. */
+  onSave?:          (md: string) => Promise<void>;
 }
 
-// Curated subset of page.tsx's PRESETS (Mission 1's right-panel list is not
-// exported, so these are intentionally duplicated literals — label + intent
-// text copied verbatim from page.tsx's PRESETS array). Kept to 5 of the 11:
-// selection-context actions that make sense against an arbitrary highlighted
-// passage, not whole-artifact actions (e.g. "Competitive moat" or "MVP-focused"
-// presume artifact-level framing a mid-paragraph selection doesn't carry).
-// The full 11-item list remains reachable in the right panel, unchanged.
+// ── Toolbar state ─────────────────────────────────────────────────────────────
+
+interface ToolbarState {
+  bold: boolean; italic: boolean; underline: boolean; strike: boolean;
+  code: boolean; bulletList: boolean; orderedList: boolean; blockquote: boolean;
+}
+
+const EMPTY_TOOLBAR: ToolbarState = {
+  bold: false, italic: false, underline: false, strike: false,
+  code: false, bulletList: false, orderedList: false, blockquote: false,
+};
+
+// ── FormattingToolbar (Constitution §11) ─────────────────────────────────────
+// Rendered inside TipTapRenderer so it has access to the editor instance.
+// Hidden when editable=false — zero DOM impact on read-only path.
+
+interface ToolbarProps {
+  editor:   Editor | null;
+  visible:  boolean;
+}
+
+function FormattingToolbar({ editor, visible }: ToolbarProps) {
+  // Reactive toolbar state — updated on BOTH selectionUpdate and transaction
+  // per Constitution §11 and §27. Using explicit event listeners rather than
+  // useEditorState to guarantee both event types fire.
+  const [ts, setTs] = useState<ToolbarState>(EMPTY_TOOLBAR);
+
+  const refresh = useCallback(() => {
+    if (!editor) { setTs(EMPTY_TOOLBAR); return; }
+    setTs({
+      bold:        editor.isActive('bold'),
+      italic:      editor.isActive('italic'),
+      underline:   editor.isActive('underline'),
+      strike:      editor.isActive('strike'),
+      code:        editor.isActive('code'),
+      bulletList:  editor.isActive('bulletList'),
+      orderedList: editor.isActive('orderedList'),
+      blockquote:  editor.isActive('blockquote'),
+    });
+  }, [editor]);
+
+  useEffect(() => {
+    if (!editor) return;
+    editor.on('selectionUpdate', refresh);  // cursor moves
+    editor.on('transaction', refresh);      // programmatic changes (⌘B etc.) — §11
+    refresh();
+    return () => {
+      editor.off('selectionUpdate', refresh);
+      editor.off('transaction', refresh);
+    };
+  }, [editor, refresh]);
+
+  // Divider helper
+  const Divider = () => (
+    <div style={{
+      width: '1px', height: '16px', margin: '0 4px',
+      backgroundColor: 'var(--ig-border-subtle)', flexShrink: 0,
+    }} aria-hidden />
+  );
+
+  // Button builder — wraps shadcn Toggle with IdeaGate token overrides (§11)
+  const Btn = ({
+    pressed, onClick, icon: Icon, label,
+  }: { pressed: boolean; onClick: () => void; icon: LucideIcon; label: string }) => (
+    <Toggle
+      pressed={pressed}
+      onPressedChange={onClick}
+      aria-label={label}
+      title={label}
+      className={cn(
+        'h-7 w-7 p-0 rounded',
+        'bg-transparent hover:bg-[var(--ig-surface-raised)]',
+        'border-none outline-none focus-visible:ring-1 focus-visible:ring-[var(--ig-emerald)]',
+        '[&_svg]:text-[var(--ig-text-secondary)]',
+        pressed
+          ? 'bg-[var(--ig-surface-active)] [&_svg]:!text-[var(--ig-emerald)]'
+          : '',
+      )}
+    >
+      <Icon size={14} />
+    </Toggle>
+  );
+
+  if (!visible) return null;
+
+  return (
+    // Constitution §11 — sticky above document body, 36px height, opacity-only entrance
+    <div
+      style={{
+        position: 'sticky', top: 0, zIndex: 10,
+        background: 'var(--ig-surface-raised)',
+        boxShadow: 'var(--ig-elev-1)',
+        borderBottom: '1px solid var(--ig-border-subtle)',
+        height: '36px',
+        padding: '0 12px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '2px',
+        animation: 'ig-toolbar-in 120ms ease-out',  // §13
+        flexShrink: 0,
+      }}
+      onMouseDown={e => e.preventDefault()} // don't steal focus from editor
+    >
+      {/* Zone A — Formatting (Constitution §11 left zone) */}
+      <Btn pressed={ts.bold}      onClick={() => editor?.chain().focus().toggleBold().run()}        icon={Bold}          label="Bold (⌘B)" />
+      <Btn pressed={ts.italic}    onClick={() => editor?.chain().focus().toggleItalic().run()}      icon={Italic}        label="Italic (⌘I)" />
+      <Btn pressed={ts.underline} onClick={() => editor?.chain().focus().toggleUnderline().run()}   icon={Underline}     label="Underline (⌘U)" />
+      <Btn pressed={ts.strike}    onClick={() => editor?.chain().focus().toggleStrike().run()}      icon={Strikethrough} label="Strikethrough" />
+
+      <Divider />
+      <Btn pressed={ts.code}      onClick={() => editor?.chain().focus().toggleCode().run()}        icon={Code}          label="Inline code" />
+
+      <Divider />
+      <Btn pressed={ts.bulletList}  onClick={() => editor?.chain().focus().toggleBulletList().run()}  icon={List}        label="Bullet list" />
+      <Btn pressed={ts.orderedList} onClick={() => editor?.chain().focus().toggleOrderedList().run()} icon={ListOrdered} label="Ordered list" />
+
+      <Divider />
+      <Btn pressed={ts.blockquote} onClick={() => editor?.chain().focus().toggleBlockquote().run()} icon={Quote}        label="Blockquote" />
+
+      {/* Zone B — AI placeholder (Constitution §11 right zone, non-functional M3) */}
+      <button
+        type="button"
+        className="ig-preset-chip"
+        style={{ marginLeft: 'auto', padding: '4px 10px', fontSize: '12px', cursor: 'default', opacity: 0.5 }}
+        tabIndex={-1}
+        aria-hidden
+      >
+        ✦ AI
+      </button>
+    </div>
+  );
+}
+
+// ── Bubble presets (Mission 2) ────────────────────────────────────────────────
+
 const BUBBLE_PRESETS = [
   { label: 'More concise',    intent: 'Make this more concise — remove redundancy, preserve all PM insights' },
   { label: 'Sharpen summary', intent: 'Rewrite summary to be crisper and interview-ready — one PM insight per sentence' },
@@ -90,6 +205,8 @@ const BUBBLE_PRESETS = [
 
 interface BubbleState { visible: boolean; top: number; anchorX: number; }
 
+// ── Main component ────────────────────────────────────────────────────────────
+
 export default function TipTapRenderer({
   content,
   fs,
@@ -97,33 +214,15 @@ export default function TipTapRenderer({
   arrivalId = null,
   reducedMotion = false,
   onPresetSelect,
+  editable = false,
+  onContentChange,
+  onSave,
 }: TipTapRendererProps) {
   void fs;
   const containerRef = useRef<HTMLDivElement>(null);
-  const bubbleRef = useRef<HTMLDivElement>(null);
+  const bubbleRef    = useRef<HTMLDivElement>(null);
 
-  // Assign H2 ids in document order, matching parseSections(content) — the
-  // same function/order the Workspace tree uses to build its scroll targets
-  // — so sidebar navigation keeps working when this renderer is active.
-  //
-  // ROOT CAUSE (diagnosed during Mission 2 verification): this used to be a
-  // standalone useEffect keyed on [editor, content, anchors], querying
-  // containerRef.current for '.ProseMirror h2'. `immediatelyRender: false`
-  // (below) intentionally defers the editor's first client-side DOM commit
-  // to avoid an SSR hydration mismatch, and @tiptap/react's EditorContent
-  // mounts editor.view.dom into the container via its own internal effect —
-  // there is no ordering guarantee between that mount and a sibling/parent
-  // useEffect sharing the same [editor] dependency in the same commit.
-  // Verified live: h2 elements DID exist in the DOM, but their `id`
-  // attribute was consistently never set. Fix: use TipTap's own
-  // onCreate/onUpdate lifecycle hooks instead of a React effect, reading
-  // straight off `editor.view.dom` (the actual ProseMirror root) rather
-  // than containerRef — these fire only once TipTap itself has built and
-  // attached the view, which sidesteps the React-effect-ordering ambiguity
-  // entirely. onCreate covers first mount / full editor recreation (this
-  // component recreates its editor whenever `content` changes, see below);
-  // onUpdate is included defensively for any in-place ProseMirror-internal
-  // update that doesn't go through a full recreation.
+  // ── Anchor-id assignment (Mission 2 fix: onCreate/onUpdate, not useEffect)
   const assignAnchorIds = (dom: HTMLElement) => {
     if (!anchors) return;
     const sectionIds = parseSections(content);
@@ -134,9 +233,10 @@ export default function TipTapRenderer({
     });
   };
 
-  // Re-created whenever `content` changes — this is a read-only preview with
-  // no cursor/selection state worth preserving across artifact switches, so
-  // a fresh editor per content string is simpler and safer than diffing.
+  // ── Editor (Mission 3: initialise with correct editable state) ──────────────
+  // Re-created whenever `content` changes — correct for read-only; for editable
+  // mode, content only changes on artifact switch (not on user typing), so this
+  // never discards live edits.
   const editor = useEditor(
     {
       extensions: [
@@ -148,18 +248,40 @@ export default function TipTapRenderer({
         Markdown.configure({ html: false, linkify: false, breaks: false, tightLists: true }),
       ],
       content,
-      editable: false,
+      editable,                        // Mission 3: honour initial prop value
       immediatelyRender: false,
-      onCreate: ({ editor: ed }) => assignAnchorIds(ed.view.dom as HTMLElement),
-      onUpdate: ({ editor: ed }) => assignAnchorIds(ed.view.dom as HTMLElement),
+      onCreate: ({ editor: ed }) => {
+        assignAnchorIds(ed.view.dom as HTMLElement);
+      },
+      onUpdate: ({ editor: ed }) => {
+        assignAnchorIds(ed.view.dom as HTMLElement);
+        // Mission 3: serialise and forward to page.tsx dirty-tracking
+        if (editable && onContentChange) {
+          const md = (ed.storage as unknown as { markdown: { getMarkdown(): string } }).markdown.getMarkdown(); // A3
+          onContentChange(md);
+        }
+      },
     },
     [content],
   );
 
-  // Arrival highlight — mirrors MD()'s inline background-color flash on the
-  // just-scrolled-to H2 (page.tsx:170), honouring reducedMotion. Re-runs
-  // whenever arrivalId changes, including the page's own timeout reset back
-  // to null (page.tsx:284), so the highlight clears the same way it does today.
+  // ── Runtime editable toggle (Mission 3, A1 confirmed: setEditable is live) ──
+  useEffect(() => {
+    if (!editor) return;
+    editor.setEditable(editable, false); // false = don't emit update transaction
+  }, [editor, editable]);
+
+  // ── ⌘S save handler (Mission 3, Constitution §7, §15) ────────────────────
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!editable || !onSave || !editor) return;
+    if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+      e.preventDefault();
+      const md = (editor.storage as unknown as { markdown: { getMarkdown(): string } }).markdown.getMarkdown();
+      void onSave(md);
+    }
+  }, [editable, onSave, editor]);
+
+  // ── Arrival highlight (Mission 1 port, unchanged) ──────────────────────────
   useEffect(() => {
     if (!containerRef.current) return;
     const h2s = containerRef.current.querySelectorAll('.ProseMirror h2');
@@ -170,14 +292,9 @@ export default function TipTapRenderer({
     });
   }, [arrivalId, reducedMotion, editor, content]);
 
-  // ── Mission 2: Selection Bubble Menu ─────────────────────────────────────
-  // Native Selection API, no ProseMirror/TipTap involvement (see file header).
+  // ── Mission 2: Selection Bubble (unchanged from M2) ───────────────────────
   const [bubble, setBubble] = useState<BubbleState>({ visible: false, top: 0, anchorX: 0 });
-  // Delayed-unmount so the exit transition (B4) can actually play before the
-  // bubble leaves the DOM, instead of vanishing the instant `visible` flips.
   const [shouldRender, setShouldRender] = useState(false);
-  // Final clamped left (px, container-relative) — corrected from bubble.anchorX
-  // once the bubble's real width is known (see clamp effect below).
   const [bubbleLeft, setBubbleLeft] = useState(0);
 
   useEffect(() => {
@@ -189,24 +306,20 @@ export default function TipTapRenderer({
         setBubble(b => (b.visible ? { ...b, visible: false } : b));
         return;
       }
-      // Containment check via ref, not class names/data attributes, per spec —
-      // this also naturally excludes selections in the right panel, the
-      // workspace sidebar, or anywhere else outside this component's DOM.
       if (!container.contains(sel.anchorNode)) {
         setBubble(b => (b.visible ? { ...b, visible: false } : b));
         return;
       }
-      const range = sel.getRangeAt(0);
+      const range  = sel.getRangeAt(0);
       const selRect = range.getBoundingClientRect();
       if (selRect.width === 0 && selRect.height === 0) {
         setBubble(b => (b.visible ? { ...b, visible: false } : b));
         return;
       }
       const containerRect = container.getBoundingClientRect();
-      const GAP = 8;
-      const BUBBLE_H_ESTIMATE = 40;
+      const GAP = 8; const BUBBLE_H_ESTIMATE = 40;
       let top = selRect.top - containerRect.top - BUBBLE_H_ESTIMATE - GAP;
-      if (top < 0) top = selRect.bottom - containerRect.top + GAP; // flip below when no room above
+      if (top < 0) top = selRect.bottom - containerRect.top + GAP;
       const anchorX = selRect.left - containerRect.left + selRect.width / 2;
       setBubble({ visible: true, top, anchorX });
     };
@@ -214,7 +327,6 @@ export default function TipTapRenderer({
     return () => document.removeEventListener('selectionchange', handleSelectionChange);
   }, []);
 
-  // Keep the bubble mounted for the exit-transition duration after it hides.
   useEffect(() => {
     if (bubble.visible) { setShouldRender(true); return; }
     const exitMs = reducedMotion ? 0 : 80;
@@ -222,9 +334,6 @@ export default function TipTapRenderer({
     return () => window.clearTimeout(t);
   }, [bubble.visible, reducedMotion]);
 
-  // Measure the bubble's real width post-layout (before paint) and clamp its
-  // left edge to the container's bounds — avoids overflowing the document
-  // column on either side. Runs synchronously so there's no visible jump.
   useLayoutEffect(() => {
     if (!shouldRender) return;
     const container = containerRef.current;
@@ -245,9 +354,20 @@ export default function TipTapRenderer({
     setBubble(b => ({ ...b, visible: false }));
   };
 
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div ref={containerRef} className="ig-tiptap-render">
+    <div
+      ref={containerRef}
+      className="ig-tiptap-render"
+      onKeyDown={handleKeyDown}    // ⌘S wired here (Mission 3)
+      style={{ display: 'flex', flexDirection: 'column' }}
+    >
+      {/* Formatting toolbar — visible only when editable (Constitution §11) */}
+      <FormattingToolbar editor={editor} visible={editable} />
+
       {editor && <EditorContent editor={editor} />}
+
+      {/* Selection bubble (Mission 2 — unchanged) */}
       {onPresetSelect && shouldRender && (
         <div
           ref={bubbleRef}
@@ -258,7 +378,7 @@ export default function TipTapRenderer({
           style={{
             top: bubble.top,
             left: bubbleLeft,
-            transform: reducedMotion ? 'none' : undefined, // reducedMotion: opacity-only, no translateY
+            transform: reducedMotion ? 'none' : undefined,
           }}
         >
           {BUBBLE_PRESETS.map(p => (
@@ -266,10 +386,6 @@ export default function TipTapRenderer({
               key={p.label}
               type="button"
               className="ig-preset-chip ig-selection-bubble-chip"
-              // Prevent the browser from collapsing the live selection on
-              // mousedown-triggered focus change — without this, clicking a
-              // chip can race the selectionchange handler above and hide the
-              // bubble before the click (and onPresetSelect) fires.
               onMouseDown={e => e.preventDefault()}
               onClick={() => handlePresetClick(p.intent)}
             >

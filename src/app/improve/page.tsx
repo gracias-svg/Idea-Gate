@@ -12,6 +12,7 @@
 // - RuntimeContext integration preserved
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { CheckCircle2 } from 'lucide-react';
 import { useGlobalStore, getModelMeta, isModelFree } from '@/lib/GlobalStore';
 import { parseContent, parseContentDetailed } from '@/lib/parseContent';
 import { useRuntime, getTransitiveDownstream } from '@/lib/RuntimeContext';
@@ -61,9 +62,10 @@ const STAGE_LABELS: Record<number,string> = {
   10:'Architecture',11:'Backlog',12:'Implementation',13:'QA & Readiness',14:'Prototype',
 };
 
-type Extent  = 'light'|'medium'|'strong';
-type Scope   = 'block'|'stage'|'project';
-type UIState = 'idle'|'loading'|'previewed'|'accepted';
+type Extent    = 'light'|'medium'|'strong';
+type Scope     = 'block'|'stage'|'project';
+type UIState   = 'idle'|'loading'|'previewed'|'accepted';
+type SaveState = 'clean'|'dirty'|'saving'|'saved'|'error';
 
 interface Result {
   original:string; improved:string; reasoning:string;
@@ -191,7 +193,7 @@ function MD({content,fs=12,anchors=false,arrivalId=null,reducedMotion=false}:{co
 // Mission 2: `onPresetSelect` is additive — MD() ignores it (never destructured),
 // TipTapRenderer treats it as optional (bubble simply doesn't render without it).
 // Only the primary reading pane call site below passes it.
-function Doc(props:{content:string;fs?:number;anchors?:boolean;arrivalId?:string|null;reducedMotion?:boolean;onPresetSelect?:(intent:string)=>void}){
+function Doc(props:{content:string;fs?:number;anchors?:boolean;arrivalId?:string|null;reducedMotion?:boolean;onPresetSelect?:(intent:string)=>void;editable?:boolean;onContentChange?:(md:string)=>void;onSave?:(md:string)=>Promise<void>}){
   const{state:{settings}}=useGlobalStore();
   return settings.useTipTapRenderer ? <TipTapRenderer {...props}/> : <MD {...props}/>;
 }
@@ -266,6 +268,17 @@ export default function ImprovePage() {
     m.addEventListener?.('change', sync);
     return ()=>m.removeEventListener?.('change', sync);
   },[]);
+
+  // ── Mission 3: Save state machine (Constitution §7) ───────────────────────
+  const [saveState, setSaveState] = useState<SaveState>('clean');
+  const isSavingRef      = useRef(false);
+  const queuedSaveRef    = useRef<string | null>(null);
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Stable ref to currently-selected artifact — safe to capture in async callbacks
+  const selectedRef      = useRef<string | null>(selected);
+  useEffect(() => { selectedRef.current = selected; }, [selected]);
+  // Self-ref to allow recursive queued save without circular useCallback deps
+  const handleSaveRef    = useRef<(md: string) => Promise<void>>(async () => {});
 
   // ── Workspace panel (Sprint 07) ──────────────────────────────────────────
   // Project selector — thin local name registry (see projectRepository.ts).
@@ -436,6 +449,52 @@ export default function ImprovePage() {
   },[result,selected,intent,runtime]);
 
   const handleDiscard = ()=>{ setResult(null); setUiState('idle'); setError(null); };
+
+  // ── Mission 3: Save pipeline (Constitution §7) ────────────────────────────
+  // Reset save state and cancel any pending autosave when the artifact switches.
+  useEffect(() => {
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = null;
+    setSaveState('clean');
+    isSavingRef.current = false;
+    queuedSaveRef.current = null;
+  }, [selected]);
+
+  const handleSave = useCallback(async (md: string): Promise<void> => {
+    if (!selectedRef.current) return;
+    if (isSavingRef.current) { queuedSaveRef.current = md; return; }
+    isSavingRef.current = true;
+    setSaveState('saving');
+    try {
+      const res = await fetch('/api/artifact', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artifactName: selectedRef.current, content: md }),
+      });
+      const data = await res.json() as { error?: string };
+      if (!res.ok || data.error) throw new Error(data.error ?? 'Save failed');
+      setSaveState('saved');
+      setTimeout(() => setSaveState(s => s === 'saved' ? 'clean' : s), 2000);
+    } catch {
+      setSaveState('error');
+    } finally {
+      isSavingRef.current = false;
+      const queued = queuedSaveRef.current;
+      if (queued !== null) {
+        queuedSaveRef.current = null;
+        void handleSaveRef.current(queued); // replay queued save through stable ref
+      }
+    }
+  }, []);
+
+  // Keep the stable ref up to date with the memoized function
+  useEffect(() => { handleSaveRef.current = handleSave; }, [handleSave]);
+
+  // 8-second autosave debounce (Constitution §7 — NOT 3s)
+  const handleContentChange = useCallback((md: string) => {
+    setSaveState('dirty');
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = setTimeout(() => void handleSave(md), 8000);
+  }, [handleSave]);
 
   const handleDownload = (name:string, content:string|null)=>{
     if (!content) return;
@@ -754,13 +813,44 @@ export default function ImprovePage() {
           {selected&&!fileLoading&&uiState==='idle'&&rawContent&&(
             <div ref={readingContainerRef} style={{...heroSurface,padding:'32px 40px'}}>
               <div style={readingMeasure}>
+                {/* B4 — Document Identity Header (Constitution §4) */}
+                <div style={{marginBottom:'16px'}}>
+                  {/* Title row: parsed H1 or humanName fallback, + save state indicator */}
+                  <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'4px'}}>
+                    <div style={{fontFamily:'var(--ig-font-sans)',fontSize:'17px',fontWeight:600,color:'#e2e8f0',flex:1,lineHeight:1.25}}>
+                      {/^#\s+(.+)/m.exec(rawContent)?.[1] ?? humanName(selected)}
+                    </div>
+                    {/* Save state indicator — right-aligned (§7) */}
+                    <div style={{flexShrink:0,display:'flex',alignItems:'center',gap:'5px'}}>
+                      {saveState==='dirty'&&(
+                        <div style={{width:'6px',height:'6px',borderRadius:'50%',backgroundColor:'#f59e0b'}} title="Unsaved changes"/>
+                      )}
+                      {saveState==='saving'&&(
+                        <div style={{width:'6px',height:'6px',borderRadius:'50%',backgroundColor:'#4ade80',animation:'pulse 800ms ease-in-out infinite'}} title="Saving…"/>
+                      )}
+                      {saveState==='saved'&&(
+                        <CheckCircle2 size={12} color="#4ade80" aria-label="Saved"/>
+                      )}
+                      {saveState==='error'&&(<>
+                        <div style={{width:'6px',height:'6px',borderRadius:'50%',backgroundColor:'#f87171'}}/>
+                        <span style={{fontSize:'11px',color:'#f87171'}}>Save failed</span>
+                      </>)}
+                    </div>
+                  </div>
+                  {/* Stage label */}
+                  <div style={{fontSize:'11px',color:'#64748b',marginBottom:'4px'}}>
+                    {STAGE_LABELS[parseInt(selected.split('-')[0],10)] ?? ''}
+                  </div>
+                </div>
+                {/* Existing kicker */}
                 <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'20px'}}>
                   <div style={{...T.label,color:'#2a5a30'}}>CURRENT · {selected}</div>
                   {runtime.isStale(selected)&&<div style={{...T.caption,color:'#f59e0b',padding:'1px 6px',border:'1px solid #f59e0b33',borderRadius:'2px'}}>△ STALE</div>}
                   {runtime.getVersion(selected)>0&&<div style={{...T.caption,color:'#4ade80',padding:'1px 6px',border:'1px solid #4ade8033',borderRadius:'2px'}}>v{runtime.getVersion(selected)}</div>}
                 </div>
                 {parseWarn&&<div style={{marginBottom:'16px',padding:'7px 10px',backgroundColor:'#0a0a00',border:'1px solid #f59e0b33',borderRadius:'3px',...T.caption,color:'#f59e0b88'}}>{parseWarn}</div>}
-                <Doc content={rawContent} fs={12} anchors arrivalId={arrivalSectionId} reducedMotion={reducedMotion} onPresetSelect={setIntent}/>
+                {/* B3 — main reading pane is editable; split/preview panes remain read-only */}
+                <Doc content={rawContent} fs={12} anchors arrivalId={arrivalSectionId} reducedMotion={reducedMotion} onPresetSelect={setIntent} editable onSave={handleSave} onContentChange={handleContentChange}/>
               </div>
             </div>
           )}

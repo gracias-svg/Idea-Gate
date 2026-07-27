@@ -28,10 +28,13 @@ export type CmdAction =
   | 'new-idea'
   | 'start-lifecycle'
   | 'stop-lifecycle'
-  | 'open-settings'
-  | 'select-model';
+  | 'open-settings';
 
-export type CmdGroup = 'Navigation' | 'Run Controls' | 'Workspace';
+// 'Models' and 'Artifacts' are populated at runtime (model-registry.ts /
+// DataProvider's live artifact list) — not static data, so they have no
+// CMD_ITEMS entries below, but the type lives here since this is the one
+// place CommandPalette.tsx and NavRail.tsx both read group/action shape from.
+export type CmdGroup = 'Navigation' | 'Run Controls' | 'Workspace' | 'Models' | 'Artifacts';
 
 export interface CmdItem {
   id:     string;
@@ -51,5 +54,4 @@ export const CMD_ITEMS: CmdItem[] = [
   { id: 'cmd-stop',         label: 'Stop Lifecycle', group: 'Run Controls', action: 'stop-lifecycle'  },
   // Workspace
   { id: 'cmd-new-idea',     label: 'New Idea',        group: 'Workspace', action: 'new-idea'      },
-  { id: 'cmd-select-model', label: 'Select Model',    group: 'Workspace', action: 'select-model'  },
 ];

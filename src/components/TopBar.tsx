@@ -134,6 +134,34 @@ export default function TopBar() {
     window.dispatchEvent(new Event('ideagate:refresh'));
   }, []);
 
+  // Workflow Proof (Cmd+K) — same reset the "+ New Idea" button already ran,
+  // extracted so it has a second entry point without duplicating logic. The
+  // button's own visibility guard (`!isRunning && artifactCount > 0`) is
+  // re-checked here so a cross-component trigger can never fire when the
+  // button itself would have been hidden/invalid.
+  const handleNewIdea = useCallback(() => {
+    if (isRunning || artifactCount === 0) return;
+    setIdea('');
+    setRunningIdea('');
+    setRunError('');
+    setCurrentStage(0);
+    setArtifactCount(0);
+    runtime.resetWorkspace();
+    window.dispatchEvent(new Event('ideagate:clearArtifact'));
+    window.dispatchEvent(new Event('ideagate:refresh'));
+    setTimeout(() => router.push('/desk'), 50);
+  }, [isRunning, artifactCount, runtime, router]);
+
+  // Cmd+K palette dispatches this same-origin event instead of duplicating
+  // TopBar's reset logic (CommandPalette.tsx has no access to this local
+  // state) — matches the existing ideagate:refresh/ideagate:clearArtifact
+  // cross-component signalling convention already used in this file.
+  useEffect(() => {
+    const handler = () => handleNewIdea();
+    window.addEventListener('ideagate:triggerNewIdea', handler);
+    return () => window.removeEventListener('ideagate:triggerNewIdea', handler);
+  }, [handleNewIdea]);
+
   const staleCount   = runtime.state.staleArtifacts.size;
   const improvements = runtime.state.improvementCount;
   const sessionCost  = runtime.state.sessionCost;
@@ -225,17 +253,7 @@ export default function TopBar() {
         {/* New Idea button — only visible after a run completes */}
         {!isRunning && artifactCount > 0 && (
           <button
-            onClick={() => {
-              setIdea('');
-              setRunningIdea('');
-              setRunError('');
-              setCurrentStage(0);
-              setArtifactCount(0);
-              runtime.resetWorkspace();
-              window.dispatchEvent(new Event('ideagate:clearArtifact'));
-              window.dispatchEvent(new Event('ideagate:refresh'));
-              setTimeout(() => router.push('/desk'), 50);
-            }}
+            onClick={handleNewIdea}
             style={{
               background: 'transparent',
               border: '1px solid rgba(255,255,255,0.12)',

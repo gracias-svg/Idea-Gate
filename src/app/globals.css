@@ -597,6 +597,13 @@ body {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+
+/* Formatting toolbar entrance — opacity only, 120ms ease-out (Constitution §13).
+   No translate: toolbar is sticky-positioned; transform would break stacking. */
+@keyframes ig-toolbar-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
 .ig-ws-row-in {
   animation: ig-ws-row-in 150ms ease-out;
 }
@@ -631,13 +638,18 @@ body {
                                container, matching the legacy MD() renderer —
                                without this the browser's UA default white
                                shows through on the contenteditable root. */
+  caret-color: var(--ig-emerald); /* Constitution §5.1 */
+}
+.ig-tiptap-render .ProseMirror ::selection {
+  background: rgba(74, 222, 128, 0.18); /* Constitution §6 */
 }
 .ig-tiptap-render .ProseMirror > *:first-child { margin-top: 0 !important; }
 
 .ig-tiptap-render .ProseMirror h1 {
   font-family: var(--ig-font-sans);
-  font-size: var(--ig-t-display-size);
+  font-size: 1.75rem;   /* Constitution §8 */
   font-weight: 700;
+  line-height: 1.25;
   letter-spacing: var(--ig-t-display-tracking);
   color: #f1f5f9;
   margin: 30px 0 14px;
@@ -646,8 +658,9 @@ body {
 }
 .ig-tiptap-render .ProseMirror h2 {
   font-family: var(--ig-font-sans);
-  font-size: var(--ig-t-title-size);
+  font-size: 1.25rem;   /* Constitution §8 */
   font-weight: 600;
+  line-height: 1.30;
   color: #e2e8f0;
   margin: 24px -6px 8px;
   padding: 2px 6px;
@@ -656,8 +669,9 @@ body {
 }
 .ig-tiptap-render .ProseMirror h3 {
   font-family: var(--ig-font-sans);
-  font-size: var(--ig-t-body-size);
-  font-weight: 700;
+  font-size: 1.0625rem; /* Constitution §8 */
+  font-weight: 600;
+  line-height: 1.35;
   color: #cbd5e1;
   margin: 18px 0 5px;
 }
@@ -672,8 +686,8 @@ body {
 }
 .ig-tiptap-render .ProseMirror p {
   font-family: var(--ig-font-sans);
-  font-size: var(--ig-t-body-size);
-  line-height: var(--ig-t-body-leading);
+  font-size: 0.9375rem; /* Constitution §8 */
+  line-height: 1.75;
   color: #cbd5e1;
   margin: 8px 0;
 }

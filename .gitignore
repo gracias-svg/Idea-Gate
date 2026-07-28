@@ -8,7 +8,7 @@ coverage
 dist
 build
 *.log
-workspace/
+/workspace/
 *.backup
 *old.ts
 *older*.ts

@@ -115,15 +115,19 @@ function FormattingToolbar({ editor, visible, documentTheme }: ToolbarProps) {
     };
   }, [editor, refresh]);
 
-  // Divider helper
+  // F5 — hoist theme check so Divider/Btn can access it (isPaper used in Divider bg)
+  const isPaper = documentTheme === 'paper';
+
+  // F5 — Divider: softer treatment, theme-aware
   const Divider = () => (
     <div style={{
-      width: '1px', height: '16px', margin: '0 4px',
-      backgroundColor: 'var(--ig-border-subtle)', flexShrink: 0,
+      width: '1px', height: '16px', margin: '0 6px',
+      backgroundColor: isPaper ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.10)',
+      flexShrink: 0,
     }} aria-hidden />
   );
 
-  // Button builder — wraps shadcn Toggle with IdeaGate token overrides (§11)
+  // F5 — Button builder: ghost hover (barely perceptible), no border on inactive
   const Btn = ({
     pressed, onClick, icon: Icon, label,
   }: { pressed: boolean; onClick: () => void; icon: LucideIcon; label: string }) => (
@@ -133,12 +137,15 @@ function FormattingToolbar({ editor, visible, documentTheme }: ToolbarProps) {
       aria-label={label}
       title={label}
       className={cn(
-        'h-7 w-7 p-0 rounded',
-        'bg-transparent hover:bg-[var(--ig-surface-raised)]',
-        'border-none outline-none focus-visible:ring-1 focus-visible:ring-[var(--ig-emerald)]',
+        'h-7 w-7 p-0',
+        // F5 — no border/outline on inactive; ghost hover only
+        'bg-transparent border-none outline-none',
+        'hover:bg-[rgba(255,255,255,0.08)] hover:rounded-[6px]',
+        'focus-visible:ring-1 focus-visible:ring-[var(--ig-emerald)]',
         '[&_svg]:text-[var(--ig-text-secondary)]',
+        'transition-colors duration-[80ms]',
         pressed
-          ? 'bg-[var(--ig-surface-active)] [&_svg]:!text-[var(--ig-emerald)]'
+          ? 'bg-[var(--ig-surface-active)] rounded-[6px] [&_svg]:!text-[var(--ig-emerald)]'
           : '',
       )}
     >
@@ -147,9 +154,6 @@ function FormattingToolbar({ editor, visible, documentTheme }: ToolbarProps) {
   );
 
   if (!visible) return null;
-
-  // V3 — floating toolbar: visual tokens adapt to document theme
-  const isPaper = documentTheme === 'paper';
 
   return (
     // V3 — floating card above document body, 40px height, elevated border-radius
@@ -189,20 +193,34 @@ function FormattingToolbar({ editor, visible, documentTheme }: ToolbarProps) {
       <Divider />
       <Btn pressed={ts.blockquote} onClick={() => editor?.chain().focus().toggleBlockquote().run()} icon={Quote}        label="Blockquote" />
 
-      {/* Zone B — AI entry point placeholder (Constitution §11 right zone, non-functional M3) */}
-      <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '4px' }}>
-        <Sparkles
-          size={13}
-          style={{ color: 'var(--ig-text-tertiary)', opacity: 0.5 }}
-          aria-hidden
-        />
-        <span style={{
-          fontFamily: 'var(--ig-font-mono)', fontSize: '11px', fontWeight: 500,
-          color: 'var(--ig-text-tertiary)', opacity: 0.5, letterSpacing: '0.04em',
-        }}>
-          AI
-        </span>
-      </div>
+      {/* Zone B — AI pill (F5: gradient + glow, non-functional M3 placeholder) */}
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-hidden
+        style={{
+          marginLeft: 'auto',
+          display: 'flex', alignItems: 'center', gap: '5px',
+          background: 'linear-gradient(135deg, rgba(74,222,128,0.15), rgba(74,222,128,0.05))',
+          border: '1px solid rgba(74,222,128,0.3)',
+          color: '#4ade80',
+          padding: '4px 12px',
+          fontSize: '11.5px',
+          fontWeight: 600,
+          letterSpacing: '0.3px',
+          borderRadius: '100px',
+          boxShadow: '0 0 12px rgba(74,222,128,0.12)',
+          cursor: 'default',
+          transition: 'box-shadow 120ms ease-out',
+          fontFamily: 'var(--ig-font-mono)',
+          flexShrink: 0,
+        }}
+        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 20px rgba(74,222,128,0.20)'; }}
+        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 12px rgba(74,222,128,0.12)'; }}
+      >
+        <Sparkles size={12} />
+        AI
+      </button>
     </div>
   );
 }

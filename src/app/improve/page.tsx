@@ -816,9 +816,14 @@ export default function ImprovePage() {
               data-document-theme={gs.documentTheme}
               style={{
                 ...heroSurface,
-                padding:'32px 40px',
+                // F3 — paper mode: 8px top (card anchored close to toolbar); dark: keep 32px breathing room
+                padding: gs.documentTheme === 'paper' ? '8px 40px 32px' : '32px 40px',
                 // V1 — paper mode: warm off-white outer field so the card reads as elevated
                 backgroundColor: gs.documentTheme === 'paper' ? '#E5E0DA' : undefined,
+                // F4 — paper mode: flex column so card can flex-grow to fill viewport
+                display: gs.documentTheme === 'paper' ? 'flex' : undefined,
+                flexDirection: gs.documentTheme === 'paper' ? 'column' as const : undefined,
+                alignItems: gs.documentTheme === 'paper' ? 'center' : undefined,
               }}
             >
               {/* V1 — paper mode: inner card lifts off the warm field */}
@@ -826,21 +831,25 @@ export default function ImprovePage() {
                 ...readingMeasure,
                 ...(gs.documentTheme === 'paper' ? {
                   maxWidth:'760px',
+                  width:'100%',
                   background:'#FDF8F3',
                   borderRadius:'var(--ig-radius-lg)',
                   boxShadow:'0 4px 32px 0 rgba(0,0,0,0.12), 0 1px 4px 0 rgba(0,0,0,0.08)',
                   padding:'40px 48px',
+                  // F4 — paper card fills remaining viewport height (min), scrolls for long docs
+                  flexGrow: 1,
+                  boxSizing: 'border-box' as const,
                 } : {}),
               }}>
                 {/* B4 — Document Identity Header (Constitution §4) */}
                 <div style={{marginBottom:'16px'}}>
                   {/* Title row: parsed H1 or humanName fallback + V2 pill + save state */}
                   <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'6px'}}>
-                    {/* V5 — title: 22px / 700 / -0.3px tracking */}
+                    {/* F7 — title: 24px / 800 / -0.5px tracking, stronger authority */}
                     <div style={{
-                      fontFamily:'var(--ig-font-sans)',fontSize:'22px',fontWeight:700,
-                      letterSpacing:'-0.3px',lineHeight:1.2,flex:1,
-                      color: gs.documentTheme === 'paper' ? '#1a202c' : '#e2e8f0',
+                      fontFamily:'var(--ig-font-sans)',fontSize:'24px',fontWeight:800,
+                      letterSpacing:'-0.5px',lineHeight:1.2,flex:1,
+                      color: gs.documentTheme === 'paper' ? '#111827' : 'var(--ig-text-primary)',
                     }}>
                       {/^#\s+(.+)/m.exec(rawContent)?.[1] ?? humanName(selected)}
                     </div>
@@ -880,12 +889,12 @@ export default function ImprovePage() {
                       </>)}
                     </div>
                   </div>
-                  {/* V5 — stage label: 11px / 500 / uppercase / 0.8px tracking / 0.7 opacity */}
+                  {/* F7 — stage label: 1.2px tracking (up from 0.8px), 0.5 opacity (more recessive) */}
                   <div style={{
                     fontFamily:FONT_MONO,fontSize:'11px',fontWeight:500,
-                    textTransform:'uppercase',letterSpacing:'0.8px',
+                    textTransform:'uppercase',letterSpacing:'1.2px',
                     color: gs.documentTheme === 'paper' ? '#4a5568' : '#64748b',
-                    opacity:0.7,marginBottom:'4px',
+                    opacity:0.5,marginBottom:'4px',
                   }}>
                     {STAGE_LABELS[parseInt(selected.split('-')[0],10)] ?? ''}
                   </div>
@@ -898,7 +907,9 @@ export default function ImprovePage() {
                   {runtime.isStale(selected)&&<div style={{...T.caption,color:'#f59e0b',padding:'1px 6px',border:'1px solid #f59e0b33',borderRadius:'2px'}}>△ STALE</div>}
                   {runtime.getVersion(selected)>0&&<div style={{...T.caption,color:'#4ade80',padding:'1px 6px',border:'1px solid #4ade8033',borderRadius:'2px'}}>v{runtime.getVersion(selected)}</div>}
                 </div>
-                {parseWarn&&<div style={{marginBottom:'16px',padding:'7px 10px',backgroundColor:'#0a0a00',border:'1px solid #f59e0b33',borderRadius:'3px',...T.caption,color:'#f59e0b88'}}>{parseWarn}</div>}
+                {/* F1 — suppress parse banner when TipTap is active: TipTap renders raw markdown
+                    directly and doesn't use the V2 parse result — the warning is meaningless here */}
+                {parseWarn&&!gs.useTipTapRenderer&&<div style={{marginBottom:'16px',padding:'7px 10px',backgroundColor:'#0a0a00',border:'1px solid #f59e0b33',borderRadius:'3px',...T.caption,color:'#f59e0b88'}}>{parseWarn}</div>}
                 {/* B3 — main reading pane is editable; split/preview panes remain read-only */}
                 <Doc content={rawContent} fs={12} anchors arrivalId={arrivalSectionId} reducedMotion={reducedMotion} onPresetSelect={setIntent} editable onSave={handleSave} onContentChange={handleContentChange}/>
               </div>

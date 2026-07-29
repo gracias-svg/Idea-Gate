@@ -71,6 +71,20 @@ const AGENT_DEFS = [
   },
 ] as const;
 
+// O2 — SSE agent name (raw coordinator output) → display name map.
+// Mission spec: CO→Coordinator · PS→Product Strategy Agent · RE→Research Agent ·
+//               UX→UX Design Agent · AR→Architect Agent · QA→QA Agent.
+// Agents not in this map are rendered as-is (handles CodeAgent, DataAgent, future agents).
+const SSE_AGENT_DISPLAY: Record<string, string> = {
+  ProductStrategyAgent: 'Product Strategy Agent',
+  ResearchAgent:        'Research Agent',
+  DataAgent:            'Data Agent',
+  UXAgent:              'UX Design Agent',
+  ArchitectAgent:       'Architect Agent',
+  CodeAgent:            'Code Agent',
+  QAAgent:              'QA Agent',
+};
+
 type DashTab = 'STATUS' | 'AGENTS' | 'FEED' | 'CONTROLS';
 type OfficeView = 'analytics' | 'agent-activity';
 
@@ -199,6 +213,10 @@ export default function OfficePage() {
   const [activeTab,    setActiveTab]    = useState<DashTab>('STATUS');
   const [phaserConfig, setPhaserConfig] = useState<OfficeSceneConfig>({ agents: [] });
   const [officeView, setOfficeView] = useState<OfficeView>('analytics');
+  // O1 — SSE subscription state (mirrors StatusBar.tsx pattern)
+  const [isRunning,    setIsRunning]    = useState<boolean | null>(null);
+  const [currentAgent, setCurrentAgent] = useState<string | null>(null);
+  const esRef = useRef<EventSource | null>(null);
   const [journeyState, setJourneyState] = useState<{
     currentStage: number;
     stages: Record<string, any>;
@@ -217,6 +235,76 @@ export default function OfficePage() {
     const id = setInterval(refresh, 4000);
     return ()=>clearInterval(id);
   },[]);
+
+  // O1 — Poll /api/run to detect isRunning state, which drives the SSE subscription.
+  // Also provides S3 page-refresh recovery: if a run is active, restore currentStage
+  // and currentAgent from .current-run.json fields written by the SSE route.
+  useEffect(()=>{
+    let cancelled = false;
+    const poll = () => {
+      fetch('/api/run').then(r=>r.json()).then(d=>{
+        if (cancelled) return;
+        setIsRunning(d.isRunning ?? false);
+        if (d.isRunning) {
+          if (d.currentStage != null) setCurrentStage(d.currentStage);
+          if (d.currentAgent != null) setCurrentAgent(d.currentAgent);
+        }
+      }).catch(()=>{});
+    };
+    poll();
+    const id = setInterval(poll, isRunning ? 2000 : 4000);
+    return ()=>{ cancelled = true; clearInterval(id); };
+  },[isRunning]);
+
+  // O1 — SSE subscription: mirrors StatusBar.tsx exactly.
+  // Open when isRunning transitions to true; close on run_complete / run_stopped / unmount.
+  // onerror: intentionally empty — browser auto-reconnects per EventSource spec.
+  // (Calling es.close() in onerror permanently disables reconnection: Mission 8 Bug Fix 2.)
+  useEffect(()=>{
+    if (!isRunning) {
+      if (esRef.current) { esRef.current.close(); esRef.current = null; }
+      setCurrentAgent(null);
+      return;
+    }
+    if (esRef.current) return; // already open
+
+    const es = new EventSource('/api/stream');
+    esRef.current = es;
+
+    es.onmessage = (evt) => {
+      let data: { type: string; stage?: number; agent?: string };
+      try { data = JSON.parse(evt.data) as typeof data; } catch { return; }
+
+      switch (data.type) {
+        case 'stage_start':
+          // O4 — real-time stage update
+          if (typeof data.stage === 'number') setCurrentStage(data.stage);
+          setCurrentAgent(null); // agent announced on next event
+          break;
+        case 'agent_active':
+          // O2/O3 — real-time agent name
+          setCurrentAgent(data.agent ?? null);
+          break;
+        case 'stage_retry':
+          setCurrentAgent(null);
+          break;
+        case 'run_complete':
+        case 'run_stopped':
+          setCurrentAgent(null);
+          es.close();
+          esRef.current = null;
+          break;
+        default:
+          break;
+      }
+    };
+
+    es.onerror = () => {
+      // Do NOT call es.close() here — browser retries automatically every 3s per spec.
+    };
+
+    return ()=>{ es.close(); esRef.current = null; };
+  },[isRunning]);
 
   // Build Phaser agent config from real runtime data
   useEffect(()=>{
@@ -326,17 +414,38 @@ export default function OfficePage() {
               <OrchestrationGraph
                 agents={AGENT_DEFS as any}
                 stages={journeyState.stages}
-                currentStage={journeyState.currentStage}
+                currentStage={currentStage}
                 agentsByStage={journeyState.agentsByStage}
               />
             </div>
             <div style={{flex:1}}>
               <ExecutionSummary
                 stages={journeyState.stages}
-                currentStage={journeyState.currentStage}
+                currentStage={currentStage}
               />
             </div>
           </div>
+          {/* O2/O3 — Active agent indicator: SSE real-time, IdeaGate tokens only */}
+          <div style={{display:'flex', alignItems:'center', gap:'10px', padding:'5px 10px',
+            backgroundColor:'#040b14', border:'1px solid #0a1a2e', borderRadius:'3px', flexShrink:0}}>
+            <div style={{width:'6px', height:'6px', borderRadius:'50%', flexShrink:0,
+              backgroundColor: isRunning && currentAgent ? '#818cf8' : '#1e293b',
+              ...(isRunning && currentAgent ? {animation:'pulse 1.5s infinite'} : {})}}/>
+            <span style={{fontSize:'12px', color:'#2a5a30', letterSpacing:'0.08em', fontWeight:700, flexShrink:0}}>
+              ACTIVE AGENT
+            </span>
+            <span style={{fontSize:'12px', color: isRunning && currentAgent ? '#818cf8' : '#94a3b8'}}>
+              {isRunning && currentAgent
+                ? (SSE_AGENT_DISPLAY[currentAgent] ?? currentAgent)
+                : isRunning ? '—' : 'No run active'}
+            </span>
+            <span style={{marginLeft:'auto', fontSize:'11px', color:'#94a3b8', flexShrink:0}}>
+              {isRunning
+                ? `Stage ${currentStage}: ${STAGE_LABEL[currentStage] ?? 'Complete'}`
+                : currentStage >= 14 ? 'Complete' : '—'}
+            </span>
+          </div>
+
           <div style={{flex:1, overflow:'hidden'}}>
             <LiveLogStream events={runtime.state.events} maxItems={20} />
           </div>

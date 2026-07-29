@@ -2,21 +2,31 @@
 
 // src/components/shell/NavRail.tsx
 // Mission 14 Phase 1 — Global Shell.
-// Vertical navigation rail. Replaces the desk/improve/office tab buttons
-// that previously lived in TopBar.tsx. Reads routes from shell-constants.ts
-// only — no hardcoded paths in JSX.
+// Mission 7 B1 — Collapsible nav rail.
 //
-// Note: this project does not have Tailwind configured (no tailwind.config,
-// no @tailwind directives in globals.css). Styling below uses inline style
-// objects + CSS custom properties, matching the existing TopBar.tsx convention.
+// Collapse control lives INSIDE the rail (bottom, below Settings) — not an
+// external floating tab. Reuses usePanelState('nav') for localStorage
+// persistence, same pattern as Studio's left/right panels.
+//
+// Collapsed: ~56px wide, icon-only, labels hidden. Native `title` attribute
+// provides hover tooltips — no extra component needed.
+//
+// Width transitions via CSS transition (200ms ease-in-out) matching the
+// Studio panel collapse timing (Constitution §13: Save state transition 200ms
+// ease-in-out is the nearest motion primitive).
+//
+// Note: no Tailwind configured in this project — all styling is inline
+// style objects + CSS custom properties, matching TopBar.tsx convention.
 
 import { usePathname, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import {
   LayoutDashboard, Wand2, Network, Settings2, HelpCircle,
+  ChevronLeft, ChevronRight,
   type LucideIcon,
 } from 'lucide-react';
 import { NAV_ITEMS } from './shell-constants';
+import { usePanelState } from '@/lib/usePanelState';
 
 const ICON_MAP: Record<string, LucideIcon> = {
   LayoutDashboard,
@@ -25,11 +35,17 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Settings2,
 };
 
-const RAIL_WIDTH = 240;
+const RAIL_WIDTH           = 240;
+const RAIL_COLLAPSED_WIDTH = 56;
 
 export default function NavRail() {
   const pathname = usePathname();
   const router   = useRouter();
+
+  // B1 — Collapsible rail. key: 'nav', default 240px, default expanded.
+  // Hydration-safe: usePanelState always inits with defaultCollapsed=false
+  // (matches SSR), then syncs from localStorage after mount.
+  const { collapsed, toggle } = usePanelState('nav', RAIL_WIDTH, false);
 
   // Empty state — no configured nav items. Render nothing rather than an
   // empty shell frame.
@@ -67,17 +83,33 @@ export default function NavRail() {
       <button
         key={item.id}
         onClick={() => router.push(item.href)}
+        // Native tooltip: always-on, especially useful when collapsed. Per Constitution
+        // §15 (hover tooltip after 400ms delay) — native `title` matches this exactly.
         title={item.label}
+        aria-label={item.label}
+        // C4 — ig-interactive-row adds 80ms ease-out background hover;
+        // active state is handled by the motion.div overlay (not data-active).
+        className="ig-interactive-row"
         style={{
           position: 'relative',
-          display: 'flex', alignItems: 'center', gap: '12px',
-          width: '100%', padding: '10px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          // Collapsed: center the icon. Expanded: left-align with gap for label.
+          justifyContent: collapsed ? 'center' : 'flex-start',
+          gap: collapsed ? 0 : '12px',
+          width: '100%',
+          // Collapsed: equal padding both sides to center icon in 56px.
+          // Expanded: original 10px 16px.
+          padding: collapsed ? '10px 18px' : '10px 16px',
           background: 'transparent', border: 'none', cursor: 'pointer',
           fontFamily: "'JetBrains Mono','Fira Code',monospace",
           fontSize: 'var(--text-label)',
           color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
           transition: 'color 150ms var(--ease-standard)',
           zIndex: 1,
+          // Clip label text during collapse animation
+          overflow: 'hidden',
+          whiteSpace: 'nowrap',
         }}
         onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'; }}
         onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'; }}
@@ -87,7 +119,8 @@ export default function NavRail() {
             layoutId="nav-active-indicator"
             transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
             style={{
-              position: 'absolute', inset: '2px 8px',
+              position: 'absolute',
+              inset: collapsed ? '2px 4px' : '2px 8px',
               background: 'var(--accent-muted)',
               border: '1px solid var(--border-strong)',
               borderRadius: 'var(--radius-md)',
@@ -101,7 +134,9 @@ export default function NavRail() {
           color={isActive ? 'var(--accent-primary)' : 'currentColor'}
           style={{ flexShrink: 0 }}
         />
-        <span>{item.label}</span>
+        {/* Label — hidden in collapsed state. CSS overflow:hidden + whiteSpace:nowrap
+            clips gracefully during the width animation without flashing. */}
+        {!collapsed && <span>{item.label}</span>}
       </button>
     );
   };
@@ -109,7 +144,10 @@ export default function NavRail() {
   return (
     <nav
       style={{
-        width: RAIL_WIDTH,
+        // B1 — width animates between expanded (240px) and collapsed (56px).
+        // Same 200ms ease-in-out as Studio's left/right panel collapse.
+        width: collapsed ? `${RAIL_COLLAPSED_WIDTH}px` : `${RAIL_WIDTH}px`,
+        transition: 'width 200ms ease-in-out',
         flexShrink: 0,
         height: '100%',
         display: 'flex',
@@ -117,6 +155,7 @@ export default function NavRail() {
         background: '#0a1a0e',
         borderRight: '1px solid #1a3a20',
         padding: '12px 0',
+        overflow: 'hidden',
       }}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -128,6 +167,38 @@ export default function NavRail() {
           {renderItem(settingsItem)}
         </div>
       )}
+
+      {/* B1 — Collapse toggle: inside the rail, full-width, 32px tall, below Settings.
+          Chevron points left (collapse) or right (expand), matching the direction
+          the rail moves. No external floating tab — control lives in the rail itself. */}
+      <button
+        onClick={toggle}
+        aria-label={collapsed ? 'Expand navigation rail' : 'Collapse navigation rail'}
+        title={collapsed ? 'Expand navigation' : 'Collapse navigation'}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          width: '100%', height: '32px', flexShrink: 0,
+          background: 'none', border: 'none', cursor: 'pointer',
+          borderTop: '1px solid #1a3a2033',
+          color: '#334155',
+          marginTop: '4px',
+          // Subtle hover: same 80ms ease-out the rest of the rail uses
+          transition: 'color 80ms ease-out, background-color 80ms ease-out',
+        }}
+        onMouseEnter={e => {
+          (e.currentTarget as HTMLButtonElement).style.color = '#64748b';
+          (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'rgba(255,255,255,0.04)';
+        }}
+        onMouseLeave={e => {
+          (e.currentTarget as HTMLButtonElement).style.color = '#334155';
+          (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent';
+        }}
+      >
+        {collapsed
+          ? <ChevronRight size={14} strokeWidth={1.5} />
+          : <ChevronLeft  size={14} strokeWidth={1.5} />
+        }
+      </button>
     </nav>
   );
 }

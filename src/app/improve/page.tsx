@@ -12,7 +12,8 @@
 // - RuntimeContext integration preserved
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { CheckCircle2, Moon, Sun } from 'lucide-react';
+import { CheckCircle2, Moon, Sun, ChevronLeft, ChevronRight, MoreHorizontal } from 'lucide-react';
+import { usePanelState } from '@/lib/usePanelState';
 import { useGlobalStore, getModelMeta, isModelFree } from '@/lib/GlobalStore';
 import { parseContent, parseContentDetailed } from '@/lib/parseContent';
 import { useRuntime, getTransitiveDownstream } from '@/lib/RuntimeContext';
@@ -25,8 +26,13 @@ import { humanName } from '@/lib/artifactDisplay';
 import { parseSections } from '@/lib/parseSections';
 import { scrollElementIntoView } from '@/lib/smoothScroll';
 import { workspaceMotion } from '@/components/workspace/motion';
-import WorkspacePanel from '@/components/workspace/WorkspacePanel';
-import AttachmentsPanel from '@/components/workspace/AttachmentsPanel';
+// WorkspacePanel + AttachmentsPanel are entirely client-only (localStorage,
+// browser APIs throughout their component trees). Skipping SSR for these two
+// eliminates hydration mismatches from any browser-only initialization inside
+// them or their children (ProjectHeader, ArtifactTree, etc.).
+import dynamic from 'next/dynamic';
+const WorkspacePanel = dynamic(() => import('@/components/workspace/WorkspacePanel'), { ssr: false });
+const AttachmentsPanel = dynamic(() => import('@/components/workspace/AttachmentsPanel'), { ssr: false });
 import { CollaboratorSlot } from '@/components/workspace/CollaboratorSlots';
 import { LocalProjectRepository, ensureDefaultProject, Project, ProjectRepository } from '@/lib/projectRepository';
 
@@ -258,6 +264,33 @@ export default function ImprovePage() {
   // Panel tabs
   const [panel, setPanel] = useState<'graph'|'events'|'reasoning'>('graph');
 
+  // Hydration guard — WorkspacePanel and its children (ProjectHeader, ArtifactTree
+  // etc.) contain browser-only initialisation that causes SSR/client divergence.
+  // Gating on `mounted` ensures they never appear in the server-rendered HTML at all;
+  // React hydrates the left-panel container as an empty div, then WorkspacePanel
+  // mounts client-side without any mismatch. The 'use client' boundary doesn't
+  // prevent SSR; only this guard does.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+
+  // C2 — collapsible panels (usePanelState persists to localStorage)
+  const leftPanel  = usePanelState('left',  210, false);
+  const rightPanel = usePanelState('right', 270, false);
+
+  // C3 — workspace view switcher (list | grid), persisted
+  // Hydration-safe: always start with 'list' (matches SSR), sync from localStorage after mount.
+  const [workspaceView, setWorkspaceView] = useState<'list'|'grid'>('list');
+  useEffect(() => {
+    const stored = localStorage.getItem('ig_workspace_view') as 'list'|'grid'|null;
+    if (stored === 'list' || stored === 'grid') setWorkspaceView(stored);
+  }, []);
+  const [wsMenuOpen, setWsMenuOpen] = useState(false);
+  const setWorkspaceViewPersist = (v: 'list'|'grid') => {
+    setWorkspaceView(v);
+    try { localStorage.setItem('ig_workspace_view', v); } catch { /* quota */ }
+    setWsMenuOpen(false);
+  };
+
   // Lifecycle rail — hover focus + reduced-motion honouring (DIL 15 accessibility)
   const [hoveredStage,  setHoveredStage]  = useState<number|null>(null);
   const [reducedMotion, setReducedMotion] = useState(false);
@@ -349,10 +382,17 @@ export default function ImprovePage() {
   }, [uiState, rawContent]);
 
   useEffect(()=>{
-    fetch('/api/data').then(r=>r.json()).then(d=>{
-      setArtifacts(d.artifacts??[]);
-      setStage(d.currentStage??0);
-    }).catch(()=>{});
+    // Poll every 4 s so the lifecycle rail and artifact tree update automatically
+    // during a run — without this, stage and artifacts were frozen at page-load.
+    const load = () => {
+      fetch('/api/data').then(r=>r.json()).then(d=>{
+        setArtifacts(d.artifacts??[]);
+        setStage(d.currentStage??0);
+      }).catch(()=>{});
+    };
+    load();
+    const id = setInterval(load, 4000);
+    return () => clearInterval(id);
   },[]);
 
   // Workflow Proof (Cmd+K) — "jump to artifact" entry point. The palette
@@ -725,9 +765,18 @@ export default function ImprovePage() {
       {/* ── Main layout ── */}
       <div style={{flex:1,display:'flex',overflow:'hidden'}}>
 
-        {/* Left sidebar — Workspace panel (Sprint 07, replaces the old flat ARTIFACTS list) */}
-        <div style={{width:'210px',flexShrink:0,borderRight:'1px solid #0a1a2e',backgroundColor:'#020c06',overflow:'hidden'}}>
-          <WorkspacePanel
+        {/* C2 — Left sidebar: collapsible, 200ms ease-in-out (Constitution §13 motion) */}
+        <div style={{
+          width: leftPanel.collapsed ? '0px' : '210px',
+          flexShrink: 0,
+          borderRight: leftPanel.collapsed ? 'none' : '1px solid #0a1a2e',
+          backgroundColor: '#020c06',
+          overflow: 'hidden',
+          transition: 'width 200ms ease-in-out, border-right 200ms ease-in-out',
+        }}>
+          {/* Inner fixed-width wrapper so WorkspacePanel doesn't reflow during animation */}
+          <div style={{ width: '210px', height: '100%' }}>
+          {mounted && <WorkspacePanel
             artifacts={artifacts}
             currentStage={stage}
             selected={selected}
@@ -745,6 +794,8 @@ export default function ImprovePage() {
             onProjectChange={setActiveProject}
             collaboratorSlots={COLLABORATOR_SLOTS}
             events={runtime.state.events}
+            workspaceView={workspaceView}
+            onWorkspaceViewChange={setWorkspaceViewPersist}
             treeFooter={selected&&downstreamCount>0&&(
               <div style={{margin:'8px 12px'}}>
                 <Panel title={`DOWNSTREAM · ${downstreamCount}`} elevation={1} density="compact" className="rounded-sm">
@@ -756,7 +807,29 @@ export default function ImprovePage() {
                 </Panel>
               </div>
             )}
-          />
+          />}
+          </div>{/* end inner fixed-width wrapper */}
+        </div>
+
+        {/* C2 — Left panel toggle tab (zero-width boundary, tab hangs outside) */}
+        <div style={{ position: 'relative', flexShrink: 0, width: '0px', zIndex: 5 }}>
+          <button
+            onClick={leftPanel.toggle}
+            aria-label={leftPanel.collapsed ? 'Expand workspace panel' : 'Collapse workspace panel'}
+            title={leftPanel.collapsed ? 'Expand workspace' : 'Collapse workspace'}
+            style={{
+              position: 'absolute', left: '0px', top: '50%',
+              transform: 'translateY(-50%)',
+              width: '20px', height: '48px',
+              background: 'var(--ig-surface-raised)',
+              borderRadius: '0 6px 6px 0',
+              border: 'none', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#475569',
+            }}
+          >
+            {leftPanel.collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+          </button>
         </div>
 
         {/* Centre content */}
@@ -818,8 +891,9 @@ export default function ImprovePage() {
                 ...heroSurface,
                 // F3 — paper mode: 8px top (card anchored close to toolbar); dark: keep 32px breathing room
                 padding: gs.documentTheme === 'paper' ? '8px 40px 32px' : '32px 40px',
-                // V1 — paper mode: warm off-white outer field so the card reads as elevated
-                backgroundColor: gs.documentTheme === 'paper' ? '#E5E0DA' : undefined,
+                // C1 — paper mode: deeper warm tone creates intentional depth gap between
+                // outer field and card surface, softening the hard canvas→white seam
+                backgroundColor: gs.documentTheme === 'paper' ? '#D5CFC9' : undefined,
                 // F4 — paper mode: flex column so card can flex-grow to fill viewport
                 display: gs.documentTheme === 'paper' ? 'flex' : undefined,
                 flexDirection: gs.documentTheme === 'paper' ? 'column' as const : undefined,
@@ -833,8 +907,10 @@ export default function ImprovePage() {
                   maxWidth:'760px',
                   width:'100%',
                   background:'#FDF8F3',
-                  borderRadius:'var(--ig-radius-lg)',
-                  boxShadow:'0 4px 32px 0 rgba(0,0,0,0.12), 0 1px 4px 0 rgba(0,0,0,0.08)',
+                  // C1 — softer shadow (was 4px 32px dramatic drop); 8px radius reads
+                  // as integrated rather than a distinct widget (12px was too card-like)
+                  borderRadius:'8px',
+                  boxShadow:'0 1px 2px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.06)',
                   padding:'40px 48px',
                   // F4 — paper card fills remaining viewport height (min), scrolls for long docs
                   flexGrow: 1,
@@ -955,8 +1031,38 @@ export default function ImprovePage() {
           {error&&<div style={{padding:'8px 16px',backgroundColor:'#150005',borderTop:'1px solid #f8717133',flexShrink:0,fontSize:'11px',color:'#f87171'}}>⚠ {error}</div>}
         </div>
 
-        {/* Right panel */}
-        <div style={{width:'270px',flexShrink:0,borderLeft:'1px solid #0a1a2e',backgroundColor:'#020c06',display:'flex',flexDirection:'column',overflowY:'auto'}}>
+        {/* C2 — Right panel toggle tab (mirrored: tab hangs to the left) */}
+        <div style={{ position: 'relative', flexShrink: 0, width: '0px', zIndex: 5 }}>
+          <button
+            onClick={rightPanel.toggle}
+            aria-label={rightPanel.collapsed ? 'Expand AI panel' : 'Collapse AI panel'}
+            title={rightPanel.collapsed ? 'Expand AI panel' : 'Collapse AI panel'}
+            style={{
+              position: 'absolute', right: '0px', top: '50%',
+              transform: 'translateY(-50%)',
+              width: '20px', height: '48px',
+              background: 'var(--ig-surface-raised)',
+              borderRadius: '6px 0 0 6px',
+              border: 'none', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#475569',
+            }}
+          >
+            {rightPanel.collapsed ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
+          </button>
+        </div>
+
+        {/* C2 — Right panel: collapsible */}
+        <div style={{
+          width: rightPanel.collapsed ? '0px' : '270px',
+          flexShrink: 0,
+          borderLeft: rightPanel.collapsed ? 'none' : '1px solid #0a1a2e',
+          backgroundColor: '#020c06',
+          overflow: 'hidden',
+          transition: 'width 200ms ease-in-out, border-left 200ms ease-in-out',
+        }}>
+          {/* Inner fixed-width wrapper so content doesn't reflow during animation */}
+          <div style={{width:'270px',flexShrink:0,display:'flex',flexDirection:'column',overflowY:'auto',height:'100%'}}>
           <div style={{padding:'16px 14px'}}>
             {/* Primary act of the Direct aide: brief the collaborator (human voice). */}
             <div style={{...T.label,color:'#2a5a30',marginBottom:'8px'}}>IMPROVEMENT INTENT</div>
@@ -984,7 +1090,7 @@ export default function ImprovePage() {
             {/* Refinements below recede — quieter labels, more whitespace between groups. */}
             <div style={{...T.label,color:'#2a5a30',marginTop:'22px',marginBottom:'7px'}}>PRESETS</div>
             <div style={{display:'flex',flexWrap:'wrap',gap:'4px'}}>
-              {PRESETS.map(p=><button key={p.label} onClick={()=>setIntent(p.intent)} className="ig-preset-chip" style={{...MONO,padding:'3px 7px',fontSize:'var(--ig-t-caption-size)',fontWeight:500}}>{p.label}</button>)}
+              {PRESETS.map(p=><button key={p.label} onClick={()=>setIntent(p.intent)} className="ig-preset-chip ig-interactive-row" style={{...MONO,padding:'3px 7px',fontSize:'var(--ig-t-caption-size)',fontWeight:500}}>{p.label}</button>)}
             </div>
 
             {/* Reference docs — Sprint 07 (W5): same uploader/state, now with real per-type chips */}
@@ -1120,7 +1226,8 @@ export default function ImprovePage() {
               {(result.impactWarnings?.length??0)>0&&result.impactWarnings.map((w,i)=><div key={i} style={{padding:'6px 8px',backgroundColor:'#0a0800',border:'1px solid #f59e0b33',borderRadius:'3px',fontSize:'var(--ig-t-caption-size)',color:'#f59e0b99',lineHeight:1.6,marginBottom:'4px'}}>▲ {w}</div>)}
             </div>
           )}
-        </div>
+          </div>{/* end inner fixed-width right panel wrapper */}
+        </div>{/* end collapsible right panel */}
       </div>
     </div>
   );

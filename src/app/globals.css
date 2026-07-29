@@ -904,3 +904,35 @@ body {
   .ig-view-trigger,
   .ig-view-row { transition: none; }
 }
+
+/* =========================================================
+   Mission 6 — C4: Universal Interactive Row
+   .ig-interactive-row applies consistent hover feedback across
+   all three surface types that contain tappable rows.
+
+   Dark surface  (sidebar, panels)      — 80ms ease-out, rgba(255,255,255,0.06)
+   Paper surface ([data-document-theme="paper"]) — rgba(0,0,0,0.04)
+   Active/selected state                — emerald-tint + 2px left border
+   (Constitution §15: 80ms, ease-out is the hover contract for dark surfaces)
+   ========================================================= */
+.ig-interactive-row {
+  border-radius: 6px;
+  transition: background-color 80ms ease-out;
+}
+.ig-interactive-row:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+.ig-interactive-row.ig-interactive-row--active,
+.ig-interactive-row[data-active="true"] {
+  background-color: rgba(74, 222, 128, 0.10);
+  border-left: 2px solid #4ade80;
+}
+
+/* Paper surface override — lighter hover tint on warm background */
+[data-document-theme="paper"] .ig-interactive-row:hover {
+  background-color: rgba(0, 0, 0, 0.04);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ig-interactive-row { transition: none; }
+}

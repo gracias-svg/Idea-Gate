@@ -2,29 +2,55 @@
 
 // src/components/shell/StatusBar.tsx
 // Mission 14 Phase 1 — Global Shell.
+// Mission 8 S2 — SSE subscription for real-time stage updates.
 //
-// EP-3 (all displayed values trace to real sources): there is no single
-// shared "runtimeState" for isRunning/currentStage in this codebase today —
-// TopBar.tsx tracks it via local polling of GET /api/data and GET /api/run.
-// StatusBar polls the same two endpoints directly (same source of truth,
-// same cadence convention) rather than inventing a new store field.
-// Model display resolves settings.defaultModel through the model registry,
-// exactly as TopBar/SettingsModal do.
+// Architecture:
+//   - Polling (existing): GET /api/data every 2-4s for currentStage.
+//     GET /api/run every 2-4s for isRunning. These remain as the
+//     fallback/recovery mechanism and for all state that SSE doesn't cover.
+//   - SSE (new): EventSource to /api/stream when isRunning is true.
+//     Updates currentStage and currentAgent in real-time from coordinator
+//     log events. Closes cleanly on run_complete / run_stopped / unmount.
+//
+// The SSE subscription is ADDITIVE — it does not replace polling. If the
+// SSE stream fails, polling continues to provide correct (slightly delayed)
+// state. This preserves the existing behavior as a reliable fallback.
+//
+// The isRunning → true transition (detected by polling) is the SSE trigger.
+// The SSE stream closes itself on run_complete; polling detects the final
+// isRunning → false after the coordinator exits.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useGlobalStore } from '@/lib/GlobalStore';
 import { getModelById, resolveModelId } from '@/lib/model-registry';
 import { STAGE_COUNT, formatStageDisplay } from '@/lib/execution/adapters/orchestration';
 
 type RunStatus = 'idle' | 'running' | 'done' | 'error';
 
+// SSE event shapes (matches /api/stream/route.ts)
+interface StreamEvent {
+  type:    'connected' | 'stage_start' | 'agent_active' | 'stage_retry' | 'agent_error' | 'run_complete' | 'run_stopped' | 'error';
+  stage?:  number;
+  name?:   string;
+  agent?:  string;
+  message?: string;
+}
+
 export default function StatusBar() {
   const { state: { settings } } = useGlobalStore();
 
-  const [currentStage, setCurrentStage] = useState<number | null>(null);
-  const [isRunning,    setIsRunning]    = useState<boolean | null>(null);
-  const [hasError,     setHasError]     = useState(false);
+  const [currentStage,  setCurrentStage]  = useState<number | null>(null);
+  const [isRunning,     setIsRunning]     = useState<boolean | null>(null);
+  const [hasError,      setHasError]      = useState(false);
+  // S2 — real-time agent name from SSE stream (shown while run is active)
+  const [currentAgent,  setCurrentAgent]  = useState<string | null>(null);
 
+  // Ref to the active EventSource so we can close it from multiple effects
+  const esRef = useRef<EventSource | null>(null);
+
+  // ── Existing polling ──────────────────────────────────────────────────────
+  // Unchanged from pre-Mission-8 — SSE adds real-time updates on top;
+  // polling provides recovery after page refresh and final state cleanup.
   useEffect(() => {
     let cancelled = false;
 
@@ -36,7 +62,19 @@ export default function StatusBar() {
 
       fetch('/api/run')
         .then(r => r.json())
-        .then(d => { if (!cancelled) { setIsRunning(d.isRunning ?? false); setHasError(false); } })
+        .then(d => {
+          if (!cancelled) {
+            setIsRunning(d.isRunning ?? false);
+            setHasError(false);
+            // S3 — restore real-time state on page refresh from .current-run.json
+            // fields written by the SSE route. Only applied when a run is active
+            // so we don't overwrite the post-run idle display with stale values.
+            if (d.isRunning) {
+              if (d.currentStage != null) setCurrentStage(d.currentStage);
+              if (d.currentAgent != null) setCurrentAgent(d.currentAgent);
+            }
+          }
+        })
         .catch(() => { if (!cancelled) setHasError(true); });
     };
 
@@ -45,7 +83,95 @@ export default function StatusBar() {
     return () => { cancelled = true; clearInterval(id); };
   }, [isRunning]);
 
-  // Empty state — store/poll data not yet available on first paint.
+  // ── S2 — SSE subscription ─────────────────────────────────────────────────
+  // Open an EventSource when isRunning transitions to true.
+  // Close it when isRunning transitions back to false, or when the stream
+  // itself emits run_complete / run_stopped.
+  useEffect(() => {
+    // Only open SSE when we know the run is active.
+    // isRunning === null means data not yet loaded — wait.
+    if (!isRunning) {
+      // Run ended or not started — close any existing stream
+      if (esRef.current) {
+        esRef.current.close();
+        esRef.current = null;
+      }
+      // Clear transient SSE-only state when run ends
+      setCurrentAgent(null);
+      return;
+    }
+
+    // Run is active — open EventSource if not already open
+    if (esRef.current) return; // already open from a previous effect run
+
+    const es = new EventSource('/api/stream');
+    esRef.current = es;
+
+    es.onmessage = (evt) => {
+      let data: StreamEvent;
+      try { data = JSON.parse(evt.data) as StreamEvent; }
+      catch { return; }
+
+      switch (data.type) {
+        case 'stage_start':
+          // Real-time stage update — faster than waiting for the next poll
+          if (typeof data.stage === 'number') setCurrentStage(data.stage);
+          setCurrentAgent(null); // agent will be announced on next event
+          break;
+
+        case 'agent_active':
+          setCurrentAgent(data.agent ?? null);
+          break;
+
+        case 'stage_retry':
+          // Stage is being re-run — keep currentStage as-is
+          setCurrentAgent(null);
+          break;
+
+        case 'run_complete':
+        case 'run_stopped':
+          // Stream will close itself; we clear agent state here
+          setCurrentAgent(null);
+          es.close();
+          esRef.current = null;
+          break;
+
+        case 'error':
+          // Non-fatal: log to console, don't set hasError (that's for polling failures)
+          console.warn('[StatusBar SSE] coordinator error:', data.message);
+          break;
+
+        case 'connected':
+        case 'agent_error':
+        default:
+          break;
+      }
+    };
+
+    es.onerror = () => {
+      // Do NOT call es.close() here. The EventSource spec provides built-in
+      // automatic reconnection (3 s retry) when a connection drops. Calling
+      // close() disables that retry permanently. In development, Next.js hot-
+      // reloads terminate open connections — without auto-reconnect the agent
+      // name would vanish after the first file save and never recover.
+      //
+      // esRef.current intentionally left pointing to the reconnecting EventSource
+      // so the `if (esRef.current) return` guard above prevents a duplicate.
+      // When the run ends, the !isRunning branch closes it properly.
+      //
+      // Polling continues to provide currentStage during the 3 s retry window.
+    };
+
+    // Cleanup: close EventSource on effect teardown (component unmount,
+    // or isRunning changing — the latter is handled by the 'if (!isRunning)'
+    // branch above, but we close defensively here too).
+    return () => {
+      es.close();
+      esRef.current = null;
+    };
+  }, [isRunning]);
+
+  // ── Derived display state ─────────────────────────────────────────────────
   const dataReady = currentStage !== null && isRunning !== null;
 
   const status: RunStatus = hasError
@@ -58,9 +184,12 @@ export default function StatusBar() {
           ? 'done'
           : 'idle';
 
+  // Agent suffix — shown while a run is active and we know which agent is working
+  const agentSuffix = isRunning && currentAgent ? ` · ${currentAgent}` : '';
+
   const statusLabel: Record<RunStatus, string> = {
     idle:    'Ready',
-    running: `Running Stage ${currentStage ?? 0}`,
+    running: `Running Stage ${currentStage ?? 0}${agentSuffix}`,
     done:    'Complete',
     error:   'Error',
   };
@@ -92,7 +221,7 @@ export default function StatusBar() {
 
   return (
     <div style={barStyle}>
-      {/* Left slot — run status */}
+      {/* Left slot — run status (includes real-time agent name via SSE) */}
       <span style={{ color: statusColor }}>
         {dataReady ? statusLabel[status] : '--'}
       </span>

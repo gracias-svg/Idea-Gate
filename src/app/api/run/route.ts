@@ -84,10 +84,13 @@ export async function GET() {
       // File exists and PID is alive (or run is < 30 min old) — restore state
       isRunning = true;
       return NextResponse.json({
-        isRunning: true,
-        idea:      data.idea      ?? '',
-        model:     data.model     ?? '',
-        startedAt: data.startedAt ?? '',
+        isRunning:    true,
+        idea:         data.idea         ?? '',
+        model:        data.model        ?? '',
+        startedAt:    data.startedAt    ?? '',
+        // S3 — real-time stage/agent written by the SSE route; null if not yet seen
+        currentStage: data.currentStage ?? null,
+        currentAgent: data.currentAgent ?? null,
       });
     }
   } catch { /* file missing or corrupt — treat as not running */ }

@@ -123,8 +123,8 @@ export default function CommandPalette() {
       case 'navigate-studio':
         router.push('/improve');
         break;
-      case 'navigate-office':
-        router.push('/office');
+      case 'navigate-mission-control':
+        router.push('/mission-control');
         break;
       case 'stop-lifecycle':
         // Same trigger as TopBar's Stop button — direct API call, no

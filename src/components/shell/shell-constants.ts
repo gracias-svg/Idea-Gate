@@ -17,14 +17,14 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { id: 'desk',     label: 'Desk',     href: '/desk',     icon: 'LayoutDashboard' },
   { id: 'studio',   label: 'Studio',   href: '/improve',  icon: 'Wand2'           },
-  { id: 'office',   label: 'Office',   href: '/office',   icon: 'Network'         },
+  { id: 'mission-control', label: 'Mission Control', href: '/mission-control', icon: 'Network' },
   { id: 'settings', label: 'Settings', href: '/settings', icon: 'Settings2'       },
 ];
 
 export type CmdAction =
   | 'navigate-desk'
   | 'navigate-studio'
-  | 'navigate-office'
+  | 'navigate-mission-control'
   | 'new-idea'
   | 'start-lifecycle'
   | 'stop-lifecycle'
@@ -47,7 +47,7 @@ export const CMD_ITEMS: CmdItem[] = [
   // Navigation
   { id: 'cmd-nav-desk',     label: 'Go to Desk',      group: 'Navigation', action: 'navigate-desk'   },
   { id: 'cmd-nav-studio',   label: 'Go to Studio',    group: 'Navigation', action: 'navigate-studio' },
-  { id: 'cmd-nav-office',   label: 'Go to Office',    group: 'Navigation', action: 'navigate-office' },
+  { id: 'cmd-nav-mc',       label: 'Go to Mission Control', group: 'Navigation', action: 'navigate-mission-control' },
   { id: 'cmd-open-settings',label: 'Open Settings',   group: 'Navigation', action: 'open-settings'   },
   // Run Controls
   { id: 'cmd-start',        label: 'Run Lifecycle',  group: 'Run Controls', action: 'start-lifecycle' },

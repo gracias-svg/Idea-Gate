@@ -117,6 +117,15 @@ export async function GET(req: Request) {
     } catch { return []; }
   })();
 
+  // ── GET ?projects=true — return recent project list (Mission 11, Insights tab) ──
+  if (searchParams.get('projects') === 'true') {
+    const list = projects.slice(0, 10).map(name => {
+      const ts = parseInt(name.split('-').pop() ?? '0', 10);
+      return { name, createdMs: ts > 0 ? ts : null };
+    });
+    return NextResponse.json({ projects: list });
+  }
+
   console.log('[API] Found projects:', projects);
 
   if (!projects.length) {

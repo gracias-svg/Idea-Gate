@@ -6,11 +6,14 @@
 // TSX parser cannot handle `elements.push(<jsx>)` followed by `continue` in a for loop.
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useRouter } from 'next/navigation';
+import { AnimatePresence } from 'framer-motion';
 import { useGlobalStore } from '@/lib/GlobalStore';
 import { useRuntime } from '@/lib/RuntimeContext';
 import { parseContent } from '@/lib/parseContent';
 import LifecycleNodeChain, { type StageData } from '@/components/desk/LifecycleNodeChain';
 import RunInsightPanel from '@/components/desk/RunInsightPanel';
+import ArtifactReaderOverlay, { type ReaderArtifact } from '@/components/desk/ArtifactReader';
 
 const MONO: React.CSSProperties = { fontFamily: "'JetBrains Mono','Fira Code',monospace" };
 const BASE_FONT = 17;
@@ -473,6 +476,7 @@ function PMIntelligence({
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function DeskPage() {
   const runtime = useRuntime();
+  const router = useRouter();
 
   const [artifacts,    setArtifacts]    = useState<string[]>([]);
   const [currentStage, setCurrentStage] = useState(0);
@@ -492,6 +496,10 @@ export default function DeskPage() {
   );
   // B2: running state — governs 'generating' health state on cards
   const [isRunning, setIsRunning] = useState(false);
+  // R2/R3: artifact reader overlay state
+  const [readerArtifact, setReaderArtifact] = useState<ReaderArtifact | null>(null);
+  const [readerContent,  setReaderContent]  = useState<string | null>(null);
+  const [readerLoading,  setReaderLoading]  = useState(false);
   const scrollRef    = useRef<HTMLDivElement>(null);
   const fetchedRef   = useRef<Set<string>>(new Set());   // guards duplicate summary fetches
   // P-NEW-6: dismissal latch — keeps the artifact rail cleared after "+ New Idea"
@@ -576,6 +584,17 @@ export default function DeskPage() {
         .catch(()=>{});
     }
   },[artifacts]);
+
+  // R3: Fetch full content for ArtifactReader overlay — one fetch per open, not a polling interval
+  useEffect(()=>{
+    setReaderContent(null);
+    if (!readerArtifact) return;
+    setReaderLoading(true);
+    fetch(`/api/improve?file=${encodeURIComponent(readerArtifact.file)}`).then(r=>r.json())
+      .then(d=>setReaderContent(parseContent(d.content??'')))
+      .catch(()=>setReaderContent(null))
+      .finally(()=>setReaderLoading(false));
+  },[readerArtifact?.file]);
 
   useEffect(()=>{
     setRawContent(null); setLoading(false);
@@ -671,10 +690,32 @@ export default function DeskPage() {
     });
   },[]);
 
-  // D2: "Open in Studio →" — uses URL param (CommandPalette pattern)
+  // "Open in Studio →" — direct nav (hover button on card + Fix → on weakest-link banner)
   const handleOpenInStudio = useCallback((f:string)=>{
     window.location.href = `/improve?artifact=${encodeURIComponent(f)}`;
   },[]);
+
+  // R2: Open ArtifactReader overlay — card body click
+  const handleOpenReader = useCallback((f: string) => {
+    const n = stageNum(f);
+    const phase = LIFECYCLE_PHASES.find(p => p.stages.includes(n));
+    const jStage = journeyState.stages[String(n)];
+    const downstreamCount = Object.entries(STAGE_DEPS)
+      .filter(([, deps]) => deps.includes(n)).length;
+    setReaderArtifact({
+      file: f,
+      stageIndex: n,
+      stageName: STAGE_LABEL[n] ?? `Stage ${n}`,
+      phase: phase?.label ?? '',
+      phaseColor: phase?.color ?? '#94a3b8',
+      healthState: getHealthState(f, n, journeyState.stages, runtime, isRunning, currentStage),
+      confidence: jStage?.confidence as string | undefined,
+      version: runtime.getVersion(f),
+      summary: summaries[f] ?? '',
+      downstreamCount,
+      agentId: STAGE_INTEL[n]?.agentId,
+    });
+  }, [journeyState.stages, runtime, isRunning, currentStage, summaries]);
 
   const B = (extra?:React.CSSProperties): React.CSSProperties => ({...MONO, cursor:'pointer', border:'none', borderRadius:'3px', ...(extra??{})});
 
@@ -860,7 +901,7 @@ export default function DeskPage() {
                         runtime={runtime}
                         isRunning={isRunning}
                         currentStage={currentStage}
-                        onSelect={setSelected}
+                        onSelect={handleOpenReader}
                         onOpenStudio={handleOpenInStudio}
                       />
                     ))}
@@ -1039,6 +1080,23 @@ export default function DeskPage() {
           </div>
         )}
       </div>
+
+      {/* R2/R4: ArtifactReader overlay — AnimatePresence at page root, covers full viewport */}
+      <AnimatePresence>
+        {readerArtifact && (
+          <ArtifactReaderOverlay
+            artifact={readerArtifact}
+            fullContent={readerContent}
+            loading={readerLoading}
+            onClose={() => { setReaderArtifact(null); setReaderContent(null); }}
+            onOpenInStudio={(file: string) => {
+              setReaderArtifact(null);
+              setReaderContent(null);
+              router.push(`/improve?artifact=${encodeURIComponent(file)}`);
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

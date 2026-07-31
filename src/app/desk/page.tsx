@@ -50,6 +50,20 @@ const STAGE_COLOR: Record<number,string> = {
   12:'#fde047',13:'#fde047',14:'#fde047',
 };
 
+// ── D1: Lifecycle phase groups ────────────────────────────────────────────────
+const LIFECYCLE_PHASES: { id: string; label: string; stages: number[]; color: string }[] = [
+  { id: 'signal', label: 'Signal',  stages: [0, 1],        color: '#22c55e' },
+  { id: 'shape',  label: 'Shape',   stages: [2, 3, 4],     color: '#38bdf8' },
+  { id: 'define', label: 'Define',  stages: [5, 6],        color: '#818cf8' },
+  { id: 'design', label: 'Design',  stages: [7, 8],        color: '#f59e0b' },
+  { id: 'build',  label: 'Build',   stages: [9, 10, 11],   color: '#fb923c' },
+  { id: 'ship',   label: 'Ship',    stages: [12, 13, 14],  color: '#fde047' },
+];
+
+// D2: Confidence display
+const CONF_COLOR: Record<string, string> = { high: '#4ade80', medium: '#f59e0b', low: '#f87171' };
+const CONF_LABEL: Record<string, string> = { high: 'HIGH', medium: 'MED', low: 'LOW' };
+
 const stageNum  = (f:string) => parseInt(f.split('-')[0],10)||0;
 const humanName = (f:string) => f.replace('.md','').replace(/^\d+-/,'').replace(/-/g,' ');
 const titleCase = (s:string) => s.replace(/\b\w/g,c=>c.toUpperCase());
@@ -66,6 +80,95 @@ function extractTOC(content:string): TocEntry[] {
     entries.push({ level: h2?2:3, text, id });
   }
   return entries;
+}
+
+// ── D2: Artifact card ─────────────────────────────────────────────────────────
+function ArtifactCard({
+  stageN, phaseLabel, phaseColor, artifacts, journeyStages, summaries, runtime, onSelect, onOpenStudio,
+}: {
+  stageN: number;
+  phaseLabel: string;
+  phaseColor: string;
+  artifacts: string[];
+  journeyStages: Record<string, any>;
+  summaries: Record<string, string>;
+  runtime: ReturnType<typeof useRuntime>;
+  onSelect: (f: string) => void;
+  onOpenStudio: (f: string) => void;
+}) {
+  const file       = artifacts.find(a => stageNum(a) === stageN);
+  const isGen      = !!file;
+  const jStage     = journeyStages[String(stageN)];
+  const confidence = jStage?.confidence as string | undefined;
+  const summary    = file ? (summaries[file] ?? '') : '';
+  const ver        = file ? runtime.getVersion(file) : 0;
+  const confColor  = confidence ? (CONF_COLOR[confidence] ?? '#94a3b8') : undefined;
+  const confLabel  = confidence ? (CONF_LABEL[confidence] ?? confidence.toUpperCase()) : undefined;
+  const isStaleArt = file ? runtime.isStale(file) : false;
+
+  return (
+    <div
+      onClick={() => file && onSelect(file)}
+      onMouseEnter={e => { if (isGen) (e.currentTarget as HTMLElement).style.borderColor = '#1e293b'; }}
+      onMouseLeave={e => { if (isGen) (e.currentTarget as HTMLElement).style.borderColor = isStaleArt ? '#f59e0b33' : '#0a1a2e'; }}
+      style={{
+        padding: '10px 12px',
+        backgroundColor: isGen ? '#040b14' : '#020609',
+        border: `1px solid ${isGen ? (isStaleArt ? '#f59e0b33' : '#0a1a2e') : '#060e09'}`,
+        borderRadius: '3px',
+        cursor: isGen ? 'pointer' : 'default',
+        opacity: isGen ? 1 : 0.45,
+        display: 'flex', flexDirection: 'column', gap: '5px',
+        minHeight: '90px',
+        ...MONO,
+      }}
+    >
+      {/* Phase badge + confidence */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span style={{ fontSize: '9px', color: phaseColor, letterSpacing: '0.08em', fontWeight: 700 }}>
+          {phaseLabel.toUpperCase()} · {stageN}
+        </span>
+        {isGen
+          ? confColor && <span style={{ fontSize: '9px', color: confColor, letterSpacing: '0.06em' }}>{confLabel}</span>
+          : <span style={{ fontSize: '9px', color: '#334155' }}>QUEUED</span>}
+      </div>
+
+      {/* Stage name */}
+      <div style={{ fontSize: '12px', color: isGen ? (isStaleArt ? '#f59e0b' : '#cbd5e1') : '#334155', fontWeight: 600 }}>
+        {STAGE_LABEL[stageN]}
+      </div>
+
+      {/* Summary — first 150 chars of content, or reasoning fallback */}
+      <div style={{ fontSize: '10px', color: isGen ? '#64748b' : '#1e293b', lineHeight: 1.6, flex: 1 }}>
+        {isGen
+          ? summary
+            ? `${summary}${summary.length >= 150 ? '…' : ''}`
+            : (jStage?.reasoning ? `${String(jStage.reasoning).slice(0, 150)}…` : 'Loading…')
+          : 'Not yet generated'}
+      </div>
+
+      {/* Footer */}
+      {isGen && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '3px' }}>
+          <span style={{ fontSize: '9px', color: ver > 0 ? '#4ade80' : '#334155' }}>
+            {ver > 0 ? `v${ver} improved` : 'v1'}
+            {isStaleArt && ' · △ stale'}
+          </span>
+          <button
+            onClick={e => { e.stopPropagation(); onOpenStudio(file!); }}
+            style={{
+              padding: '2px 7px', fontSize: '9px', letterSpacing: '0.04em',
+              backgroundColor: 'transparent', border: '1px solid #818cf833',
+              borderRadius: '2px', color: '#818cf8', cursor: 'pointer',
+              ...MONO,
+            }}
+          >
+            Studio →
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── Inline renderer ───────────────────────────────────────────────────────────
@@ -331,7 +434,13 @@ export default function DeskPage() {
   const [snapshots,    setSnapshots]    = useState<{name:string;stage:number;ts:string}[]>([]);
   const [snapSaved,    setSnapSaved]    = useState(false);
   const [quickIntent,  setQuickIntent]  = useState('');
-  const scrollRef = useRef<HTMLDivElement>(null);
+  // D1/D2: card library state
+  const [summaries,      setSummaries]      = useState<Record<string, string>>({});
+  const [expandedPhases, setExpandedPhases] = useState<Set<string>>(
+    () => new Set(['signal', 'shape', 'define', 'design', 'build', 'ship'])
+  );
+  const scrollRef    = useRef<HTMLDivElement>(null);
+  const fetchedRef   = useRef<Set<string>>(new Set());   // guards duplicate summary fetches
   // P-NEW-6: dismissal latch — keeps the artifact rail cleared after "+ New Idea"
   // until a genuinely new lifecycle (different projectPath) appears.
   const dismissedRef        = useRef(false);
@@ -383,6 +492,27 @@ export default function DeskPage() {
     const poll = setInterval(loadJourneyState, 4000);
     return () => clearInterval(poll);
   },[]);
+
+  // D2: Fetch first-150-char summaries for all generated artifacts (for card grid).
+  // fetchedRef guards against duplicate requests when artifacts array reference changes.
+  useEffect(()=>{
+    for (const f of artifacts) {
+      if (fetchedRef.current.has(f)) continue;
+      fetchedRef.current.add(f);
+      fetch(`/api/data?file=${encodeURIComponent(f)}`)
+        .then(r=>r.json())
+        .then(d=>{
+          const raw = (d.content ?? '') as string;
+          // Strip headings + separators; join remaining lines for a prose summary
+          const text = raw.split('\n')
+            .filter(l => { const t=l.trim(); return t && !t.startsWith('#') && t !== '---' && t !== '***'; })
+            .join(' ')
+            .trim();
+          setSummaries(prev => ({ ...prev, [f]: text.slice(0, 150) }));
+        })
+        .catch(()=>{});
+    }
+  },[artifacts]);
 
   useEffect(()=>{
     setRawContent(null); setLoading(false);
@@ -449,6 +579,20 @@ export default function DeskPage() {
     if(el && scrollRef.current) scrollRef.current.scrollTo({ top: el.offsetTop - 24, behavior:'smooth' });
   },[]);
 
+  // D1: expand/collapse lifecycle phases in the left rail
+  const togglePhase = useCallback((id:string)=>{
+    setExpandedPhases(prev=>{
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  },[]);
+
+  // D2: "Open in Studio →" — uses URL param (CommandPalette pattern)
+  const handleOpenInStudio = useCallback((f:string)=>{
+    window.location.href = `/improve?artifact=${encodeURIComponent(f)}`;
+  },[]);
+
   const B = (extra?:React.CSSProperties): React.CSSProperties => ({...MONO, cursor:'pointer', border:'none', borderRadius:'3px', ...(extra??{})});
 
   return (
@@ -491,46 +635,121 @@ export default function DeskPage() {
       {/* Main layout */}
       <div style={{flex:1,display:'flex',overflow:'hidden'}}>
 
-        {/* Left rail */}
+        {/* Left rail — D1: phase-grouped with expand/collapse */}
         {!focusMode && (
           <div style={{width:'196px',flexShrink:0,borderRight:'1px solid #0a1a2e',backgroundColor:'#020c06',overflowY:'auto',display:'flex',flexDirection:'column'}}>
-            <div style={{padding:'9px 13px 6px',fontSize:'12px',color:'#2a5a30',letterSpacing:'0.12em',fontWeight:700}}>ARTIFACTS · {artifacts.length}</div>
+            <div style={{padding:'9px 13px 6px',fontSize:'12px',color:'#2a5a30',letterSpacing:'0.12em',fontWeight:700}}>
+              ARTIFACTS · {artifacts.length}/15
+            </div>
 
-            {artifacts.map(f => {
-              const n=stageNum(f), col=STAGE_COLOR[n]??'#94a3b8', active=selected===f, stale=runtime.isStale(f), v=runtime.getVersion(f);
+            {LIFECYCLE_PHASES.map(phase => {
+              const expanded = expandedPhases.has(phase.id);
+              const genCount = phase.stages.filter(n => artifacts.some(a => stageNum(a) === n)).length;
               return (
-                <div key={f} className="art-row" onClick={()=>setSelected(f)}
-                  style={{display:'flex',alignItems:'center',gap:'7px',padding:'7px 12px',cursor:'pointer',borderLeft:`2px solid ${active?col:stale?'#f59e0b33':'transparent'}`,backgroundColor:active?'#0a1509':'transparent'}}>
-                  <div style={{width:'6px',height:'6px',borderRadius:'50%',backgroundColor:stale?'#f59e0b':v>0?'#4ade80':col,flexShrink:0}}/>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:'13px',color:active?col:stale?'#f59e0b':'#94a3b8',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{humanName(f)}</div>
-                    <div style={{fontSize:'9px',color:'#334155'}}>Stage {n}{v>0?` · v${v}`:''}{stale?' · △':''}</div>
+                <div key={phase.id}>
+                  {/* Phase header — click to toggle */}
+                  <div
+                    onClick={() => togglePhase(phase.id)}
+                    style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'5px 13px 4px',cursor:'pointer',userSelect:'none'}}
+                    onMouseEnter={e=>(e.currentTarget as HTMLElement).style.backgroundColor='#040b14'}
+                    onMouseLeave={e=>(e.currentTarget as HTMLElement).style.backgroundColor='transparent'}
+                  >
+                    <div style={{display:'flex',alignItems:'center',gap:'5px'}}>
+                      <span style={{fontSize:'9px',color:phase.color}}>{expanded?'▾':'▸'}</span>
+                      <span style={{fontSize:'10px',color:phase.color,fontWeight:700,letterSpacing:'0.08em'}}>{phase.label.toUpperCase()}</span>
+                    </div>
+                    <span style={{fontSize:'9px',color: genCount===phase.stages.length?'#4ade80':'#334155'}}>{genCount}/{phase.stages.length}</span>
                   </div>
+
+                  {/* Stage items */}
+                  {expanded && phase.stages.map(n => {
+                    const f = artifacts.find(a => stageNum(a) === n);
+                    if (!f) {
+                      return (
+                        <div key={n} style={{display:'flex',alignItems:'center',gap:'7px',padding:'5px 12px 5px 20px',opacity:0.35}}>
+                          <div style={{width:'5px',height:'5px',borderRadius:'50%',backgroundColor:'#334155',flexShrink:0}}/>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:'11px',color:'#334155',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{STAGE_LABEL[n]}</div>
+                            <div style={{fontSize:'9px',color:'#1e293b'}}>Stage {n} · queued</div>
+                          </div>
+                        </div>
+                      );
+                    }
+                    const col=STAGE_COLOR[n]??'#94a3b8', active=selected===f, stale=runtime.isStale(f), v=runtime.getVersion(f);
+                    return (
+                      <div key={n} className="art-row" onClick={()=>setSelected(f)}
+                        style={{display:'flex',alignItems:'center',gap:'7px',padding:'5px 12px 5px 20px',cursor:'pointer',borderLeft:`2px solid ${active?col:stale?'#f59e0b33':'transparent'}`,backgroundColor:active?'#0a1509':'transparent'}}>
+                        <div style={{width:'5px',height:'5px',borderRadius:'50%',backgroundColor:stale?'#f59e0b':v>0?'#4ade80':col,flexShrink:0}}/>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:'11px',color:active?col:stale?'#f59e0b':'#94a3b8',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{STAGE_LABEL[n]}</div>
+                          <div style={{fontSize:'9px',color:'#334155'}}>Stage {n}{v>0?` · v${v}`:''}{stale?' · △':''}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })}
-            {!artifacts.length && <div style={{padding:'12px',fontSize:'11px',color:'#64748b',lineHeight:1.8}}>No artifacts yet.<br/>Run an idea first.</div>}
           </div>
         )}
 
         {/* Centre */}
         <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+          {/* D1/D2/D3: Artifact library — always shows all 15 stages */}
           {!selected && (
-            <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:'18px',padding:'40px'}}>
-              <div style={{fontSize:'14px',color:'#64748b'}}>Select an artifact to read</div>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'8px',maxWidth:'440px'}}>
-                {[{f:'1-discovery.md',h:'Market analysis · PESTEL · Porter'},{f:'7-prd.md',h:'Requirements · acceptance criteria'},{f:'14-prototype-prompt.md',h:'Prototype prompt · ready to build'}]
-                  .filter(s=>artifacts.includes(s.f)).map(s=>(
-                  <div key={s.f} onClick={()=>setSelected(s.f)}
-                    style={{padding:'12px',backgroundColor:'#040b14',border:'1px solid #0a1a2e',borderRadius:'4px',cursor:'pointer'}}
-                    onMouseOver={e=>(e.currentTarget.style.borderColor='#4ade8033')}
-                    onMouseOut={e=>(e.currentTarget.style.borderColor='#0a1a2e')}>
-                    <div style={{fontSize:'12px',color:'#4ade80',fontWeight:700,marginBottom:'4px'}}>{titleCase(humanName(s.f))}</div>
-                    <div style={{fontSize:'10px',color:'#64748b'}}>{s.h}</div>
-                  </div>
-                ))}
+            <div style={{flex:1,overflowY:'auto',padding:'14px 18px'}}>
+              {/* Library header */}
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'14px',paddingBottom:'8px',borderBottom:'1px solid #0a1a2e'}}>
+                <div style={{fontSize:'11px',color:'#2a5a30',letterSpacing:'0.1em',fontWeight:700}}>
+                  ARTIFACT LIBRARY
+                </div>
+                <div style={{fontSize:'10px',color:'#334155'}}>
+                  {artifacts.length}/15 generated · Stage {currentStage}/15
+                </div>
               </div>
-              <div style={{fontSize:'11px',color:'#334155'}}>Stage {currentStage}/14 · {artifacts.length} artifacts</div>
+
+              {/* D4: Honest empty state when no run data */}
+              {!artifacts.length && !journeyState.stages && (
+                <div style={{padding:'20px',fontSize:'11px',color:'#334155',textAlign:'center' as const,lineHeight:1.8}}>
+                  No run data yet. Run a lifecycle to populate the library.
+                </div>
+              )}
+
+              {/* Phase sections with 2-column card grid */}
+              {LIFECYCLE_PHASES.map(phase => (
+                <div key={phase.id} style={{marginBottom:'16px'}}>
+                  {/* Phase heading */}
+                  <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'7px'}}>
+                    <div style={{width:'3px',height:'12px',backgroundColor:phase.color,borderRadius:'1px',flexShrink:0}}/>
+                    <span style={{fontSize:'10px',color:phase.color,fontWeight:700,letterSpacing:'0.1em'}}>{phase.label.toUpperCase()}</span>
+                    <span style={{fontSize:'9px',color:'#334155'}}>
+                      Stages {phase.stages[0]}–{phase.stages[phase.stages.length-1]}
+                    </span>
+                    <div style={{flex:1,height:'1px',backgroundColor:'#0a1a2e'}}/>
+                    <span style={{fontSize:'9px',color:'#334155'}}>
+                      {phase.stages.filter(n=>artifacts.some(a=>stageNum(a)===n)).length}/{phase.stages.length}
+                    </span>
+                  </div>
+
+                  {/* 2-column card grid — D3: all stages shown, generated + placeholder */}
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'6px'}}>
+                    {phase.stages.map(n => (
+                      <ArtifactCard
+                        key={n}
+                        stageN={n}
+                        phaseLabel={phase.label}
+                        phaseColor={phase.color}
+                        artifacts={artifacts}
+                        journeyStages={journeyState.stages as Record<string, any>}
+                        summaries={summaries}
+                        runtime={runtime}
+                        onSelect={setSelected}
+                        onOpenStudio={handleOpenInStudio}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 
@@ -602,7 +821,7 @@ export default function DeskPage() {
                     <>
                       <div style={{fontSize:'10px',color:'#2a5a30',fontWeight:700,letterSpacing:'0.1em',marginBottom:'9px'}}>PROJECT</div>
                       <div style={{padding:'9px',backgroundColor:'#040b14',border:'1px solid #0a1a2e',borderRadius:'3px',marginBottom:'12px',fontSize:'10px',lineHeight:2}}>
-                        <div>Stage: <span style={{color:'#4ade80'}}>{currentStage}/14</span></div>
+                        <div>Stage: <span style={{color:'#4ade80'}}>{currentStage}/15</span></div>
                         <div>Artifacts: <span style={{color:'#cbd5e1'}}>{artifacts.length}</span></div>
                         <div>Improved: <span style={{color:'#4ade80'}}>{runtime.state.improvementCount}</span></div>
                         <div>Stale: <span style={{color:staleCount>0?'#f59e0b':'#64748b'}}>{staleCount}</span></div>
@@ -679,7 +898,7 @@ export default function DeskPage() {
                       {snapshots.map((s,i) => (
                         <div key={i} style={{padding:'8px',backgroundColor:'#040b14',border:'1px solid #0a1a2e',borderRadius:'3px',marginBottom:'6px'}}>
                           <div style={{fontSize:'11px',color:'#cbd5e1',fontWeight:700,marginBottom:'2px'}}>{s.name}</div>
-                          <div style={{fontSize:'9px',color:'#64748b'}}>{new Date(s.ts).toLocaleString()} · Stage {s.stage}/14</div>
+                          <div style={{fontSize:'9px',color:'#64748b'}}>{new Date(s.ts).toLocaleString()} · Stage {s.stage}/15</div>
                           <button onClick={()=>{ const n=snapshots.filter((_,j)=>j!==i); setSnapshots(n); localStorage.setItem('ig_snapshots',JSON.stringify(n)); }}
                             style={{...B(),marginTop:'5px',padding:'3px 7px',fontSize:'9px',backgroundColor:'transparent',color:'#cbd5e1',outline:'1px solid #1e293b'}}>Delete</button>
                         </div>

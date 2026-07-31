@@ -50,19 +50,54 @@ const STAGE_COLOR: Record<number,string> = {
   12:'#fde047',13:'#fde047',14:'#fde047',
 };
 
-// ── D1: Lifecycle phase groups ────────────────────────────────────────────────
-const LIFECYCLE_PHASES: { id: string; label: string; stages: number[]; color: string }[] = [
-  { id: 'signal', label: 'Signal',  stages: [0, 1],        color: '#22c55e' },
-  { id: 'shape',  label: 'Shape',   stages: [2, 3, 4],     color: '#38bdf8' },
-  { id: 'define', label: 'Define',  stages: [5, 6],        color: '#818cf8' },
-  { id: 'design', label: 'Design',  stages: [7, 8],        color: '#f59e0b' },
-  { id: 'build',  label: 'Build',   stages: [9, 10, 11],   color: '#fb923c' },
-  { id: 'ship',   label: 'Ship',    stages: [12, 13, 14],  color: '#fde047' },
+// ── B1: 5-phase lifecycle grouping with PM questions ─────────────────────────
+const LIFECYCLE_PHASES: { id: string; label: string; question: string; stages: number[]; color: string }[] = [
+  { id: 'discover',  label: 'Discover',  question: 'What problem is real and worth solving?', stages: [0, 1, 2],        color: '#4ade80' },
+  { id: 'decide',    label: 'Decide',    question: 'What should we build, and why now?',       stages: [3, 4, 5, 6],     color: '#38bdf8' },
+  { id: 'specify',   label: 'Specify',   question: 'What exactly does it need to do?',         stages: [7, 8, 9],        color: '#818cf8' },
+  { id: 'architect', label: 'Architect', question: 'How should it be built?',                  stages: [10, 11],         color: '#fb923c' },
+  { id: 'ship',      label: 'Ship',      question: 'Is it ready, and can we build it now?',    stages: [12, 13, 14],     color: '#fde047' },
 ];
 
-// D2: Confidence display
+// Confidence colours (used in PM Intelligence panel)
 const CONF_COLOR: Record<string, string> = { high: '#4ade80', medium: '#f59e0b', low: '#f87171' };
 const CONF_LABEL: Record<string, string> = { high: 'HIGH', medium: 'MED', low: 'LOW' };
+
+// ── B2: Health state system ───────────────────────────────────────────────────
+type HealthState = 'trustworthy' | 'questionable' | 'stale' | 'generating' | 'queued';
+
+const HEALTH_COLOR: Record<HealthState, string> = {
+  trustworthy: '#4ade80',
+  questionable: '#f59e0b',
+  stale: '#ef4444',
+  generating: '#818cf8',
+  queued: '#1e293b',
+};
+const HEALTH_LABEL: Record<HealthState, string> = {
+  trustworthy: 'SOLID',
+  questionable: 'REVIEW',
+  stale: 'STALE',
+  generating: 'RUNNING',
+  queued: 'QUEUED',
+};
+
+function getHealthState(
+  file: string | undefined,
+  stageN: number,
+  journeyStages: Record<string, any>,
+  runtime: ReturnType<typeof useRuntime>,
+  isRunning: boolean,
+  currentStage: number,
+): HealthState {
+  if (!file) {
+    if (isRunning && stageN === currentStage) return 'generating';
+    return 'queued';
+  }
+  if (runtime.isStale(file)) return 'stale';
+  const confidence = journeyStages[String(stageN)]?.confidence as string | undefined;
+  if (confidence === 'low' || confidence === 'medium') return 'questionable';
+  return 'trustworthy';
+}
 
 const stageNum  = (f:string) => parseInt(f.split('-')[0],10)||0;
 const humanName = (f:string) => f.replace('.md','').replace(/^\d+-/,'').replace(/-/g,' ');
@@ -82,77 +117,90 @@ function extractTOC(content:string): TocEntry[] {
   return entries;
 }
 
-// ── D2: Artifact card ─────────────────────────────────────────────────────────
+// ── B3: Artifact card — health-aware, hover-reactive, Studio fade ─────────────
 function ArtifactCard({
-  stageN, phaseLabel, phaseColor, artifacts, journeyStages, summaries, runtime, onSelect, onOpenStudio,
+  stageN, artifacts, journeyStages, summaries, runtime, isRunning, currentStage, onSelect, onOpenStudio,
 }: {
   stageN: number;
-  phaseLabel: string;
-  phaseColor: string;
   artifacts: string[];
   journeyStages: Record<string, any>;
   summaries: Record<string, string>;
   runtime: ReturnType<typeof useRuntime>;
+  isRunning: boolean;
+  currentStage: number;
   onSelect: (f: string) => void;
   onOpenStudio: (f: string) => void;
 }) {
-  const file       = artifacts.find(a => stageNum(a) === stageN);
-  const isGen      = !!file;
-  const jStage     = journeyStages[String(stageN)];
-  const confidence = jStage?.confidence as string | undefined;
-  const summary    = file ? (summaries[file] ?? '') : '';
-  const ver        = file ? runtime.getVersion(file) : 0;
-  const confColor  = confidence ? (CONF_COLOR[confidence] ?? '#94a3b8') : undefined;
-  const confLabel  = confidence ? (CONF_LABEL[confidence] ?? confidence.toUpperCase()) : undefined;
-  const isStaleArt = file ? runtime.isStale(file) : false;
+  const [hovered, setHovered] = useState(false);
+  const file   = artifacts.find(a => stageNum(a) === stageN);
+  const isGen  = !!file;
+  const health = getHealthState(file, stageN, journeyStages, runtime, isRunning, currentStage);
+  const hColor = HEALTH_COLOR[health];
+  const hLabel = HEALTH_LABEL[health];
+  const summary = file ? (summaries[file] ?? '') : '';
+  const ver    = file ? runtime.getVersion(file) : 0;
+  const jStage = journeyStages[String(stageN)];
+
+  const isGenerating = health === 'generating';
+  const nameColor = health === 'stale' ? '#ef4444' : health === 'questionable' ? '#f59e0b' : isGen ? '#cbd5e1' : '#334155';
 
   return (
     <div
       onClick={() => file && onSelect(file)}
-      onMouseEnter={e => { if (isGen) (e.currentTarget as HTMLElement).style.borderColor = '#1e293b'; }}
-      onMouseLeave={e => { if (isGen) (e.currentTarget as HTMLElement).style.borderColor = isStaleArt ? '#f59e0b33' : '#0a1a2e'; }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       style={{
         padding: '10px 12px',
         backgroundColor: isGen ? '#040b14' : '#020609',
-        border: `1px solid ${isGen ? (isStaleArt ? '#f59e0b33' : '#0a1a2e') : '#060e09'}`,
+        border: `1px solid ${hovered && isGen ? '#1e293b' : '#0a1a2e'}`,
+        borderLeft: `3px solid ${hColor}`,
         borderRadius: '3px',
         cursor: isGen ? 'pointer' : 'default',
-        opacity: isGen ? 1 : 0.45,
+        opacity: health === 'queued' ? 0.38 : 1,
         display: 'flex', flexDirection: 'column', gap: '5px',
         minHeight: '90px',
         ...MONO,
       }}
     >
-      {/* Phase badge + confidence */}
+      {/* Health badge + stage number */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: '9px', color: phaseColor, letterSpacing: '0.08em', fontWeight: 700 }}>
-          {phaseLabel.toUpperCase()} · {stageN}
+        <span style={{ fontSize: '9px', color: hColor, letterSpacing: '0.08em', fontWeight: 700 }}>
+          {hLabel}
         </span>
-        {isGen
-          ? confColor && <span style={{ fontSize: '9px', color: confColor, letterSpacing: '0.06em' }}>{confLabel}</span>
-          : <span style={{ fontSize: '9px', color: '#334155' }}>QUEUED</span>}
+        <span style={{ fontSize: '9px', color: '#334155' }}>{stageN}</span>
       </div>
 
-      {/* Stage name */}
-      <div style={{ fontSize: '12px', color: isGen ? (isStaleArt ? '#f59e0b' : '#cbd5e1') : '#334155', fontWeight: 600 }}>
-        {STAGE_LABEL[stageN]}
-      </div>
+      {/* Stage name or shimmer skeleton */}
+      {isGenerating ? (
+        <div className="shimmer-bar" style={{ height: '12px', borderRadius: '2px', width: '70%' }} />
+      ) : (
+        <div style={{ fontSize: '12px', color: nameColor, fontWeight: 600 }}>
+          {STAGE_LABEL[stageN]}
+        </div>
+      )}
 
-      {/* Summary — first 150 chars of content, or reasoning fallback */}
-      <div style={{ fontSize: '10px', color: isGen ? '#64748b' : '#1e293b', lineHeight: 1.6, flex: 1 }}>
-        {isGen
-          ? summary
-            ? `${summary}${summary.length >= 150 ? '…' : ''}`
-            : (jStage?.reasoning ? `${String(jStage.reasoning).slice(0, 150)}…` : 'Loading…')
-          : 'Not yet generated'}
-      </div>
+      {/* Summary or skeleton rows */}
+      {isGenerating ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
+          <div className="shimmer-bar" style={{ height: '9px', borderRadius: '2px', width: '100%' }} />
+          <div className="shimmer-bar" style={{ height: '9px', borderRadius: '2px', width: '80%' }} />
+        </div>
+      ) : (
+        <div style={{ fontSize: '10px', color: isGen ? '#64748b' : '#1e293b', lineHeight: 1.6, flex: 1 }}>
+          {isGen
+            ? summary
+              ? `${summary.slice(0, 120)}${summary.length >= 120 ? '…' : ''}`
+              : (jStage?.reasoning ? `${String(jStage.reasoning).slice(0, 120)}…` : '')
+            : 'Not yet generated'}
+        </div>
+      )}
 
-      {/* Footer */}
-      {isGen && (
+      {/* Footer: version tag + Studio → (fades in on hover) */}
+      {isGen && !isGenerating && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '3px' }}>
           <span style={{ fontSize: '9px', color: ver > 0 ? '#4ade80' : '#334155' }}>
-            {ver > 0 ? `v${ver} improved` : 'v1'}
-            {isStaleArt && ' · △ stale'}
+            {ver > 0 ? `v${ver}` : 'v1'}
+            {health === 'stale' && ' · stale'}
           </span>
           <button
             onClick={e => { e.stopPropagation(); onOpenStudio(file!); }}
@@ -160,6 +208,9 @@ function ArtifactCard({
               padding: '2px 7px', fontSize: '9px', letterSpacing: '0.04em',
               backgroundColor: 'transparent', border: '1px solid #818cf833',
               borderRadius: '2px', color: '#818cf8', cursor: 'pointer',
+              opacity: hovered ? 1 : 0,
+              transition: 'opacity 150ms ease',
+              pointerEvents: hovered ? 'auto' : 'none',
               ...MONO,
             }}
           >
@@ -434,11 +485,13 @@ export default function DeskPage() {
   const [snapshots,    setSnapshots]    = useState<{name:string;stage:number;ts:string}[]>([]);
   const [snapSaved,    setSnapSaved]    = useState(false);
   const [quickIntent,  setQuickIntent]  = useState('');
-  // D1/D2: card library state
+  // card library state
   const [summaries,      setSummaries]      = useState<Record<string, string>>({});
   const [expandedPhases, setExpandedPhases] = useState<Set<string>>(
-    () => new Set(['signal', 'shape', 'define', 'design', 'build', 'ship'])
+    () => new Set(['discover', 'decide', 'specify', 'architect', 'ship'])
   );
+  // B2: running state — governs 'generating' health state on cards
+  const [isRunning, setIsRunning] = useState(false);
   const scrollRef    = useRef<HTMLDivElement>(null);
   const fetchedRef   = useRef<Set<string>>(new Set());   // guards duplicate summary fetches
   // P-NEW-6: dismissal latch — keeps the artifact rail cleared after "+ New Idea"
@@ -493,7 +546,17 @@ export default function DeskPage() {
     return () => clearInterval(poll);
   },[]);
 
-  // D2: Fetch first-150-char summaries for all generated artifacts (for card grid).
+  // B2: Poll /api/run for isRunning — drives 'generating' health state
+  useEffect(()=>{
+    const check = () => fetch('/api/run').then(r=>r.json())
+      .then(d=>setIsRunning(!!(d.running??false)))
+      .catch(()=>setIsRunning(false));
+    check();
+    const t = setInterval(check, 2000);
+    return () => clearInterval(t);
+  },[]);
+
+  // Fetch first-150-char summaries for all generated artifacts (for card grid).
   // fetchedRef guards against duplicate requests when artifacts array reference changes.
   useEffect(()=>{
     for (const f of artifacts) {
@@ -546,6 +609,26 @@ export default function DeskPage() {
     const art = artifacts.find(a=>stageNum(a)===n);
     if (art) setSelected(art);
   },[artifacts]);
+
+  // B5: weakest-link — generated artifact that is stale/questionable with most downstream dependents
+  const weakestLink = useMemo(()=>{
+    if (isRunning) return null;
+    let maxDown = -1;
+    let result: { file:string; health:'stale'|'questionable'; downstreams:number; name:string } | null = null;
+    for (const f of artifacts) {
+      const n = stageNum(f);
+      const isStaleFile = runtime.isStale(f);
+      const conf = journeyState.stages[String(n)]?.confidence as string|undefined;
+      const isQuestionable = !isStaleFile && (conf === 'low' || conf === 'medium');
+      if (!isStaleFile && !isQuestionable) continue;
+      const downs = Object.entries(STAGE_DEPS).filter(([,deps])=>deps.includes(n)).length;
+      if (downs > maxDown) {
+        maxDown = downs;
+        result = { file:f, health: isStaleFile?'stale':'questionable', downstreams:downs, name:titleCase(humanName(f)) };
+      }
+    }
+    return result;
+  },[artifacts, journeyState.stages, runtime, isRunning]);
 
   const handleDownload = useCallback(()=>{
     if(!content||!selected) return;
@@ -601,6 +684,8 @@ export default function DeskPage() {
         ::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-thumb{background:#1e293b;border-radius:2px}
         .art-row:hover{background:#0a1509!important} .toc-item:hover{color:#4ade80!important;cursor:pointer}
         button:disabled{opacity:.4;cursor:not-allowed!important} textarea::placeholder,input::placeholder{color:#64748b}
+        @keyframes shimmer{0%{background-position:-400px 0}100%{background-position:400px 0}}
+        .shimmer-bar{background:linear-gradient(90deg,#0a1a2e 25%,#1e2d45 50%,#0a1a2e 75%);background-size:800px 100%;animation:shimmer 1.4s infinite linear}
       `}</style>
 
       {/* Page header */}
@@ -635,7 +720,7 @@ export default function DeskPage() {
       {/* Main layout */}
       <div style={{flex:1,display:'flex',overflow:'hidden'}}>
 
-        {/* Left rail — D1: phase-grouped with expand/collapse */}
+        {/* Left rail — B1/B4: 5-phase grouping with PM question subtitle */}
         {!focusMode && (
           <div style={{width:'196px',flexShrink:0,borderRight:'1px solid #0a1a2e',backgroundColor:'#020c06',overflowY:'auto',display:'flex',flexDirection:'column'}}>
             <div style={{padding:'9px 13px 6px',fontSize:'12px',color:'#2a5a30',letterSpacing:'0.12em',fontWeight:700}}>
@@ -650,15 +735,23 @@ export default function DeskPage() {
                   {/* Phase header — click to toggle */}
                   <div
                     onClick={() => togglePhase(phase.id)}
-                    style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'5px 13px 4px',cursor:'pointer',userSelect:'none'}}
+                    style={{cursor:'pointer',userSelect:'none'}}
                     onMouseEnter={e=>(e.currentTarget as HTMLElement).style.backgroundColor='#040b14'}
                     onMouseLeave={e=>(e.currentTarget as HTMLElement).style.backgroundColor='transparent'}
                   >
-                    <div style={{display:'flex',alignItems:'center',gap:'5px'}}>
-                      <span style={{fontSize:'9px',color:phase.color}}>{expanded?'▾':'▸'}</span>
-                      <span style={{fontSize:'10px',color:phase.color,fontWeight:700,letterSpacing:'0.08em'}}>{phase.label.toUpperCase()}</span>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'5px 13px 3px'}}>
+                      <div style={{display:'flex',alignItems:'center',gap:'5px'}}>
+                        <span style={{fontSize:'9px',color:phase.color}}>{expanded?'▾':'▸'}</span>
+                        <span style={{fontSize:'10px',color:phase.color,fontWeight:700,letterSpacing:'0.08em'}}>{phase.label.toUpperCase()}</span>
+                      </div>
+                      <span style={{fontSize:'9px',color: genCount===phase.stages.length?'#4ade80':'#334155'}}>{genCount}/{phase.stages.length}</span>
                     </div>
-                    <span style={{fontSize:'9px',color: genCount===phase.stages.length?'#4ade80':'#334155'}}>{genCount}/{phase.stages.length}</span>
+                    {/* B4: PM question subtitle — only visible when phase is expanded */}
+                    {expanded && (
+                      <div style={{padding:'0 13px 4px 22px',fontSize:'9px',color:'#2a5a30',lineHeight:1.5,fontStyle:'italic'}}>
+                        {phase.question}
+                      </div>
+                    )}
                   </div>
 
                   {/* Stage items */}
@@ -715,6 +808,30 @@ export default function DeskPage() {
                 </div>
               )}
 
+              {/* B5: Weakest-link banner — most impactful stale/questionable artifact */}
+              {isRunning && (
+                <div style={{display:'flex',alignItems:'center',gap:'8px',padding:'7px 10px',marginBottom:'10px',backgroundColor:'#0a0f1e',border:'1px solid #818cf833',borderRadius:'3px',fontSize:'10px'}}>
+                  <span style={{color:'#818cf8',fontWeight:700,letterSpacing:'0.06em'}}>● RUNNING</span>
+                  <span style={{color:'#64748b'}}>Stage {currentStage} · {STAGE_LABEL[currentStage] ?? '…'}</span>
+                </div>
+              )}
+              {!isRunning && weakestLink && (
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px',padding:'7px 10px',marginBottom:'10px',backgroundColor: weakestLink.health==='stale'?'#140a0a':'#0d0e07',border:`1px solid ${weakestLink.health==='stale'?'#ef444433':'#f59e0b33'}`,borderRadius:'3px',fontSize:'10px'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:'7px'}}>
+                    <span style={{color:weakestLink.health==='stale'?'#ef4444':'#f59e0b',fontWeight:700,letterSpacing:'0.06em',flexShrink:0}}>
+                      {weakestLink.health==='stale'?'△ STALE':'⚑ REVIEW'}
+                    </span>
+                    <span style={{color:'#94a3b8'}}>{weakestLink.name}</span>
+                    <span style={{color:'#334155'}}>·</span>
+                    <span style={{color:'#64748b'}}>{weakestLink.downstreams} downstream{weakestLink.downstreams!==1?'s':''} affected</span>
+                  </div>
+                  <button onClick={()=>handleOpenInStudio(weakestLink.file)}
+                    style={{padding:'2px 8px',fontSize:'9px',backgroundColor:'transparent',border:`1px solid ${weakestLink.health==='stale'?'#ef444433':'#f59e0b33'}`,borderRadius:'2px',color:weakestLink.health==='stale'?'#ef4444':'#f59e0b',cursor:'pointer',...MONO}}>
+                    Fix →
+                  </button>
+                </div>
+              )}
+
               {/* Phase sections with 2-column card grid */}
               {LIFECYCLE_PHASES.map(phase => (
                 <div key={phase.id} style={{marginBottom:'16px'}}>
@@ -722,8 +839,8 @@ export default function DeskPage() {
                   <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'7px'}}>
                     <div style={{width:'3px',height:'12px',backgroundColor:phase.color,borderRadius:'1px',flexShrink:0}}/>
                     <span style={{fontSize:'10px',color:phase.color,fontWeight:700,letterSpacing:'0.1em'}}>{phase.label.toUpperCase()}</span>
-                    <span style={{fontSize:'9px',color:'#334155'}}>
-                      Stages {phase.stages[0]}–{phase.stages[phase.stages.length-1]}
+                    <span style={{fontSize:'9px',color:'#334155',fontStyle:'italic'}}>
+                      {phase.question}
                     </span>
                     <div style={{flex:1,height:'1px',backgroundColor:'#0a1a2e'}}/>
                     <span style={{fontSize:'9px',color:'#334155'}}>
@@ -731,18 +848,18 @@ export default function DeskPage() {
                     </span>
                   </div>
 
-                  {/* 2-column card grid — D3: all stages shown, generated + placeholder */}
+                  {/* 2-column card grid — all stages shown, generated + placeholder */}
                   <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'6px'}}>
                     {phase.stages.map(n => (
                       <ArtifactCard
                         key={n}
                         stageN={n}
-                        phaseLabel={phase.label}
-                        phaseColor={phase.color}
                         artifacts={artifacts}
                         journeyStages={journeyState.stages as Record<string, any>}
                         summaries={summaries}
                         runtime={runtime}
+                        isRunning={isRunning}
+                        currentStage={currentStage}
                         onSelect={setSelected}
                         onOpenStudio={handleOpenInStudio}
                       />

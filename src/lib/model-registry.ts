@@ -156,12 +156,12 @@ export const LEGACY_KEY_MAP: Record<string, string> = {
   qwen:      'qwen/qwen-2.5-72b-instruct',
   mistral:   'mistralai/mistral-large-2411',
   gpt4o:     'openai/gpt-4o',
-  owlalpha:  'openrouter/owl-alpha',
+  owlalpha:  'nvidia/nemotron-3-super-120b-a12b:free',  // rerouted: owl-alpha returns 404 (retired)
   nemotron:  'nvidia/nemotron-3-super-120b-a12b:free',
   gptoss:    'openai/gpt-oss-120b:free',
   // Deprecated key remaps — kept for safety, point to fallback
-  gemini:    'openrouter/owl-alpha',   // was google/gemini-flash-1.5 (deprecated Jun 2026)
-  ring:      'openrouter/owl-alpha',   // was inclusionai/ring-2.6-1t:free (became paid Jun 2026)
+  gemini:    'nvidia/nemotron-3-super-120b-a12b:free',  // was google/gemini-flash-1.5 (deprecated Jun 2026)
+  ring:      'nvidia/nemotron-3-super-120b-a12b:free',  // was inclusionai/ring-2.6-1t:free (became paid Jun 2026)
 };
 
 // ─── Model Registry Data ───────────────────────────────────────────────────────

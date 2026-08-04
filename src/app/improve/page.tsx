@@ -12,7 +12,8 @@
 // - RuntimeContext integration preserved
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { CheckCircle2, Moon, Sun, ChevronLeft, ChevronRight, MoreHorizontal } from 'lucide-react';
+import { CheckCircle2, Moon, Sun, ChevronLeft, ChevronRight, MoreHorizontal, FileText, Kanban } from 'lucide-react';
+import KanbanView from '@/components/studio/KanbanView';
 import { usePanelState } from '@/lib/usePanelState';
 import { useGlobalStore, getModelMeta, isModelFree } from '@/lib/GlobalStore';
 import { parseContent, parseContentDetailed } from '@/lib/parseContent';
@@ -290,6 +291,19 @@ export default function ImprovePage() {
     setWorkspaceView(v);
     try { localStorage.setItem('ig_workspace_view', v); } catch { /* quota */ }
     setWsMenuOpen(false);
+  };
+
+  // K1 — Studio view mode (document | kanban). Session-only but persisted to
+  // localStorage under 'ig_studio_view' for convenience across tab refreshes.
+  // Hydration-safe: always start 'document' (matches SSR), sync after mount.
+  const [studioView, setStudioView] = useState<'document' | 'kanban'>('document');
+  useEffect(() => {
+    const stored = localStorage.getItem('ig_studio_view') as 'document' | 'kanban' | null;
+    if (stored === 'document' || stored === 'kanban') setStudioView(stored);
+  }, []);
+  const setStudioViewPersist = (v: 'document' | 'kanban') => {
+    setStudioView(v);
+    try { localStorage.setItem('ig_studio_view', v); } catch { /* quota */ }
   };
 
   // Lifecycle rail — hover focus + reduced-motion honouring (DIL 15 accessibility)
@@ -663,6 +677,44 @@ export default function ImprovePage() {
           })()}
         </div>
 
+        {/* K2 — Studio view mode switcher: [Document] [Kanban] */}
+        <div style={{ display:'flex', alignItems:'center', gap:'2px', border:'1px solid #1e293b', borderRadius:'5px', padding:'2px', flexShrink:0 }}>
+          {([
+            { view: 'document' as const, Icon: FileText,  label: 'Document' },
+            { view: 'kanban'   as const, Icon: Kanban,    label: 'Kanban'   },
+          ] as const).map(({ view, Icon, label }) => {
+            const isActive = studioView === view;
+            return (
+              <button
+                key={view}
+                onClick={() => setStudioViewPersist(view)}
+                aria-label={`Switch to ${label} view`}
+                title={`${label} view`}
+                style={{
+                  display:         'flex',
+                  alignItems:      'center',
+                  gap:             '5px',
+                  padding:         '4px 9px',
+                  fontSize:        '10px',
+                  fontFamily:      "'JetBrains Mono','Fira Code',monospace",
+                  fontWeight:      isActive ? 600 : 400,
+                  letterSpacing:   '0.04em',
+                  borderRadius:    '3px',
+                  border:          'none',
+                  cursor:          'pointer',
+                  backgroundColor: isActive ? '#0a1f0e' : 'transparent',
+                  color:           isActive ? '#4ade80' : '#475569',
+                  outline:         isActive ? '1px solid #4ade8033' : 'none',
+                  transition:      'color 120ms ease-out, background-color 120ms ease-out',
+                }}
+              >
+                <Icon size={12} />
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
         <div style={{display:'flex',gap:'4px'}}>
           {staleCount>0&&<button onClick={()=>runtime.clearStale()} style={{...B,padding:'4px 8px',fontSize:'9px',backgroundColor:'#0a0800',color:'#f59e0b',outline:'1px solid #f59e0b33'}}>△ {staleCount} stale</button>}
           {selected&&rawContent&&uiState==='idle'&&<button onClick={()=>handleDownload(selected,rawContent)} style={{...B,padding:'5px 10px',fontSize:'10px',backgroundColor:'#0a1509',color:'#4ade80',outline:'1px solid #1a3a20'}}>↓ MD</button>}
@@ -846,7 +898,22 @@ export default function ImprovePage() {
 
         {/* Centre content */}
         <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
-          {result&&uiState==='previewed'&&(
+
+          {/* K5 — Kanban view: replaces document surface when studioView === 'kanban' */}
+          {studioView === 'kanban' && (
+            <KanbanView
+              artifacts={artifacts}
+              onSelectArtifact={(file) => {
+                setSelected(file);
+                setStudioViewPersist('document');
+              }}
+              isStale={(f) => runtime.isStale(f)}
+              getVersion={(f) => runtime.getVersion(f)}
+            />
+          )}
+
+          {/* Document view — rendered only when studioView === 'document' */}
+          {studioView === 'document' && result&&uiState==='previewed'&&(
             <div style={{display:'flex',alignItems:'center',gap:'5px',padding:'7px 14px',backgroundColor:'#020c06',borderBottom:'1px solid #0a1a2e',flexShrink:0}}>
               {(['original','split','improved'] as const).map(v=>(
                 <button key={v} onClick={()=>setView(v)} style={{...B,padding:'4px 9px',fontSize:'9px',
@@ -863,7 +930,7 @@ export default function ImprovePage() {
             </div>
           )}
 
-          {!selected&&(
+          {studioView === 'document' && !selected&&(
             <div style={{...heroSurface,display:'flex',alignItems:'center',justifyContent:'center',padding:'48px 56px'}}>
               <div style={{...readingMeasure,display:'flex',flexDirection:'column',gap:'32px'}}>
                 <div style={{display:'flex',flexDirection:'column',gap:'14px'}}>
@@ -893,9 +960,9 @@ export default function ImprovePage() {
             </div>
           )}
 
-          {selected&&fileLoading&&<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{fontSize:'11px',color:'#475569'}}>Loading artifact…</span></div>}
+          {studioView === 'document' && selected&&fileLoading&&<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{fontSize:'11px',color:'#475569'}}>Loading artifact…</span></div>}
 
-          {selected&&!fileLoading&&uiState==='idle'&&rawContent&&(
+          {studioView === 'document' && selected&&!fileLoading&&uiState==='idle'&&rawContent&&(
             <div
               ref={readingContainerRef}
               data-document-theme={gs.documentTheme}
@@ -1004,7 +1071,7 @@ export default function ImprovePage() {
             </div>
           )}
 
-          {uiState==='loading'&&(
+          {studioView === 'document' && uiState==='loading'&&(
             <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:'12px'}}>
               <div style={{...T.label,color:'#475569',animation:'pulse 1.5s infinite'}}>GENERATING…</div>
               <div style={{...T.caption,color:activeModel.color}}>{activeModel.label} · {activeModel.provider} · {activeModel.cost}</div>
@@ -1012,7 +1079,7 @@ export default function ImprovePage() {
             </div>
           )}
 
-          {uiState==='accepted'&&(
+          {studioView === 'document' && uiState==='accepted'&&(
             <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:'14px'}}>
               <div style={{fontSize:'24px',color:'#4ade80'}}>✓</div>
               <div style={{...T.title,color:'#4ade80'}}>Improvement accepted · graph updated</div>
@@ -1025,7 +1092,7 @@ export default function ImprovePage() {
             </div>
           )}
 
-          {result&&uiState==='previewed'&&view==='split'&&(
+          {studioView === 'document' && result&&uiState==='previewed'&&view==='split'&&(
             <div style={{flex:1,display:'flex',overflow:'hidden'}}>
               <div style={{flex:1,overflowY:'auto',padding:'24px 28px',borderRight:'1px solid #0a1a2e'}}>
                 <div style={{...T.label,color:'#2a5a30',marginBottom:'16px'}}>ORIGINAL</div>
@@ -1037,8 +1104,8 @@ export default function ImprovePage() {
               </div>
             </div>
           )}
-          {result&&uiState==='previewed'&&view==='original'&&<div style={{...heroSurface,padding:'24px 32px'}}><div style={readingMeasure}><Doc content={result.original} fs={12}/></div></div>}
-          {result&&uiState==='previewed'&&view==='improved'&&<div style={{...heroSurface,padding:'24px 32px'}}><div style={readingMeasure}><Doc content={result.improved} fs={13}/></div></div>}
+          {studioView === 'document' && result&&uiState==='previewed'&&view==='original'&&<div style={{...heroSurface,padding:'24px 32px'}}><div style={readingMeasure}><Doc content={result.original} fs={12}/></div></div>}
+          {studioView === 'document' && result&&uiState==='previewed'&&view==='improved'&&<div style={{...heroSurface,padding:'24px 32px'}}><div style={readingMeasure}><Doc content={result.improved} fs={13}/></div></div>}
 
           {error&&<div style={{padding:'8px 16px',backgroundColor:'#150005',borderTop:'1px solid #f8717133',flexShrink:0,fontSize:'11px',color:'#f87171'}}>⚠ {error}</div>}
         </div>

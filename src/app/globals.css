@@ -936,3 +936,21 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .ig-interactive-row { transition: none; }
 }
+
+/* ── Mission 17 — Light mode CSS variable overrides ──────────────────────────
+   Applied when <html class="light"> — toggled by ThemeSync via GlobalStore.
+   Only the 8 core surface/text/border tokens need overriding.
+   --ig-emerald and all semantic tokens intentionally unchanged.
+   Components use these tokens — no per-component changes required.
+   ─────────────────────────────────────────────────────────────────────────── */
+.light {
+  --ig-canvas:          #f8fafc;
+  --ig-surface:         #ffffff;
+  --ig-surface-raised:  #f1f5f9;
+  --ig-text-primary:    #0f172a;
+  --ig-text-secondary:  #334155;
+  --ig-text-tertiary:   #64748b;
+  --ig-border-subtle:   rgba(0, 0, 0, 0.08);
+  --ig-border-default:  rgba(0, 0, 0, 0.12);
+  /* --ig-emerald unchanged — accent stays consistent in both modes */
+}

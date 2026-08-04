@@ -2,8 +2,9 @@
 
 // src/app/desk/page.tsx
 // IdeaGate — Artifact Reading Desk
-// Fix: ArtifactReader uses if-else-if chains (no continue with JSX)
-// TSX parser cannot handle `elements.push(<jsx>)` followed by `continue` in a for loop.
+// Mission 15-D: Orientation rail + hero center + no permanent right panel.
+// B1: Right panel removed. B2: Left rail = orientation only (220px / 60px collapsed).
+// B3: Center = 860px max-width hero. B4: Reader gains upstreamItems. B5: height 100%.
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -11,11 +12,14 @@ import { AnimatePresence } from 'framer-motion';
 import { useGlobalStore } from '@/lib/GlobalStore';
 import { useRuntime } from '@/lib/RuntimeContext';
 import { parseContent } from '@/lib/parseContent';
-import LifecycleNodeChain, { type StageData } from '@/components/desk/LifecycleNodeChain';
-import RunInsightPanel from '@/components/desk/RunInsightPanel';
+import { type StageData } from '@/components/desk/LifecycleNodeChain';
 import ArtifactReaderOverlay, { type ReaderArtifact } from '@/components/desk/ArtifactReader';
+import WorkspaceExplorer, { type WorkspaceNode } from '@/components/shared/WorkspaceExplorer';
+import AttentionDrawer from '@/components/desk/AttentionDrawer';
+import ArtifactInspector from '@/components/desk/ArtifactInspector';
 
 const MONO: React.CSSProperties = { fontFamily: "'JetBrains Mono','Fira Code',monospace" };
+const SANS: React.CSSProperties = { fontFamily: "'Geist Sans', 'Geist', system-ui, -apple-system, sans-serif" };
 const BASE_FONT = 17;
 
 // ── Stage intelligence ────────────────────────────────────────────────────────
@@ -62,10 +66,6 @@ const LIFECYCLE_PHASES: { id: string; label: string; question: string; stages: n
   { id: 'ship',      label: 'Ship',      question: 'Is it ready, and can we build it now?',    stages: [12, 13, 14],     color: '#fde047' },
 ];
 
-// Confidence colours (used in PM Intelligence panel)
-const CONF_COLOR: Record<string, string> = { high: '#4ade80', medium: '#f59e0b', low: '#f87171' };
-const CONF_LABEL: Record<string, string> = { high: 'HIGH', medium: 'MED', low: 'LOW' };
-
 // ── B2: Health state system ───────────────────────────────────────────────────
 type HealthState = 'trustworthy' | 'questionable' | 'stale' | 'generating' | 'queued';
 
@@ -108,19 +108,7 @@ const titleCase = (s:string) => s.replace(/\b\w/g,c=>c.toUpperCase());
 const wordCount = (t:string) => t.split(/\s+/).filter(Boolean).length;
 const readTime  = (t:string) => { const m=Math.ceil(wordCount(t)/220); return m<=1?'<1 min':`~${m} min`; };
 
-interface TocEntry { level:2|3; text:string; id:string; }
-function extractTOC(content:string): TocEntry[] {
-  const entries: TocEntry[] = [];
-  for (const line of content.split('\n')) {
-    const h2=line.match(/^##\s+(.+)/), h3=line.match(/^###\s+(.+)/), m=h2??h3;
-    if (!m) continue;
-    const text=m[1].trim(), id=text.toLowerCase().replace(/[^a-z0-9]+/g,'-');
-    entries.push({ level: h2?2:3, text, id });
-  }
-  return entries;
-}
-
-// ── B3: Artifact card — health-aware, hover-reactive, Studio fade ─────────────
+// ── B3: Artifact card — health-aware, hover-reactive ─────────────────────────
 function ArtifactCard({
   stageN, artifacts, journeyStages, summaries, runtime, isRunning, currentStage, onSelect, onOpenStudio,
 }: {
@@ -167,29 +155,29 @@ function ArtifactCard({
     >
       {/* Health badge + stage number */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: '9px', color: hColor, letterSpacing: '0.08em', fontWeight: 700 }}>
+        <span style={{ fontSize: '11px', color: hColor, letterSpacing: '0.08em', fontWeight: 700, opacity: 0.55 }}>
           {hLabel}
         </span>
-        <span style={{ fontSize: '9px', color: '#334155' }}>{stageN}</span>
+        <span style={{ fontSize: '11px', color: '#334155', opacity: 0.55 }}>{stageN}</span>
       </div>
 
-      {/* Stage name or shimmer skeleton */}
+      {/* Stage name — Fix 4: 15px min, weight 600 */}
       {isGenerating ? (
         <div className="shimmer-bar" style={{ height: '12px', borderRadius: '2px', width: '70%' }} />
       ) : (
-        <div style={{ fontSize: '12px', color: nameColor, fontWeight: 600 }}>
+        <div style={{ fontSize: '15px', color: nameColor, fontWeight: 600, lineHeight: 1.2 }}>
           {STAGE_LABEL[stageN]}
         </div>
       )}
 
-      {/* Summary or skeleton rows */}
+      {/* Summary — Fix 4: 13px, 1.65 line-height, var(--ig-text-secondary) */}
       {isGenerating ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
           <div className="shimmer-bar" style={{ height: '9px', borderRadius: '2px', width: '100%' }} />
           <div className="shimmer-bar" style={{ height: '9px', borderRadius: '2px', width: '80%' }} />
         </div>
       ) : (
-        <div style={{ fontSize: '10px', color: isGen ? '#64748b' : '#1e293b', lineHeight: 1.6, flex: 1 }}>
+        <div style={{ fontSize: '13px', color: isGen ? 'var(--ig-text-secondary,#64748b)' : '#1e293b', lineHeight: 1.65, flex: 1 }}>
           {isGen
             ? summary
               ? `${summary.slice(0, 120)}${summary.length >= 120 ? '…' : ''}`
@@ -198,10 +186,10 @@ function ArtifactCard({
         </div>
       )}
 
-      {/* Footer: version tag + Studio → (fades in on hover) */}
+      {/* Footer: version tag + Studio → */}
       {isGen && !isGenerating && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '3px' }}>
-          <span style={{ fontSize: '9px', color: ver > 0 ? '#4ade80' : '#334155' }}>
+          <span style={{ fontSize: '11px', color: ver > 0 ? '#4ade80' : '#334155', opacity: 0.55 }}>
             {ver > 0 ? `v${ver}` : 'v1'}
             {health === 'stale' && ' · stale'}
           </span>
@@ -225,316 +213,72 @@ function ArtifactCard({
   );
 }
 
-// ── Inline renderer ───────────────────────────────────────────────────────────
-function ir(text:string, k:string): React.ReactNode[] {
-  return text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g).map((p,i)=>{
-    const key=`${k}-${i}`;
-    if (p.startsWith('**')&&p.endsWith('**')) return <strong key={key} style={{color:'#f1f5f9',fontWeight:700}}>{p.slice(2,-2)}</strong>;
-    if (p.startsWith('*')&&p.endsWith('*')&&p.length>2&&!p.startsWith('**')) return <em key={key} style={{color:'#cbd5e1',fontStyle:'italic'}}>{p.slice(1,-1)}</em>;
-    if (p.startsWith('`')&&p.endsWith('`')&&p.length>2) return <code key={key} style={{background:'#0d1117',color:'#4ade80',padding:'2px 6px',borderRadius:'3px',fontSize:`${BASE_FONT-1}px`}}>{p.slice(1,-1)}</code>;
-    return <React.Fragment key={key}>{p}</React.Fragment>;
-  });
-}
-
-// ── Artifact reader — if-else-if chains, NO continue with JSX ────────────────
-// TSX parser fails when elements.push(<JSX/>) is followed by `continue` in a for loop.
-// Fix: use if-else-if so every branch is mutually exclusive — no continue needed.
-function ArtifactReader({ content, scrollRef }: { content:string; scrollRef:React.RefObject<HTMLDivElement> }) {
-  const lines = content.split('\n');
-  const elements: React.ReactNode[] = [];
-  let inCode = false;
-  let codeLang = '';
-  let codeLines: string[] = [];
-  let codeStartKey = '';
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const t    = line.trim();
-    const k    = `l${i}`;
-
-    // ── Code block state machine ──────────────────────────────────────────────
-    if (inCode) {
-      if (t.startsWith('```')) {
-        // Close the code block
-        const captured = codeLines.join('\n');
-        elements.push(
-          <div key={codeStartKey} style={{margin:'14px 0',background:'#0d1117',border:'1px solid #1e293b',borderRadius:'4px',overflow:'hidden'}}>
-            {codeLang && <div style={{padding:'4px 14px',borderBottom:'1px solid #1e293b',fontSize:'10px',color:'#64748b',background:'#080d12'}}>{codeLang}</div>}
-            <pre style={{...MONO,margin:0,padding:'14px 16px',fontSize:'12px',color:'#4ade80',lineHeight:1.7,overflowX:'auto',whiteSpace:'pre'}}>{captured}</pre>
-          </div>
-        );
-        inCode = false; codeLines = []; codeLang = '';
-      } else {
-        codeLines.push(line);
-      }
-    } else if (t.startsWith('```')) {
-      inCode = true; codeLang = t.slice(3).trim(); codeStartKey = k;
-    } else if (!t) {
-      elements.push(<div key={k} style={{height:'9px'}} />);
-    } else if (t === '---' || t === '***') {
-      elements.push(<div key={k} style={{borderTop:'1px solid #1e293b',margin:'20px 0'}} />);
-    } else if (t.startsWith('# ')) {
-      elements.push(
-        <div key={k} style={{marginTop:i===0?0:'30px',marginBottom:'14px',paddingBottom:'10px',borderBottom:'1px solid #1e293b'}}>
-          <h1 id={t.slice(2).toLowerCase().replace(/[^a-z0-9]+/g,'-')} style={{...MONO,fontSize:'22px',color:'#f1f5f9',fontWeight:700,margin:0,lineHeight:1.3}}>{ir(t.slice(2),k)}</h1>
-        </div>
-      );
-    } else if (t.startsWith('## ')) {
-      elements.push(
-        <div key={k} style={{marginTop:'26px',marginBottom:'9px'}}>
-          <h2 id={t.slice(3).toLowerCase().replace(/[^a-z0-9]+/g,'-')} style={{...MONO,fontSize:'17px',color:'#cbd5e1',fontWeight:700,margin:0}}>{ir(t.slice(3),k)}</h2>
-        </div>
-      );
-    } else if (t.startsWith('### ')) {
-      elements.push(
-        <div key={k} style={{marginTop:'18px',marginBottom:'6px'}}>
-          <h3 id={t.slice(4).toLowerCase().replace(/[^a-z0-9]+/g,'-')} style={{...MONO,fontSize:'13px',color:'#64748b',fontWeight:700,margin:0,textTransform:'uppercase',letterSpacing:'0.05em'}}>{ir(t.slice(4),k)}</h3>
-        </div>
-      );
-    } else if (t.startsWith('#### ')) {
-      elements.push(
-        <div key={k} style={{marginTop:'12px',marginBottom:'4px',fontSize:'13px',color:'#cbd5e1',fontWeight:600,...MONO}}>{ir(t.slice(5),k)}</div>
-      );
-    } else if (t.startsWith('> ')) {
-      elements.push(
-        <div key={k} style={{margin:'10px 0',padding:'10px 16px',borderLeft:'3px solid #4ade8033',background:'#040f08',fontSize:`${BASE_FONT}px`,color:'#4ade8099',...MONO,lineHeight:1.8}}>{ir(t.slice(2),k)}</div>
-      );
-    } else if (line.match(/^(\s*)([-*])\s+(.+)/)) {
-      const bm = line.match(/^(\s*)([-*])\s+(.+)/)!;
-      elements.push(
-        <div key={k} style={{display:'flex',gap:'10px',marginLeft:Math.floor(bm[1].length/2)*20,margin:'3px 0'}}>
-          <span style={{color:'#4ade8055',flexShrink:0,fontSize:'14px'}}>▸</span>
-          <span style={{fontSize:`${BASE_FONT}px`,color:'#cbd5e1',lineHeight:1.85,...MONO}}>{ir(bm[3],k)}</span>
-        </div>
-      );
-    } else if (line.match(/^(\s*)(\d+)\.\s+(.+)/)) {
-      const om = line.match(/^(\s*)(\d+)\.\s+(.+)/)!;
-      elements.push(
-        <div key={k} style={{display:'flex',gap:'12px',margin:'3px 0'}}>
-          <span style={{fontSize:`${BASE_FONT}px`,color:'#64748b',flexShrink:0,minWidth:'24px',textAlign:'right' as const,...MONO}}>{om[2]}.</span>
-          <span style={{fontSize:`${BASE_FONT}px`,color:'#cbd5e1',lineHeight:1.85,...MONO}}>{ir(om[3],k)}</span>
-        </div>
-      );
-    } else if (t.startsWith('|')) {
-      // Table row — separator rows are silently skipped (else branch does nothing)
-      const isSep = !!t.match(/^[\|\-\s:]+$/);
-      if (!isSep) {
-        const cells    = t.split('|').slice(1,-1);
-        const isHeader = !!lines[i+1]?.trim().match(/^[\|\-\s:]+$/);
-        elements.push(
-          <div key={k} style={{display:'flex',borderBottom:'1px solid #0f1923',marginTop:isHeader?'14px':'0'}}>
-            {cells.map((c,ci) => (
-              <div key={ci} style={{
-                flex:1, padding:'6px 12px',
-                fontSize:`${BASE_FONT-1}px`,
-                color:isHeader?'#64748b':'#94a3b8',
-                fontWeight:isHeader?700:400,
-                letterSpacing:isHeader?'0.05em':'normal',
-                ...MONO,
-                borderRight:'1px solid #0f1923',
-                background:isHeader?'#040b14':'transparent',
-              }}>
-                {ir(c.trim(),`${k}-${ci}`)}
-              </div>
-            ))}
-          </div>
-        );
-      }
-      // separator rows: fall through (no push) — equivalent to skipping
-    } else {
-      elements.push(
-        <div key={k} style={{fontSize:`${BASE_FONT}px`,color:'#cbd5e1',lineHeight:1.9,...MONO}}>{ir(t,k)}</div>
-      );
-    }
-  }
-
-  return (
-    <div ref={scrollRef} style={{padding:'28px 36px',overflowY:'auto',flex:1,...MONO,fontSize:`${BASE_FONT}px`}}>
-      {elements}
-    </div>
-  );
-}
-
-// ── PM Intelligence panel ──────────────────────────────────────────────────────
-function PMIntelligence({
-  selected, content, runtime, artifacts, insight, agentsUsed,
-}: {
-  selected:string; content:string; runtime:ReturnType<typeof useRuntime>; artifacts:string[];
-  insight?: StageData; agentsUsed?: string[];
-}) {
-  const n       = stageNum(selected);
-  const intel   = STAGE_INTEL[n];
-  const col     = STAGE_COLOR[n] ?? '#94a3b8';
-  const ver     = runtime.getVersion(selected);
-  const isStale = runtime.isStale(selected);
-  const wc      = wordCount(content);
-  const rt      = readTime(content);
-  const toc     = extractTOC(content);
-  const reasoning = runtime.getReasoningFor(selected);
-  const upstreamNums   = STAGE_DEPS[n] ?? [];
-  const downstreamNums = Object.entries(STAGE_DEPS)
-    .filter(([,deps])=>deps.includes(n)).map(([k])=>parseInt(k,10));
-  if (!intel) return null;
-  return (
-    <div>
-      {/* Purpose */}
-      <div style={{marginBottom:'12px'}}>
-        <div style={{fontSize:'10px',color:'#2a5a30',letterSpacing:'0.1em',fontWeight:700,marginBottom:'6px'}}>PURPOSE</div>
-        <div style={{padding:'9px 10px',backgroundColor:'#040b14',border:`1px solid ${col}22`,borderRadius:'3px',fontSize:'11px',color:'#64748b',lineHeight:1.8}}>{intel.purpose}</div>
-      </div>
-      {/* Agent ownership — real run reasoning (journey-state), supersedes static framework/interview text */}
-      <div style={{marginBottom:'12px'}}>
-        <div style={{fontSize:'10px',color:'#2a5a30',letterSpacing:'0.1em',fontWeight:700,marginBottom:'6px'}}>AGENT OWNERSHIP</div>
-        <div style={{backgroundColor:'#040b14',border:`1px solid ${intel.agentColor}22`,borderRadius:'3px'}}>
-          <RunInsightPanel
-            stageId={String(n)}
-            reasoning={insight?.reasoning ?? null}
-            decision={insight?.decision ?? null}
-            confidence={insight?.confidence ?? null}
-            agentsUsed={agentsUsed}
-            isStale={isStale}
-          />
-        </div>
-      </div>
-      {/* Dependency map */}
-      <div style={{marginBottom:'12px'}}>
-        <div style={{fontSize:'10px',color:'#2a5a30',letterSpacing:'0.1em',fontWeight:700,marginBottom:'6px'}}>DEPENDENCY MAP</div>
-        <div style={{padding:'8px 10px',backgroundColor:'#040b14',border:'1px solid #0a1a2e',borderRadius:'3px',fontSize:'10px'}}>
-          {upstreamNums.length > 0 ? (
-            <div style={{marginBottom:'7px'}}>
-              <div style={{color:'#64748b',marginBottom:'3px',fontSize:'9px',letterSpacing:'0.06em'}}>↑ DEPENDS ON</div>
-              {upstreamNums.map(u => {
-                const upArt = artifacts.find(a=>stageNum(a)===u);
-                const upStale = upArt ? runtime.isStale(upArt) : false;
-                return (
-                  <div key={u} style={{color:upStale?'#f59e0b':'#94a3b8',marginBottom:'2px',paddingLeft:'8px'}}>
-                    {STAGE_LABEL[u]} {upStale?'△':''}
-                    <span style={{color:'#2a5a30',marginLeft:'6px',fontSize:'9px'}}>[{STAGE_INTEL[u]?.agentId}]</span>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div style={{color:'#64748b',marginBottom:'7px',fontSize:'9px'}}>↑ Root artifact — no upstream dependencies</div>
-          )}
-          {downstreamNums.length > 0 && (
-            <div>
-              <div style={{color:'#64748b',marginBottom:'3px',fontSize:'9px',letterSpacing:'0.06em'}}>↓ REQUIRED BY</div>
-              {downstreamNums.map(d => {
-                const dArt = artifacts.find(a=>stageNum(a)===d);
-                const dStale = dArt ? runtime.isStale(dArt) : false;
-                return (
-                  <div key={d} style={{color:dStale?'#f59e0b':'#94a3b8',marginBottom:'2px',paddingLeft:'8px'}}>
-                    {STAGE_LABEL[d]} {dStale?'△':''}
-                    <span style={{color:'#2a5a30',marginLeft:'6px',fontSize:'9px'}}>[{STAGE_INTEL[d]?.agentId}]</span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-      {/* Version lineage */}
-      <div style={{marginBottom:'12px'}}>
-        <div style={{fontSize:'10px',color:'#2a5a30',letterSpacing:'0.1em',fontWeight:700,marginBottom:'6px'}}>VERSION LINEAGE</div>
-        <div style={{padding:'8px 10px',backgroundColor:'#040b14',border:'1px solid #0a1a2e',borderRadius:'3px',fontSize:'10px',lineHeight:1.9}}>
-          <div style={{color:'#cbd5e1'}}>v1 · Created by V2 lifecycle run</div>
-          {reasoning.map((r,i) => (
-            <div key={i} style={{color:'#cbd5e1',paddingLeft:'8px',borderLeft:'2px solid #4ade8022',marginLeft:'6px',marginTop:'4px'}}>
-              <div style={{color:'#4ade80'}}>v{i+2} · {r.model} · {new Date(r.timestamp).toLocaleTimeString()}</div>
-              <div style={{color:'#64748b',fontSize:'9px'}}>{r.intent.slice(0,60)}{r.intent.length>60?'…':''}</div>
-            </div>
-          ))}
-          {ver === 0 && <div style={{color:'#334155',fontSize:'9px',marginTop:'4px'}}>No improvements yet — original V2 lifecycle output</div>}
-        </div>
-      </div>
-      {/* Quality signal */}
-      <div style={{marginBottom:'12px'}}>
-        <div style={{fontSize:'10px',color:'#2a5a30',letterSpacing:'0.1em',fontWeight:700,marginBottom:'6px'}}>QUALITY SIGNAL</div>
-        <div style={{padding:'8px 10px',backgroundColor:'#040b14',border:'1px solid #0a1a2e',borderRadius:'3px',fontSize:'10px',lineHeight:1.9}}>
-          <div style={{color:'#64748b'}}>Score: <span style={{color:'#334155'}}>N/A — evaluator in V3.3</span></div>
-          <div style={{color:'#64748b'}}>Status: <span style={{color:isStale?'#f59e0b':'#4ade80'}}>{isStale?'△ Stale':'✓ Current'}</span></div>
-          <div style={{color:'#64748b'}}>Words: <span style={{color:'#cbd5e1'}}>{wc.toLocaleString()}</span></div>
-          <div style={{color:'#64748b'}}>Sections: <span style={{color:'#cbd5e1'}}>{toc.length}</span></div>
-          <div style={{color:'#64748b'}}>Read time: <span style={{color:'#cbd5e1'}}>{rt}</span></div>
-        </div>
-      </div>
-      {/* Comparison stub */}
-      {ver > 0 && (
-        <div style={{marginBottom:'12px'}}>
-          <div style={{fontSize:'10px',color:'#2a5a30',letterSpacing:'0.1em',fontWeight:700,marginBottom:'6px'}}>COMPARISON</div>
-          <div style={{padding:'8px 10px',backgroundColor:'#040b14',border:'1px solid #818cf822',borderRadius:'3px',fontSize:'10px',color:'#64748b',lineHeight:1.7}}>
-            <div style={{color:'#818cf8',marginBottom:'4px'}}>v{ver} vs v1 diff — V3.2 feature</div>
-            <div>Full before/after diff (Cursor-style) requires storing v1 at improvement time. Open in Refine to see the improvement reasoning chain.</div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function DeskPage() {
   const runtime = useRuntime();
-  const router = useRouter();
+  const router  = useRouter();
+  const { state: { settings }, updateSettings } = useGlobalStore();
 
+  // ── Core artifact state ────────────────────────────────────────────────────
   const [artifacts,    setArtifacts]    = useState<string[]>([]);
   const [currentStage, setCurrentStage] = useState(0);
-  const [selected,     setSelected]     = useState<string|null>(null);
-  const [rawContent,   setRawContent]   = useState<string|null>(null);
-  const [loading,      setLoading]      = useState(false);
+  const [projectName,  setProjectName]  = useState('Project');
   const [focusMode,    setFocusMode]    = useState(false);
-  const [rightTab,     setRightTab]     = useState<'overview'|'actions'|'history'>('overview');
-  const [snapName,     setSnapName]     = useState('');
-  const [snapshots,    setSnapshots]    = useState<{name:string;stage:number;ts:string}[]>([]);
-  const [snapSaved,    setSnapSaved]    = useState(false);
-  const [quickIntent,  setQuickIntent]  = useState('');
-  // card library state
-  const [summaries,      setSummaries]      = useState<Record<string, string>>({});
-  const [expandedPhases, setExpandedPhases] = useState<Set<string>>(
-    () => new Set(['discover', 'decide', 'specify', 'architect', 'ship'])
-  );
-  // B2: running state — governs 'generating' health state on cards
-  const [isRunning, setIsRunning] = useState(false);
-  // R2/R3: artifact reader overlay state
+  const [summaries,    setSummaries]    = useState<Record<string, string>>({});
+  const [isRunning,    setIsRunning]    = useState(false);
+
+  // ── Inspector state (W4) ─────────────────────────────────────────────────
+  const [inspectorArtifact, setInspectorArtifact] = useState<ReaderArtifact | null>(null);
+  const [inspectorContent,  setInspectorContent]  = useState<string | null>(null);
+  const [inspectorLoading,  setInspectorLoading]  = useState(false);
+  const [inspectorIndex,    setInspectorIndex]    = useState(0); // Fix 3 — position in sortedArtifacts
+
+  // ── ArtifactReader overlay state ──────────────────────────────────────────
+  const [readerIndex,    setReaderIndex]    = useState(-1);
   const [readerArtifact, setReaderArtifact] = useState<ReaderArtifact | null>(null);
   const [readerContent,  setReaderContent]  = useState<string | null>(null);
   const [readerLoading,  setReaderLoading]  = useState(false);
-  const scrollRef    = useRef<HTMLDivElement>(null);
-  const fetchedRef   = useRef<Set<string>>(new Set());   // guards duplicate summary fetches
-  // P-NEW-6: dismissal latch — keeps the artifact rail cleared after "+ New Idea"
-  // until a genuinely new lifecycle (different projectPath) appears.
-  const dismissedRef        = useRef(false);
-  const dismissedProjectRef = useRef<string|null>(null);
-  const latestProjectRef    = useRef<string|null>(null);
-  // Mission 14 Phase 2 Stage B — real reasoning data, polled independently of
-  // the /api/data effect above so the dismissal latch above is never touched.
+
+  // ── Journey state — real run reasoning data ───────────────────────────────
   const [journeyState, setJourneyState] = useState<{
     currentStage: number;
     stages: Record<string, StageData>;
     agentsByStage: Record<string, string[]>;
   }>({ currentStage: 0, stages: {}, agentsByStage: {} });
 
+  // (windowWidth removed — left rail replaced by WorkspaceExplorer in Mission 16)
+
+  // ── Refs ──────────────────────────────────────────────────────────────────
+  const fetchedRef          = useRef<Set<string>>(new Set());
+  const dismissedRef        = useRef(false);
+  const dismissedProjectRef = useRef<string|null>(null);
+  const latestProjectRef    = useRef<string|null>(null);
+
+  // ── Effects ───────────────────────────────────────────────────────────────
   useEffect(()=>{
     const loadData = () => fetch('/api/data').then(r=>r.json()).then(d=>{
       const proj = d.projectPath ?? null;
       if (dismissedRef.current) {
-        // Stay cleared until a NEW lifecycle (different project) starts.
         if (proj !== dismissedProjectRef.current) dismissedRef.current = false;
         else return;
       }
       latestProjectRef.current = proj;
       setArtifacts(d.artifacts??[]);
       setCurrentStage(d.currentStage??0);
+      // B2: derive project name from path
+      if (proj) {
+        const segs = String(proj).replace(/\\/g,'/').split('/').filter(Boolean);
+        const raw = segs[segs.length-1] ?? '';
+        const name = titleCase(raw.replace(/-/g,' ').replace(/_/g,' '));
+        if (name && name !== 'Workspace' && name !== 'Idea Gate Ui Safe') setProjectName(name);
+      }
     }).catch(()=>{});
     loadData();
-    try{ const s=localStorage.getItem('ig_snapshots'); if(s) setSnapshots(JSON.parse(s)); }catch{}
     const poll = setInterval(loadData, 4000);
-    // Triggered by TopBar's "New Idea" and manual refresh buttons
     const clearArtifact = () => {
       dismissedRef.current = true;
       dismissedProjectRef.current = latestProjectRef.current;
-      setSelected(null); setArtifacts([]);
+      setArtifacts([]);
     };
     window.addEventListener('ideagate:refresh', loadData);
     window.addEventListener('ideagate:clearArtifact', clearArtifact);
@@ -554,7 +298,6 @@ export default function DeskPage() {
     return () => clearInterval(poll);
   },[]);
 
-  // B2: Poll /api/run for isRunning — drives 'generating' health state
   useEffect(()=>{
     const check = () => fetch('/api/run').then(r=>r.json())
       .then(d=>setIsRunning(!!(d.running??false)))
@@ -564,8 +307,7 @@ export default function DeskPage() {
     return () => clearInterval(t);
   },[]);
 
-  // Fetch first-150-char summaries for all generated artifacts (for card grid).
-  // fetchedRef guards against duplicate requests when artifacts array reference changes.
+  // Fetch 150-char summaries for card grid
   useEffect(()=>{
     for (const f of artifacts) {
       if (fetchedRef.current.has(f)) continue;
@@ -574,18 +316,16 @@ export default function DeskPage() {
         .then(r=>r.json())
         .then(d=>{
           const raw = (d.content ?? '') as string;
-          // Strip headings + separators; join remaining lines for a prose summary
           const text = raw.split('\n')
             .filter(l => { const t=l.trim(); return t && !t.startsWith('#') && t !== '---' && t !== '***'; })
-            .join(' ')
-            .trim();
+            .join(' ').trim();
           setSummaries(prev => ({ ...prev, [f]: text.slice(0, 150) }));
         })
         .catch(()=>{});
     }
   },[artifacts]);
 
-  // R3: Fetch full content for ArtifactReader overlay — one fetch per open, not a polling interval
+  // Fetch full content for ArtifactReader overlay
   useEffect(()=>{
     setReaderContent(null);
     if (!readerArtifact) return;
@@ -596,40 +336,20 @@ export default function DeskPage() {
       .finally(()=>setReaderLoading(false));
   },[readerArtifact?.file]);
 
+  // Fetch full content for ArtifactInspector (W4)
   useEffect(()=>{
-    setRawContent(null); setLoading(false);
-    if(!selected) return;
-    setLoading(true);
-    fetch(`/api/improve?file=${encodeURIComponent(selected)}`).then(r=>r.json())
-      .then(d=>setRawContent(parseContent(d.content??'')))
-      .catch(e=>setRawContent(`[Error: ${e.message}]`))
-      .finally(()=>setLoading(false));
-  },[selected]);
+    setInspectorContent(null);
+    if (!inspectorArtifact) return;
+    setInspectorLoading(true);
+    fetch(`/api/improve?file=${encodeURIComponent(inspectorArtifact.file)}`).then(r=>r.json())
+      .then(d=>setInspectorContent(parseContent(d.content??'')))
+      .catch(()=>setInspectorContent(null))
+      .finally(()=>setInspectorLoading(false));
+  },[inspectorArtifact?.file]);
 
-  const content  = rawContent ?? '';
-  const toc      = extractTOC(content);
-  const selStage = selected ? stageNum(selected) : -1;
-  const selColor = selStage >= 0 ? (STAGE_COLOR[selStage] ?? '#94a3b8') : '#94a3b8';
-  const isStale  = selected ? runtime.isStale(selected) : false;
-  const ver      = selected ? runtime.getVersion(selected) : 0;
-  const staleCount = runtime.state.staleArtifacts.size;
+  // ── Derived state ─────────────────────────────────────────────────────────
 
-  const stagesForChain = useMemo(():Record<string,StageData> => {
-    const out: Record<string,StageData> = {};
-    for (const [id, data] of Object.entries(journeyState.stages)) {
-      const art = artifacts.find(a=>stageNum(a)===parseInt(id,10));
-      out[id] = { ...data, isStale: art ? runtime.isStale(art) : false };
-    }
-    return out;
-  },[journeyState.stages, artifacts, runtime]);
-
-  const handleSelectStageFromChain = useCallback((id:string)=>{
-    const n = parseInt(id,10);
-    const art = artifacts.find(a=>stageNum(a)===n);
-    if (art) setSelected(art);
-  },[artifacts]);
-
-  // B5: weakest-link — generated artifact that is stale/questionable with most downstream dependents
+  // ── Memos ─────────────────────────────────────────────────────────────────
   const weakestLink = useMemo(()=>{
     if (isRunning) return null;
     let maxDown = -1;
@@ -649,59 +369,86 @@ export default function DeskPage() {
     return result;
   },[artifacts, journeyState.stages, runtime, isRunning]);
 
-  const handleDownload = useCallback(()=>{
-    if(!content||!selected) return;
-    const a = Object.assign(document.createElement('a'),{ href:URL.createObjectURL(new Blob([content],{type:'text/markdown'})), download:selected });
-    a.click(); URL.revokeObjectURL(a.href);
-  },[content,selected]);
+  const priorityQueue = useMemo(()=>{
+    if (isRunning) return [] as { file:string; health:'stale'|'questionable'; downstreams:number; name:string }[];
+    const items: { file:string; health:'stale'|'questionable'; downstreams:number; name:string }[] = [];
+    for (const f of artifacts) {
+      const n = stageNum(f);
+      const isStaleFile = runtime.isStale(f);
+      const conf = journeyState.stages[String(n)]?.confidence as string|undefined;
+      const isQuestionable = !isStaleFile && (conf==='low'||conf==='medium');
+      if (!isStaleFile && !isQuestionable) continue;
+      const downs = Object.entries(STAGE_DEPS).filter(([,deps])=>deps.includes(n)).length;
+      items.push({ file:f, health:isStaleFile?'stale':'questionable', downstreams:downs, name:titleCase(humanName(f)) });
+    }
+    return items.sort((a,b)=>b.downstreams-a.downstreams).slice(0,3);
+  },[artifacts, journeyState.stages, runtime, isRunning]);
 
-  const handleCopy = useCallback(async()=>{
-    if(!content) return;
-    await navigator.clipboard.writeText(content).catch(()=>{});
-  },[content]);
+  const sortedArtifacts = useMemo(()=>
+    [...artifacts].sort((a,b)=>stageNum(a)-stageNum(b))
+  ,[artifacts]);
 
-  const handleOpenInRefine = useCallback(()=>{
-    if(selected) sessionStorage.setItem('ig_selected_artifact', selected);
-    if(quickIntent.trim()) sessionStorage.setItem('ig_quick_intent', quickIntent.trim());
-    window.location.href = '/improve';
-  },[selected, quickIntent]);
+  const dailyBrief = useMemo(()=>{
+    if (!artifacts.length) return null;
+    const sc = runtime.state.staleArtifacts.size;
+    const highConfCount = artifacts.filter(f=>{
+      const conf = journeyState.stages[String(stageNum(f))]?.confidence as string|undefined;
+      return conf==='high';
+    }).length;
+    if (isRunning) {
+      const agentId = STAGE_INTEL[currentStage]?.agentId ?? '?';
+      return {
+        text: `Generating Stage ${currentStage} of 15: ${STAGE_LABEL[currentStage]??'…'}. ${artifacts.length} artifact${artifacts.length!==1?'s':''} produced so far. ${agentId} is working now.`,
+        actionFile: null as string|null,
+        actionLabel: null as string|null,
+      };
+    }
+    if (sc>0 && weakestLink) {
+      return {
+        text: `Your ${weakestLink.name} affects ${weakestLink.downstreams} downstream artifact${weakestLink.downstreams!==1?'s':''} and needs attention. ${sc} artifact${sc!==1?'s':''} marked stale after a recent improvement.`,
+        actionFile: weakestLink.file as string|null,
+        actionLabel: `Review ${weakestLink.name} →` as string|null,
+      };
+    }
+    if (priorityQueue.length>0) {
+      const top = priorityQueue[0];
+      return {
+        text: `One or more artifacts have medium or low confidence scores. Review ${top.name} before continuing.`,
+        actionFile: top.file as string|null,
+        actionLabel: `Review ${top.name} →` as string|null,
+      };
+    }
+    return {
+      text: `Your product thinking is complete. ${artifacts.length} artifact${artifacts.length!==1?'s':''} generated with ${highConfCount} at high confidence. Ready for Studio refinement or export.`,
+      actionFile: null as string|null,
+      actionLabel: null as string|null,
+    };
+  },[artifacts, isRunning, currentStage, weakestLink, priorityQueue, journeyState.stages, runtime]);
 
-  const handleSaveSnapshot = useCallback(()=>{
-    if(!snapName.trim()) return;
-    const s = { name:snapName.trim(), stage:currentStage, ts:new Date().toISOString() };
-    const next = [s,...snapshots].slice(0,10);
-    setSnapshots(next);
-    try{ localStorage.setItem('ig_snapshots',JSON.stringify(next)); }catch{}
-    setSnapName(''); setSnapSaved(true);
-    setTimeout(()=>setSnapSaved(false), 2000);
-  },[snapName, snapshots, currentStage]);
-
-  const handleTocClick = useCallback((id:string)=>{
-    const el = document.getElementById(id);
-    if(el && scrollRef.current) scrollRef.current.scrollTo({ top: el.offsetTop - 24, behavior:'smooth' });
-  },[]);
-
-  // D1: expand/collapse lifecycle phases in the left rail
-  const togglePhase = useCallback((id:string)=>{
-    setExpandedPhases(prev=>{
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  },[]);
-
-  // "Open in Studio →" — direct nav (hover button on card + Fix → on weakest-link banner)
+  // ── Handlers ──────────────────────────────────────────────────────────────
   const handleOpenInStudio = useCallback((f:string)=>{
     window.location.href = `/improve?artifact=${encodeURIComponent(f)}`;
   },[]);
 
-  // R2: Open ArtifactReader overlay — card body click
+
+  // Open ArtifactReader overlay — B4: now includes upstreamItems
   const handleOpenReader = useCallback((f: string) => {
     const n = stageNum(f);
     const phase = LIFECYCLE_PHASES.find(p => p.stages.includes(n));
     const jStage = journeyState.stages[String(n)];
-    const downstreamCount = Object.entries(STAGE_DEPS)
-      .filter(([, deps]) => deps.includes(n)).length;
+    const upstreamNums   = STAGE_DEPS[n] ?? [];
+    const downstreamNums = Object.entries(STAGE_DEPS)
+      .filter(([, deps]) => deps.includes(n))
+      .map(([k]) => parseInt(k, 10));
+    const upstreamItems = upstreamNums.map(u => ({
+      name: STAGE_LABEL[u] ?? `Stage ${u}`,
+      healthState: getHealthState(artifacts.find(a=>stageNum(a)===u), u, journeyState.stages, runtime, isRunning, currentStage),
+    }));
+    const downstreamItems = downstreamNums.slice(0, 4).map(d => ({
+      name: STAGE_LABEL[d] ?? `Stage ${d}`,
+      healthState: getHealthState(artifacts.find(a=>stageNum(a)===d), d, journeyState.stages, runtime, isRunning, currentStage),
+    }));
+    setReaderIndex(sortedArtifacts.indexOf(f));
     setReaderArtifact({
       file: f,
       stageIndex: n,
@@ -712,376 +459,321 @@ export default function DeskPage() {
       confidence: jStage?.confidence as string | undefined,
       version: runtime.getVersion(f),
       summary: summaries[f] ?? '',
-      downstreamCount,
+      downstreamCount: downstreamNums.length,
       agentId: STAGE_INTEL[n]?.agentId,
+      downstreamItems,
+      upstreamItems,
     });
-  }, [journeyState.stages, runtime, isRunning, currentStage, summaries]);
+  }, [journeyState.stages, runtime, isRunning, currentStage, summaries, artifacts, sortedArtifacts]);
+
+  const handleReaderPrev = useCallback(()=>{
+    if (readerIndex <= 0) return;
+    handleOpenReader(sortedArtifacts[readerIndex - 1]);
+  },[readerIndex, sortedArtifacts, handleOpenReader]);
+
+  const handleReaderNext = useCallback(()=>{
+    if (readerIndex >= sortedArtifacts.length - 1) return;
+    handleOpenReader(sortedArtifacts[readerIndex + 1]);
+  },[readerIndex, sortedArtifacts, handleOpenReader]);
+
+  // Open ArtifactInspector (W4) for a given file — shared by node-click and nav
+  const openInspectorForFile = useCallback((f: string) => {
+    const n = stageNum(f);
+    const phase = LIFECYCLE_PHASES.find(p => p.stages.includes(n));
+    const jStage = journeyState.stages[String(n)];
+    const upstreamNums   = STAGE_DEPS[n] ?? [];
+    const downstreamNums = Object.entries(STAGE_DEPS)
+      .filter(([, deps]) => deps.includes(n))
+      .map(([k]) => parseInt(k, 10));
+    const upstreamItems = upstreamNums.map(u => ({
+      name: STAGE_LABEL[u] ?? `Stage ${u}`,
+      healthState: getHealthState(artifacts.find(a=>stageNum(a)===u), u, journeyState.stages, runtime, isRunning, currentStage),
+    }));
+    const downstreamItems = downstreamNums.slice(0, 4).map(d => ({
+      name: STAGE_LABEL[d] ?? `Stage ${d}`,
+      healthState: getHealthState(artifacts.find(a=>stageNum(a)===d), d, journeyState.stages, runtime, isRunning, currentStage),
+    }));
+    const idx = sortedArtifacts.indexOf(f);
+    setInspectorIndex(idx >= 0 ? idx : 0);
+    setInspectorArtifact({
+      file: f,
+      stageIndex: n,
+      stageName: STAGE_LABEL[n] ?? `Stage ${n}`,
+      phase: phase?.label ?? '',
+      phaseColor: phase?.color ?? '#94a3b8',
+      healthState: getHealthState(f, n, journeyState.stages, runtime, isRunning, currentStage),
+      confidence: jStage?.confidence as string | undefined,
+      version: runtime.getVersion(f),
+      summary: summaries[f] ?? '',
+      downstreamCount: downstreamNums.length,
+      agentId: STAGE_INTEL[n]?.agentId,
+      downstreamItems,
+      upstreamItems,
+    });
+  }, [journeyState.stages, runtime, isRunning, currentStage, summaries, artifacts, sortedArtifacts]);
+
+  // Triggered by WorkspaceExplorer file node click
+  const handleOpenInspector = useCallback((node: WorkspaceNode) => {
+    if (!node.file) return;
+    openInspectorForFile(node.file);
+  }, [openInspectorForFile]);
+
+  // Fix 3 — Inspector prev/next navigation
+  const handleInspectorNavigate = useCallback((direction: 'prev' | 'next') => {
+    const newIdx = direction === 'prev' ? inspectorIndex - 1 : inspectorIndex + 1;
+    if (newIdx < 0 || newIdx >= sortedArtifacts.length) return;
+    openInspectorForFile(sortedArtifacts[newIdx]);
+  }, [inspectorIndex, sortedArtifacts, openInspectorForFile]);
+
+  // Workspace tree for WorkspaceExplorer (W1/W2)
+  // R2 (Mission 17): All nodes wrapped inside a project root derived from projectPath.
+  const workspaceTree = useMemo((): WorkspaceNode[] => {
+    const phaseFolder = (phase: typeof LIFECYCLE_PHASES[0]): WorkspaceNode => ({
+      id:         `phase-${phase.id}`,
+      kind:       'folder',
+      label:      phase.label,
+      phaseColor: phase.color,
+      count:      phase.stages.filter(n => artifacts.some(a => stageNum(a) === n)).length,
+      children:   phase.stages.map(n => {
+        const file   = artifacts.find(a => stageNum(a) === n);
+        const health = getHealthState(file, n, journeyState.stages, runtime, isRunning, currentStage);
+        return {
+          id:          `stage-${n}`,
+          kind:        file ? ('file' as const) : ('disabled' as const),
+          label:       STAGE_LABEL[n] ?? `Stage ${n}`,
+          file:        file,
+          stageIndex:  n,
+          healthState: health,
+          version:     file ? runtime.getVersion(file) : 0,
+        } as WorkspaceNode;
+      }),
+    });
+    // Inner nodes (Documents, History, coming-soon placeholders)
+    const innerNodes: WorkspaceNode[] = [
+      {
+        id:       'documents',
+        kind:     'folder',
+        label:    'Documents',
+        count:    artifacts.length,
+        children: LIFECYCLE_PHASES.map(phaseFolder),
+      },
+    ];
+    if (runtime.state.events.length > 0) {
+      innerNodes.push({
+        id:    'history',
+        kind:  'folder',
+        label: 'History',
+        icon:  'history',
+        count: runtime.state.events.length,
+      });
+    }
+    innerNodes.push(
+      { id: 'decisions', kind: 'disabled', label: 'Decision Log', comingSoon: true, icon: 'decisions' },
+      { id: 'knowledge', kind: 'disabled', label: 'Knowledge',    comingSoon: true, icon: 'knowledge' },
+      { id: 'assets',    kind: 'disabled', label: 'Assets',       comingSoon: true, icon: 'assets'    },
+      { id: 'snapshots', kind: 'disabled', label: 'Snapshots',    comingSoon: true, icon: 'snapshots'  },
+      { id: 'exports',   kind: 'disabled', label: 'Exports',      comingSoon: true, icon: 'exports'   },
+    );
+    // Project root — Fix 2: prefer user-edited display name, fall back to derived name
+    const rootLabel = (settings.projectDisplayName ?? projectName) || 'Project 001';
+    const rootNode: WorkspaceNode = {
+      id:       'project-root',
+      kind:     'folder',
+      label:    rootLabel,
+      icon:     'project',
+      count:    artifacts.length,
+      children: innerNodes,
+    };
+    return [rootNode];
+  }, [artifacts, journeyState.stages, runtime, isRunning, currentStage, projectName, settings.projectDisplayName]);
 
   const B = (extra?:React.CSSProperties): React.CSSProperties => ({...MONO, cursor:'pointer', border:'none', borderRadius:'3px', ...(extra??{})});
 
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div style={{display:'flex',flexDirection:'column',height:'100vh',backgroundColor:'#020609',overflow:'hidden',...MONO,color:'#cbd5e1'}}>
+    <div style={{
+      display:'flex', flexDirection:'column',
+      height:'100%',             // B5: was 100vh — respects app-shell height, eliminates 44px overflow
+      backgroundColor:'#020609',
+      overflow:'hidden',
+      ...MONO, color:'#cbd5e1',
+    }}>
       <style>{`
         ::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-thumb{background:#1e293b;border-radius:2px}
-        .art-row:hover{background:#0a1509!important} .toc-item:hover{color:#4ade80!important;cursor:pointer}
         button:disabled{opacity:.4;cursor:not-allowed!important} textarea::placeholder,input::placeholder{color:#64748b}
         @keyframes shimmer{0%{background-position:-400px 0}100%{background-position:400px 0}}
         .shimmer-bar{background:linear-gradient(90deg,#0a1a2e 25%,#1e2d45 50%,#0a1a2e 75%);background-size:800px 100%;animation:shimmer 1.4s infinite linear}
+        @keyframes pulse-dot{0%,100%{opacity:1}50%{opacity:0.25}}
+        .phase-row:hover{background-color:#040b14!important}
+        .phase-row:focus{outline:1px solid #4ade8033;outline-offset:-1px}
       `}</style>
 
-      {/* Page header */}
-      <div style={{display:'flex',alignItems:'center',padding:'0 14px',height:'42px',backgroundColor:'#020c06',borderBottom:'1px solid #0a1a2e',flexShrink:0,gap:'10px'}}>
-        <div style={{fontSize:'12px',color:'#64748b',letterSpacing:'0.1em',fontWeight:700}}>DESK</div>
-        {selected && <>
-          <span style={{color:'#334155'}}>›</span>
-          <span style={{fontSize:'11px',color:'#cbd5e1'}}>Stage {selStage}</span>
-          <span style={{color:'#334155'}}>›</span>
-          <span style={{fontSize:'11px',color:selColor,fontWeight:700}}>{titleCase(humanName(selected))}</span>
-          {isStale && <div style={{fontSize:'9px',color:'#f59e0b',padding:'1px 6px',border:'1px solid #f59e0b33',borderRadius:'2px'}}>△ stale</div>}
-          {ver > 0 && <div style={{fontSize:'9px',color:'#4ade80',padding:'1px 6px',border:'1px solid #4ade8033',borderRadius:'2px'}}>v{ver}</div>}
-        </>}
+      {/* ── Page header — minimal: DESK label + Focus toggle ── */}
+      <div style={{display:'flex',alignItems:'center',padding:'0 16px',height:'42px',backgroundColor:'#020c06',borderBottom:'1px solid #0a1a2e',flexShrink:0,gap:'10px'}}>
+        <div style={{fontSize:'12px',color:'#64748b',letterSpacing:'0.1em',fontWeight:700,...MONO}}>DESK</div>
         <div style={{flex:1}}/>
-        {selected && content && (
-          <div style={{display:'flex',gap:'4px'}}>
-            {(() => { const kb = (new Blob([content]).size / 1024).toFixed(1); return (
-              <>
-                <button onClick={handleCopy}     style={{...B(),padding:'4px 9px',fontSize:'10px',backgroundColor:'transparent',color:'#cbd5e1',outline:'1px solid #1e293b'}}>Copy</button>
-                <button onClick={handleDownload} style={{...B(),padding:'4px 9px',fontSize:'10px',backgroundColor:'#0a1509',color:'#4ade80',outline:'1px solid #1a3a20'}}>⬇ MD ({kb}KB)</button>
-              </>
-            ); })()}
-            <button onClick={handleOpenInRefine} style={{...B(),padding:'4px 9px',fontSize:'10px',backgroundColor:'#0a0f1e',color:'#818cf8',outline:'1px solid #818cf833'}}>Edit in Refine ↗</button>
-          </div>
-        )}
-        <button onClick={()=>setFocusMode(!focusMode)}
-          style={{...B(),padding:'4px 10px',fontSize:'10px',backgroundColor:focusMode?'#0a1f0e':'transparent',color:focusMode?'#4ade80':'#64748b',outline:'1px solid #1e293b'}}>
+        <button
+          onClick={()=>setFocusMode(!focusMode)}
+          style={{...B(),padding:'4px 10px',fontSize:'10px',backgroundColor:focusMode?'#0a1f0e':'transparent',color:focusMode?'#4ade80':'#64748b',outline:'1px solid #1e293b'}}
+        >
           {focusMode ? '⇤ EXIT FOCUS' : '⇥ FOCUS'}
         </button>
       </div>
 
-      {/* Main layout */}
+      {/* ── Main three-column layout ── */}
       <div style={{flex:1,display:'flex',overflow:'hidden'}}>
 
-        {/* Left rail — B1/B4: 5-phase grouping with PM question subtitle */}
+        {/* ── W1: WorkspaceExplorer — replaces the orientation-only left rail ── */}
         {!focusMode && (
-          <div style={{width:'196px',flexShrink:0,borderRight:'1px solid #0a1a2e',backgroundColor:'#020c06',overflowY:'auto',display:'flex',flexDirection:'column'}}>
-            <div style={{padding:'9px 13px 6px',fontSize:'12px',color:'#2a5a30',letterSpacing:'0.12em',fontWeight:700}}>
-              ARTIFACTS · {artifacts.length}/15
-            </div>
-
-            {LIFECYCLE_PHASES.map(phase => {
-              const expanded = expandedPhases.has(phase.id);
-              const genCount = phase.stages.filter(n => artifacts.some(a => stageNum(a) === n)).length;
-              return (
-                <div key={phase.id}>
-                  {/* Phase header — click to toggle */}
-                  <div
-                    onClick={() => togglePhase(phase.id)}
-                    style={{cursor:'pointer',userSelect:'none'}}
-                    onMouseEnter={e=>(e.currentTarget as HTMLElement).style.backgroundColor='#040b14'}
-                    onMouseLeave={e=>(e.currentTarget as HTMLElement).style.backgroundColor='transparent'}
-                  >
-                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'5px 13px 3px'}}>
-                      <div style={{display:'flex',alignItems:'center',gap:'5px'}}>
-                        <span style={{fontSize:'9px',color:phase.color}}>{expanded?'▾':'▸'}</span>
-                        <span style={{fontSize:'10px',color:phase.color,fontWeight:700,letterSpacing:'0.08em'}}>{phase.label.toUpperCase()}</span>
-                      </div>
-                      <span style={{fontSize:'9px',color: genCount===phase.stages.length?'#4ade80':'#334155'}}>{genCount}/{phase.stages.length}</span>
-                    </div>
-                    {/* B4: PM question subtitle — only visible when phase is expanded */}
-                    {expanded && (
-                      <div style={{padding:'0 13px 4px 22px',fontSize:'9px',color:'#2a5a30',lineHeight:1.5,fontStyle:'italic'}}>
-                        {phase.question}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Stage items */}
-                  {expanded && phase.stages.map(n => {
-                    const f = artifacts.find(a => stageNum(a) === n);
-                    if (!f) {
-                      return (
-                        <div key={n} style={{display:'flex',alignItems:'center',gap:'7px',padding:'5px 12px 5px 20px',opacity:0.35}}>
-                          <div style={{width:'5px',height:'5px',borderRadius:'50%',backgroundColor:'#334155',flexShrink:0}}/>
-                          <div style={{flex:1,minWidth:0}}>
-                            <div style={{fontSize:'11px',color:'#334155',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{STAGE_LABEL[n]}</div>
-                            <div style={{fontSize:'9px',color:'#1e293b'}}>Stage {n} · queued</div>
-                          </div>
-                        </div>
-                      );
-                    }
-                    const col=STAGE_COLOR[n]??'#94a3b8', active=selected===f, stale=runtime.isStale(f), v=runtime.getVersion(f);
-                    return (
-                      <div key={n} className="art-row" onClick={()=>setSelected(f)}
-                        style={{display:'flex',alignItems:'center',gap:'7px',padding:'5px 12px 5px 20px',cursor:'pointer',borderLeft:`2px solid ${active?col:stale?'#f59e0b33':'transparent'}`,backgroundColor:active?'#0a1509':'transparent'}}>
-                        <div style={{width:'5px',height:'5px',borderRadius:'50%',backgroundColor:stale?'#f59e0b':v>0?'#4ade80':col,flexShrink:0}}/>
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:'11px',color:active?col:stale?'#f59e0b':'#94a3b8',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{STAGE_LABEL[n]}</div>
-                          <div style={{fontSize:'9px',color:'#334155'}}>Stage {n}{v>0?` · v${v}`:''}{stale?' · △':''}</div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })}
-          </div>
+          <WorkspaceExplorer
+            tree={workspaceTree}
+            activeNodeId={inspectorArtifact ? `stage-${stageNum(inspectorArtifact.file)}` : null}
+            onNodeSelect={handleOpenInspector}
+            width={240}
+            headerLabel="WORKSPACE"
+            onRenameNode={(_, newName) => updateSettings({ projectDisplayName: newName })}
+          />
         )}
 
-        {/* Centre */}
-        <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
-          {/* D1/D2/D3: Artifact library — always shows all 15 stages */}
-          {!selected && (
-            <div style={{flex:1,overflowY:'auto',padding:'14px 18px'}}>
-              {/* Library header */}
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'14px',paddingBottom:'8px',borderBottom:'1px solid #0a1a2e'}}>
-                <div style={{fontSize:'11px',color:'#2a5a30',letterSpacing:'0.1em',fontWeight:700}}>
-                  ARTIFACT LIBRARY
+        {/* ── B3: Center — the hero ── */}
+        <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',minWidth:0}}>
+          <div style={{flex:1,overflowY:'auto',padding:'32px 40px'}}>
+            <div style={{maxWidth:'1080px',margin:'0 auto'}}>
+
+              {/* ── ZONE 1: Daily Brief — Fix 4: 18px, var(--ig-text-primary) ── */}
+              {dailyBrief ? (
+                <div style={{marginBottom:'36px',...SANS}}>
+                  <p style={{
+                    fontSize:'18px', fontWeight:400, lineHeight:1.75,
+                    color:'var(--ig-text-primary, #f1f5f9)', margin:'0 0 14px 0', ...SANS,
+                  }}>
+                    {dailyBrief.text}
+                    {dailyBrief.actionLabel && dailyBrief.actionFile && (
+                      <>{' '}<span
+                        onClick={()=>{ if (dailyBrief.actionFile) handleOpenReader(dailyBrief.actionFile); }}
+                        style={{color:'#4ade80',cursor:'pointer',textDecoration:'underline',...SANS}}
+                      >
+                        {dailyBrief.actionLabel}
+                      </span></>
+                    )}
+                  </p>
+                  {/* Recent activity micro-section — sourced from improvement history (B1 mapping: History tab) */}
+                  {runtime.state.reasoningChain.length > 0 && (
+                    <div style={{display:'flex',flexDirection:'column',gap:'2px'}}>
+                      {runtime.state.reasoningChain.slice(0,3).map((r,i) => (
+                        <div key={i} style={{fontSize:'11px',color:'#334155',lineHeight:1.7,...MONO}}>
+                          <span style={{color:'#2a5a30'}}>{titleCase(humanName(r.artifactName+'.md'))}</span>
+                          {' — '}{r.intent.slice(0,60)}{r.intent.length>60?'…':''}{' '}
+                          <span style={{color:'#1e293b'}}>
+                            {new Date(r.timestamp).toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit',hour12:false})}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <div style={{fontSize:'10px',color:'#334155'}}>
-                  {artifacts.length}/15 generated · Stage {currentStage}/15
+              ) : !artifacts.length && (
+                /* Empty state — Zone 1 prose for no-run state */
+                <div style={{marginBottom:'36px',...SANS}}>
+                  <p style={{fontSize:'17px',fontWeight:400,lineHeight:1.75,color:'#334155',margin:0,...SANS}}>
+                    Describe an idea above to begin.
+                  </p>
                 </div>
+              )}
+
+              {/* ── ZONE 2: Attention Drawer (W5) — spring slide-down when items exist ── */}
+              <AttentionDrawer
+                items={priorityQueue}
+                onReview={handleOpenReader}
+              />
+
+              {/* ── ZONE 3: Artifact Library — Fix 1 restore, always visible ── */}
+              <div style={{marginTop:'24px'}}>
+                {/* Zone 3 section label */}
+                <div style={{
+                  fontSize:'9px', color:'var(--ig-text-tertiary,#475569)',
+                  letterSpacing:'0.12em', fontWeight:700,
+                  textTransform:'uppercase', marginBottom:'24px',
+                  ...MONO,
+                }}>
+                  Artifact Library
+                </div>
+
+                {LIFECYCLE_PHASES.map(phase => (
+                  <div key={phase.id} style={{marginBottom:'28px'}}>
+                    {/* Fix 4: Phase header — 11px, uppercase, 0.08em, weight 600, phase color 80% */}
+                    <div style={{
+                      display:'flex', alignItems:'center', gap:'8px',
+                      marginBottom:'10px', paddingBottom:'8px',
+                      borderBottom:'1px solid #0a1a2e',
+                    }}>
+                      <span style={{
+                        fontSize:'11px', fontWeight:600,
+                        color:phase.color, opacity:0.8,
+                        letterSpacing:'0.08em',
+                        textTransform:'uppercase', ...MONO,
+                      }}>
+                        {phase.label}
+                      </span>
+                      <span style={{fontSize:'11px', color:'#1e293b',...MONO}}>—</span>
+                      <span style={{fontSize:'11px', color:'var(--ig-text-tertiary,#334155)',...SANS}}>
+                        {phase.question}
+                      </span>
+                    </div>
+                    {/* 2-column card grid */}
+                    <div style={{
+                      display:'grid',
+                      gridTemplateColumns:'repeat(2,1fr)',
+                      gap:'10px',
+                    }}>
+                      {phase.stages.map(n => (
+                        <ArtifactCard
+                          key={n}
+                          stageN={n}
+                          artifacts={artifacts}
+                          journeyStages={journeyState.stages}
+                          summaries={summaries}
+                          runtime={runtime}
+                          isRunning={isRunning}
+                          currentStage={currentStage}
+                          onSelect={f => openInspectorForFile(f)}
+                          onOpenStudio={handleOpenInStudio}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
 
-              {/* D4: Honest empty state when no run data */}
-              {!artifacts.length && !journeyState.stages && (
-                <div style={{padding:'20px',fontSize:'11px',color:'#334155',textAlign:'center' as const,lineHeight:1.8}}>
-                  No run data yet. Run a lifecycle to populate the library.
-                </div>
-              )}
-
-              {/* B5: Weakest-link banner — most impactful stale/questionable artifact */}
-              {isRunning && (
-                <div style={{display:'flex',alignItems:'center',gap:'8px',padding:'7px 10px',marginBottom:'10px',backgroundColor:'#0a0f1e',border:'1px solid #818cf833',borderRadius:'3px',fontSize:'10px'}}>
-                  <span style={{color:'#818cf8',fontWeight:700,letterSpacing:'0.06em'}}>● RUNNING</span>
-                  <span style={{color:'#64748b'}}>Stage {currentStage} · {STAGE_LABEL[currentStage] ?? '…'}</span>
-                </div>
-              )}
-              {!isRunning && weakestLink && (
-                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px',padding:'7px 10px',marginBottom:'10px',backgroundColor: weakestLink.health==='stale'?'#140a0a':'#0d0e07',border:`1px solid ${weakestLink.health==='stale'?'#ef444433':'#f59e0b33'}`,borderRadius:'3px',fontSize:'10px'}}>
-                  <div style={{display:'flex',alignItems:'center',gap:'7px'}}>
-                    <span style={{color:weakestLink.health==='stale'?'#ef4444':'#f59e0b',fontWeight:700,letterSpacing:'0.06em',flexShrink:0}}>
-                      {weakestLink.health==='stale'?'△ STALE':'⚑ REVIEW'}
-                    </span>
-                    <span style={{color:'#94a3b8'}}>{weakestLink.name}</span>
-                    <span style={{color:'#334155'}}>·</span>
-                    <span style={{color:'#64748b'}}>{weakestLink.downstreams} downstream{weakestLink.downstreams!==1?'s':''} affected</span>
-                  </div>
-                  <button onClick={()=>handleOpenInStudio(weakestLink.file)}
-                    style={{padding:'2px 8px',fontSize:'9px',backgroundColor:'transparent',border:`1px solid ${weakestLink.health==='stale'?'#ef444433':'#f59e0b33'}`,borderRadius:'2px',color:weakestLink.health==='stale'?'#ef4444':'#f59e0b',cursor:'pointer',...MONO}}>
-                    Fix →
-                  </button>
-                </div>
-              )}
-
-              {/* Phase sections with 2-column card grid */}
-              {LIFECYCLE_PHASES.map(phase => (
-                <div key={phase.id} style={{marginBottom:'16px'}}>
-                  {/* Phase heading */}
-                  <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'7px'}}>
-                    <div style={{width:'3px',height:'12px',backgroundColor:phase.color,borderRadius:'1px',flexShrink:0}}/>
-                    <span style={{fontSize:'10px',color:phase.color,fontWeight:700,letterSpacing:'0.1em'}}>{phase.label.toUpperCase()}</span>
-                    <span style={{fontSize:'9px',color:'#334155',fontStyle:'italic'}}>
-                      {phase.question}
-                    </span>
-                    <div style={{flex:1,height:'1px',backgroundColor:'#0a1a2e'}}/>
-                    <span style={{fontSize:'9px',color:'#334155'}}>
-                      {phase.stages.filter(n=>artifacts.some(a=>stageNum(a)===n)).length}/{phase.stages.length}
-                    </span>
-                  </div>
-
-                  {/* 2-column card grid — all stages shown, generated + placeholder */}
-                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'6px'}}>
-                    {phase.stages.map(n => (
-                      <ArtifactCard
-                        key={n}
-                        stageN={n}
-                        artifacts={artifacts}
-                        journeyStages={journeyState.stages as Record<string, any>}
-                        summaries={summaries}
-                        runtime={runtime}
-                        isRunning={isRunning}
-                        currentStage={currentStage}
-                        onSelect={handleOpenReader}
-                        onOpenStudio={handleOpenInStudio}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ))}
             </div>
-          )}
-
-          {selected && loading && <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',color:'#cbd5e1'}}>Loading artifact…</div>}
-
-          {selected && !loading && content && (
-            <>
-              {/* Article header */}
-              <div style={{padding:'18px 36px 10px',borderBottom:'1px solid #0a1a2e',flexShrink:0}}>
-                <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'3px'}}>
-                  <div style={{width:'8px',height:'8px',borderRadius:'50%',backgroundColor:selColor}}/>
-                  <div style={{fontSize:'11px',color:selColor,fontWeight:700,letterSpacing:'0.08em'}}>STAGE {selStage} · {STAGE_LABEL[selStage]}</div>
-                  {STAGE_INTEL[selStage] && <div style={{fontSize:'10px',color:'#64748b'}}>· {STAGE_INTEL[selStage].agentId}</div>}
-                </div>
-                <div style={{fontSize:'10px',color:'#64748b'}}>{wordCount(content).toLocaleString()} words · {readTime(content)} · {toc.length} sections</div>
-              </div>
-
-              {/* TOC bar */}
-              {toc.length > 2 && (
-                <div style={{padding:'7px 36px',backgroundColor:'#020c06',borderBottom:'1px solid #0a1a2e',flexShrink:0,overflowX:'auto'}}>
-                  <div style={{display:'flex',gap:'4px',alignItems:'center',whiteSpace:'nowrap'}}>
-                    <span style={{fontSize:'9px',color:'#334155',marginRight:'5px',flexShrink:0}}>CONTENTS</span>
-                    {toc.map((e,i) => (
-                      <React.Fragment key={e.id}>
-                        {i > 0 && <span style={{color:'#334155'}}>·</span>}
-                        <span className="toc-item" onClick={()=>handleTocClick(e.id)}
-                          style={{fontSize:'10px',color:e.level===2?'#94a3b8':'#64748b',paddingLeft:e.level===3?'6px':'0'}}>
-                          {e.text.slice(0,28)}{e.text.length>28?'…':''}
-                        </span>
-                      </React.Fragment>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <ArtifactReader content={content} scrollRef={scrollRef}/>
-
-              {/* Footer */}
-              <div style={{padding:'7px 36px',borderTop:'1px solid #0a1a2e',flexShrink:0,display:'flex',gap:'12px',alignItems:'center',fontSize:'10px',color:'#64748b',backgroundColor:'#020c06'}}>
-                <span>{wordCount(content).toLocaleString()} words</span>
-                <span>·</span><span>{readTime(content)}</span>
-                <span>·</span><span>{toc.length} sections</span>
-                {ver > 0 && <><span>·</span><span style={{color:'#4ade80'}}>v{ver} improved</span></>}
-                <div style={{flex:1}}/>
-                <button onClick={handleDownload} style={{...B(),padding:'3px 8px',fontSize:'10px',backgroundColor:'transparent',color:'#64748b',outline:'1px solid #1e293b'}}>↓ Download</button>
-                <button onClick={handleOpenInRefine} style={{...B(),padding:'3px 8px',fontSize:'10px',backgroundColor:'#0a0f1e',color:'#818cf8',outline:'1px solid #818cf833'}}>Edit in Refine →</button>
-              </div>
-            </>
-          )}
+          </div>
         </div>
 
-        {/* Right panel */}
-        {!focusMode && (
-          <div style={{width:'256px',flexShrink:0,borderLeft:'1px solid #0a1a2e',backgroundColor:'#020c06',display:'flex',flexDirection:'column',overflow:'hidden'}}>
-            <div style={{display:'flex',borderBottom:'1px solid #0a1a2e',flexShrink:0}}>
-              {(['overview','actions','history'] as const).map(t=>(
-                <button key={t} onClick={()=>setRightTab(t)}
-                  style={{...B(),flex:1,padding:'9px 0',fontSize:'9px',borderRadius:0,backgroundColor:'transparent',color:rightTab===t?'#4ade80':'#64748b',borderBottom:rightTab===t?'1px solid #4ade80':'1px solid transparent',letterSpacing:'0.08em',textTransform:'uppercase' as const}}>
-                  {t}
-                </button>
-              ))}
-            </div>
+        {/* B1: Right panel — ABSENT. The DOM element does not exist. */}
 
-            <div style={{flex:1,overflowY:'auto',padding:'12px'}}>
-
-              {rightTab==='overview' && (
-                <>
-                  {!selected && (
-                    <>
-                      <div style={{fontSize:'10px',color:'#2a5a30',fontWeight:700,letterSpacing:'0.1em',marginBottom:'9px'}}>PROJECT</div>
-                      <div style={{padding:'9px',backgroundColor:'#040b14',border:'1px solid #0a1a2e',borderRadius:'3px',marginBottom:'12px',fontSize:'10px',lineHeight:2}}>
-                        <div>Stage: <span style={{color:'#4ade80'}}>{currentStage}/15</span></div>
-                        <div>Artifacts: <span style={{color:'#cbd5e1'}}>{artifacts.length}</span></div>
-                        <div>Improved: <span style={{color:'#4ade80'}}>{runtime.state.improvementCount}</span></div>
-                        <div>Stale: <span style={{color:staleCount>0?'#f59e0b':'#64748b'}}>{staleCount}</span></div>
-                      </div>
-                      <div style={{fontSize:'10px',color:'#2a5a30',fontWeight:700,letterSpacing:'0.1em',marginBottom:'8px'}}>LIFECYCLE MAP</div>
-                      <LifecycleNodeChain
-                        stages={stagesForChain}
-                        currentStage={currentStage}
-                        onSelectStage={handleSelectStageFromChain}
-                      />
-                    </>
-                  )}
-                  {selected && content && (
-                    <PMIntelligence
-                      selected={selected} content={content} runtime={runtime} artifacts={artifacts}
-                      insight={journeyState.stages[String(selStage)]}
-                      agentsUsed={journeyState.agentsByStage[String(selStage)]}
-                    />
-                  )}
-                </>
-              )}
-
-              {rightTab==='actions' && (
-                <div>
-                  <div style={{fontSize:'10px',color:'#2a5a30',fontWeight:700,letterSpacing:'0.1em',marginBottom:'9px'}}>QUICK IMPROVE</div>
-                  <div style={{fontSize:'11px',color:'#64748b',marginBottom:'8px',lineHeight:1.7}}>Describe what to improve, then open in the full Refine engine with this artifact pre-selected.</div>
-                  <textarea value={quickIntent} onChange={e=>setQuickIntent(e.target.value)} placeholder='e.g. "Sharpen the competitive moat section"'
-                    style={{width:'100%',minHeight:'60px',padding:'8px',...MONO,fontSize:'11px',color:'#64748b',backgroundColor:'#040b14',border:'1px solid #0f1923',borderRadius:'3px',resize:'vertical',outline:'none',lineHeight:1.6,boxSizing:'border-box' as const,marginBottom:'8px'}}/>
-                  <button onClick={handleOpenInRefine} disabled={!selected}
-                    style={{...B(),width:'100%',padding:'9px 0',fontSize:'11px',fontWeight:700,letterSpacing:'0.08em',backgroundColor:selected?'#0a0f1e':'#040b14',color:selected?'#818cf8':'#334155',outline:`1px solid ${selected?'#818cf833':'#334155'}`,marginBottom:'5px'}}>
-                    ↗ Open in Refine
-                  </button>
-                  <div style={{fontSize:'9px',color:'#334155',textAlign:'center' as const,marginBottom:'16px'}}>Full model selector · 8 providers · builder export</div>
-                  <div style={{fontSize:'10px',color:'#2a5a30',fontWeight:700,letterSpacing:'0.1em',marginBottom:'8px',paddingTop:'12px',borderTop:'1px solid #0a1a2e'}}>DOWNLOAD</div>
-                  <div style={{display:'flex',flexDirection:'column',gap:'4px',marginBottom:'16px'}}>
-                    <button onClick={handleDownload} disabled={!content} style={{...B(),padding:'7px 10px',fontSize:'11px',backgroundColor:'#0a1509',color:'#4ade80',outline:'1px solid #1a3a20',textAlign:'left' as const}}>↓ Download as Markdown</button>
-                    <button onClick={handleCopy} disabled={!content} style={{...B(),padding:'7px 10px',fontSize:'11px',backgroundColor:'transparent',color:'#cbd5e1',outline:'1px solid #1e293b',textAlign:'left' as const}}>◻ Copy to clipboard</button>
-                    <button onClick={()=>window.location.href='/improve'} style={{...B(),padding:'7px 10px',fontSize:'11px',backgroundColor:'#0a0800',color:'#f59e0b',outline:'1px solid #f59e0b22',textAlign:'left' as const}}>◈ Builder package (10 platforms)</button>
-                  </div>
-                  <div style={{fontSize:'10px',color:'#2a5a30',fontWeight:700,letterSpacing:'0.1em',marginBottom:'8px',paddingTop:'12px',borderTop:'1px solid #0a1a2e'}}>SNAPSHOT</div>
-                  <input value={snapName} onChange={e=>setSnapName(e.target.value)} placeholder="Name this snapshot…"
-                    style={{width:'100%',padding:'7px 9px',...MONO,fontSize:'11px',color:'#64748b',backgroundColor:'#040b14',border:'1px solid #0f1923',borderRadius:'3px',outline:'none',boxSizing:'border-box' as const,marginBottom:'6px'}}/>
-                  <button onClick={handleSaveSnapshot} disabled={!snapName.trim()}
-                    style={{...B(),width:'100%',padding:'7px 0',fontSize:'11px',backgroundColor:'#0a0f1e',color:snapSaved?'#4ade80':'#818cf8',outline:`1px solid ${snapSaved?'#4ade8033':'#818cf833'}`,marginBottom:'4px'}}>
-                    {snapSaved ? '✓ Saved!' : '◼ Save snapshot'}
-                  </button>
-                </div>
-              )}
-
-              {rightTab==='history' && (
-                <div>
-                  {runtime.state.reasoningChain.length > 0 && (
-                    <>
-                      <div style={{fontSize:'10px',color:'#2a5a30',fontWeight:700,letterSpacing:'0.1em',marginBottom:'8px'}}>IMPROVEMENT HISTORY · {runtime.state.reasoningChain.length}</div>
-                      {runtime.state.reasoningChain.slice(0,12).map((r,i) => (
-                        <div key={i} style={{padding:'8px 0',borderBottom:'1px solid #060e09'}}>
-                          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'3px'}}>
-                            <div style={{fontSize:'11px',color:'#4ade80',fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1}}>{titleCase(humanName(r.artifactName+'.md'))}</div>
-                            <div style={{fontSize:'8px',color:'#64748b',flexShrink:0,marginLeft:'6px'}}>{new Date(r.timestamp).toLocaleTimeString()}</div>
-                          </div>
-                          <div style={{fontSize:'10px',color:'#cbd5e1',marginBottom:'3px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.intent}</div>
-                          <div style={{fontSize:'9px',color:'#64748b',lineHeight:1.6}}>{r.reasoning.slice(0,100)}…</div>
-                          <div style={{fontSize:'9px',color:'#64748b',marginTop:'2px'}}>{r.model}</div>
-                        </div>
-                      ))}
-                    </>
-                  )}
-                  {!runtime.state.reasoningChain.length && (
-                    <div style={{fontSize:'11px',color:'#64748b',lineHeight:1.8,padding:'6px 0'}}>No improvement history yet. Use REFINE to improve artifacts.</div>
-                  )}
-                  {snapshots.length > 0 && (
-                    <>
-                      <div style={{fontSize:'10px',color:'#2a5a30',fontWeight:700,letterSpacing:'0.1em',marginTop:'14px',paddingTop:'12px',borderTop:'1px solid #0a1a2e',marginBottom:'8px'}}>SNAPSHOTS · {snapshots.length}</div>
-                      {snapshots.map((s,i) => (
-                        <div key={i} style={{padding:'8px',backgroundColor:'#040b14',border:'1px solid #0a1a2e',borderRadius:'3px',marginBottom:'6px'}}>
-                          <div style={{fontSize:'11px',color:'#cbd5e1',fontWeight:700,marginBottom:'2px'}}>{s.name}</div>
-                          <div style={{fontSize:'9px',color:'#64748b'}}>{new Date(s.ts).toLocaleString()} · Stage {s.stage}/15</div>
-                          <button onClick={()=>{ const n=snapshots.filter((_,j)=>j!==i); setSnapshots(n); localStorage.setItem('ig_snapshots',JSON.stringify(n)); }}
-                            style={{...B(),marginTop:'5px',padding:'3px 7px',fontSize:'9px',backgroundColor:'transparent',color:'#cbd5e1',outline:'1px solid #1e293b'}}>Delete</button>
-                        </div>
-                      ))}
-                    </>
-                  )}
-                  {runtime.state.events.length > 0 && (
-                    <>
-                      <div style={{fontSize:'10px',color:'#2a5a30',fontWeight:700,letterSpacing:'0.1em',marginTop:'14px',paddingTop:'12px',borderTop:'1px solid #0a1a2e',marginBottom:'8px'}}>RECENT EVENTS · {runtime.state.events.length}</div>
-                      {runtime.state.events.slice(0,10).map((ev,i) => (
-                        <div key={ev.id??i} style={{padding:'4px 0',borderBottom:'1px solid #060e09',display:'flex',gap:'7px'}}>
-                          <div style={{fontSize:'8px',color:'#1a3a20',flexShrink:0}}>{new Date(ev.timestamp).toLocaleTimeString('en',{hour12:false})}</div>
-                          <div style={{fontSize:'10px',color:ev.type==='ARTIFACT_IMPROVED'?'#4ade80':ev.type==='ARTIFACTS_STALE'?'#f59e0b':'#94a3b8'}}>{ev.type.replace(/_/g,' ')}</div>
-                        </div>
-                      ))}
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
       </div>
 
-      {/* R2/R4: ArtifactReader overlay — AnimatePresence at page root, covers full viewport */}
+      {/* ── W4: ArtifactInspector — right-side slide panel, no backdrop ── */}
+      <AnimatePresence>
+        {inspectorArtifact && (
+          <ArtifactInspector
+            artifact={inspectorArtifact}
+            fullContent={inspectorContent}
+            loading={inspectorLoading}
+            onClose={() => { setInspectorArtifact(null); setInspectorContent(null); }}
+            onOpenInStudio={(file: string) => {
+              setInspectorArtifact(null);
+              setInspectorContent(null);
+              router.push(`/improve?artifact=${encodeURIComponent(file)}`);
+            }}
+            artifactList={sortedArtifacts}
+            currentIndex={inspectorIndex}
+            onNavigate={handleInspectorNavigate}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* ArtifactReader overlay — full viewport, above all content */}
       <AnimatePresence>
         {readerArtifact && (
           <ArtifactReaderOverlay
@@ -1094,6 +786,10 @@ export default function DeskPage() {
               setReaderContent(null);
               router.push(`/improve?artifact=${encodeURIComponent(file)}`);
             }}
+            hasPrev={readerIndex > 0}
+            hasNext={readerIndex < sortedArtifacts.length - 1}
+            onPrev={handleReaderPrev}
+            onNext={handleReaderNext}
           />
         )}
       </AnimatePresence>

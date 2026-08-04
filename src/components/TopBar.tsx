@@ -20,6 +20,7 @@ import { STAGE_COUNT, stageDisplayNumber, formatStageDisplay } from '@/lib/execu
 // a Cmd+K trigger instead of owning navigation.
 import { useCommandPalette } from '@/components/shell/CommandPalette';
 import { Command } from 'lucide-react';
+import { CinematicSwitch } from '@/components/ui/cinematic-glow-toggle';
 
 // Lazy-load the settings modal — it's heavy, only load when opened
 const SettingsModal = lazy(() => import('./SettingsModal'));
@@ -335,6 +336,12 @@ export default function TopBar() {
         >
           ⚙
         </button>
+
+        {/* Mission 17 R3 — dark/light mode toggle. ON = light mode, emerald glow intentional. */}
+        <CinematicSwitch
+          checked={settings.colorScheme === 'light'}
+          onChange={(isLight) => updateSettings({ colorScheme: isLight ? 'light' : 'dark' })}
+        />
       </div>
 
       {/* Global lifecycle running banner — appears on Desk, Improve, AND Office */}

@@ -143,7 +143,9 @@ export const AUTONOMY_META: Record<CoordinatorAutonomy, { label: string; descrip
 export interface GlobalSettings {
   // ── PERSONAL: APPEARANCE ─────────────────────────── [P]
   theme:              'retro' | 'professional'; // [P] Visual style
+  colorScheme:        'dark' | 'light';         // [P] Dark/light mode toggle (Mission 17)
   fontSize:           'sm' | 'md' | 'lg';       // [P] 11.5 / 13.5 / 15px
+  projectDisplayName: string | null;            // [P] User-edited project display name (Mission 17)
   density:            'compact' | 'standard' | 'spacious'; // [P] Spacing system
   animationsEnabled:  boolean;                  // [P] UI animations
   crtIntensity:       'off' | 'subtle' | 'strong'; // [P] Office canvas scanlines
@@ -211,7 +213,9 @@ export interface GlobalSettings {
 export const DEFAULT_SETTINGS: GlobalSettings = {
   // Personal — Appearance
   theme:              'retro',
+  colorScheme:        'dark',
   fontSize:           'md',
+  projectDisplayName: null,
   density:            'standard',
   animationsEnabled:  true,
   crtIntensity:       'subtle',

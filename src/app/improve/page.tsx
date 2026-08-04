@@ -22,7 +22,8 @@ import Panel from '@/components/ui/Panel';
 import { stageDisplayNumber } from '@/lib/execution/adapters/orchestration';
 import ViewSwitcher from '@/components/improve/ViewSwitcher';
 import TipTapRenderer from '@/components/improve/TipTapRenderer';
-import { humanName } from '@/lib/artifactDisplay';
+import { humanName, stageNum } from '@/lib/artifactDisplay';
+import WorkspaceExplorer, { type WorkspaceNode } from '@/components/shared/WorkspaceExplorer';
 import { parseSections } from '@/lib/parseSections';
 import { scrollElementIntoView } from '@/lib/smoothScroll';
 import { workspaceMotion } from '@/components/workspace/motion';
@@ -31,7 +32,7 @@ import { workspaceMotion } from '@/components/workspace/motion';
 // eliminates hydration mismatches from any browser-only initialization inside
 // them or their children (ProjectHeader, ArtifactTree, etc.).
 import dynamic from 'next/dynamic';
-const WorkspacePanel = dynamic(() => import('@/components/workspace/WorkspacePanel'), { ssr: false });
+// WorkspacePanel replaced by WorkspaceExplorer in Mission 16 (W6)
 const AttachmentsPanel = dynamic(() => import('@/components/workspace/AttachmentsPanel'), { ssr: false });
 import { CollaboratorSlot } from '@/components/workspace/CollaboratorSlots';
 import { LocalProjectRepository, ensureDefaultProject, Project, ProjectRepository } from '@/lib/projectRepository';
@@ -427,6 +428,44 @@ export default function ImprovePage() {
       .finally(() => setFileLoading(false));
   },[selected]);
 
+  // ── W6: Studio workspace tree for WorkspaceExplorer ────────────────────────
+  // Simpler health than Desk: isStale → stale, else trustworthy (no 'questionable').
+  const studioTree = React.useMemo((): WorkspaceNode[] => {
+    const STUDIO_PHASES = [
+      { id: 'discover',  label: 'Discover',  color: '#4ade80', stages: [0, 1, 2]        },
+      { id: 'decide',    label: 'Decide',    color: '#38bdf8', stages: [3, 4, 5, 6]     },
+      { id: 'specify',   label: 'Specify',   color: '#818cf8', stages: [7, 8, 9]        },
+      { id: 'architect', label: 'Architect', color: '#fb923c', stages: [10, 11]         },
+      { id: 'ship',      label: 'Ship',      color: '#fde047', stages: [12, 13, 14]     },
+    ];
+    return [{
+      id:    'documents',
+      kind:  'folder',
+      label: 'Documents',
+      count: artifacts.length,
+      children: STUDIO_PHASES.map(phase => ({
+        id:         `phase-${phase.id}`,
+        kind:       'folder' as const,
+        label:      phase.label,
+        phaseColor: phase.color,
+        count:      phase.stages.filter(n => artifacts.some(f => stageNum(f) === n)).length,
+        children:   phase.stages.map(n => {
+          const file   = artifacts.find(f => stageNum(f) === n);
+          const health = file ? (runtime.isStale(file) ? 'stale' : 'trustworthy') : 'queued';
+          return {
+            id:          `stage-${n}`,
+            kind:        (file ? 'file' : 'disabled') as 'file' | 'disabled',
+            label:       STAGE_LABELS[n] ?? `Stage ${n}`,
+            file:        file,
+            stageIndex:  n,
+            healthState: health as WorkspaceNode['healthState'],
+            version:     file ? runtime.getVersion(file) : 0,
+          } satisfies WorkspaceNode;
+        }),
+      })),
+    }];
+  }, [artifacts, runtime]);
+
   const activeModel = MODELS.find(m => m.key === modelKey) ?? (() => {
     const meta = getModelMeta(modelKey);
     return {
@@ -774,41 +813,14 @@ export default function ImprovePage() {
           overflow: 'hidden',
           transition: 'width 200ms ease-in-out, border-right 200ms ease-in-out',
         }}>
-          {/* Inner fixed-width wrapper so WorkspacePanel doesn't reflow during animation */}
-          <div style={{ width: '210px', height: '100%' }}>
-          {mounted && <WorkspacePanel
-            artifacts={artifacts}
-            currentStage={stage}
-            selected={selected}
-            activeSectionId={activeSectionId}
-            isStale={runtime.isStale}
-            getVersion={runtime.getVersion}
-            onSelectArtifact={setSelected}
-            onSectionClick={handleSectionClick}
-            reducedMotion={reducedMotion}
-            projectName={activeProject?.name ?? 'Untitled Project'}
-            onRenameProject={handleRenameProject}
-            referenceDocCount={docs.length}
-            projectRepo={projectRepo}
-            activeProjectId={activeProject?.id ?? null}
-            onProjectChange={setActiveProject}
-            collaboratorSlots={COLLABORATOR_SLOTS}
-            events={runtime.state.events}
-            workspaceView={workspaceView}
-            onWorkspaceViewChange={setWorkspaceViewPersist}
-            treeFooter={selected&&downstreamCount>0&&(
-              <div style={{margin:'8px 12px'}}>
-                <Panel title={`DOWNSTREAM · ${downstreamCount}`} elevation={1} density="compact" className="rounded-sm">
-                  {getTransitiveDownstream(selected).slice(0,5).map(n=>(
-                    <div key={n} style={{fontSize:'var(--ig-t-caption-size)',fontWeight:500,color:runtime.isStale(n)?'#f59e0b':'#64748b',marginBottom:'2px'}}>
-                      ↓ {humanName(n)} {runtime.isStale(n)?'△':''}
-                    </div>
-                  ))}
-                </Panel>
-              </div>
-            )}
-          />}
-          </div>{/* end inner fixed-width wrapper */}
+          {/* W6: WorkspaceExplorer replaces WorkspacePanel */}
+          <WorkspaceExplorer
+            tree={studioTree}
+            activeNodeId={selected ? `stage-${stageNum(selected)}` : null}
+            onNodeSelect={(node) => { if (node.file) setSelected(node.file); }}
+            width={210}
+            headerLabel="WORKSPACE"
+          />
         </div>
 
         {/* C2 — Left panel toggle tab (zero-width boundary, tab hangs outside) */}

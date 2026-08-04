@@ -28,6 +28,7 @@ import ExecutionProvider from '@/components/providers/ExecutionProvider';
 import { GeistSans } from "geist/font/sans";
 import { cn } from "@/lib/utils";
 import GrainFilter from "@/components/ui/GrainFilter";
+import ThemeSync from "@/components/ui/ThemeSync";
 
 export const metadata: Metadata = {
   title:       'IdeaGate — AI-Native PM Operating System',
@@ -50,6 +51,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <ExecutionProvider>
             <RuntimeContext>
               <GlobalStore>
+                <ThemeSync />
                 <DataProvider>
                   <CommandPaletteProvider>
                     <div className="ideagate-shell" style={{

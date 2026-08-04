@@ -604,6 +604,22 @@ body {
   from { opacity: 0; }
   to   { opacity: 1; }
 }
+
+/* S1 — Highlight color circle pulsing ring when active */
+@keyframes ig-highlight-pulse {
+  0%, 100% { outline-color: currentColor; opacity: 1; }
+  50%       { outline-color: currentColor; opacity: 0.55; }
+}
+
+/* S4 — GenerationLoadingView: agent dot pulse + fade-in entrance */
+@keyframes ig-agent-dot-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.45; transform: scale(0.85); }
+}
+@keyframes ig-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
 .ig-ws-row-in {
   animation: ig-ws-row-in 150ms ease-out;
 }
@@ -647,10 +663,10 @@ body {
 
 .ig-tiptap-render .ProseMirror h1 {
   font-family: var(--ig-font-sans);
-  font-size: 1.75rem;   /* Constitution §8 */
+  font-size: 2rem;      /* S3: bumped from 1.75rem — dominant document title */
   font-weight: 700;
-  line-height: 1.25;
-  letter-spacing: var(--ig-t-display-tracking);
+  line-height: 1.2;
+  letter-spacing: -0.4px;
   color: #f1f5f9;
   margin: 30px 0 14px;
   padding-bottom: 10px;
@@ -658,22 +674,22 @@ body {
 }
 .ig-tiptap-render .ProseMirror h2 {
   font-family: var(--ig-font-sans);
-  font-size: 1.25rem;   /* Constitution §8 */
+  font-size: 1.375rem;  /* S3: bumped from 1.25rem */
   font-weight: 600;
   line-height: 1.30;
   color: #e2e8f0;
-  margin: 24px -6px 8px;
+  margin: 1.5em -6px 8px; /* S3: 1.5em top margin for breathing room */
   padding: 2px 6px;
   border-radius: 3px;
   background-color: transparent; /* arrival highlight applied inline by TipTapRenderer */
 }
 .ig-tiptap-render .ProseMirror h3 {
   font-family: var(--ig-font-sans);
-  font-size: 1.0625rem; /* Constitution §8 */
+  font-size: 1.125rem;  /* S3: bumped from 1.0625rem */
   font-weight: 600;
   line-height: 1.35;
   color: #cbd5e1;
-  margin: 18px 0 5px;
+  margin: 1.25em 0 5px; /* S3: 1.25em top margin */
 }
 .ig-tiptap-render .ProseMirror h4,
 .ig-tiptap-render .ProseMirror h5,
@@ -686,18 +702,18 @@ body {
 }
 .ig-tiptap-render .ProseMirror p {
   font-family: var(--ig-font-sans);
-  font-size: 0.9375rem; /* Constitution §8 */
-  line-height: 1.75;
+  font-size: 1rem;      /* S3: bumped from 0.9375rem */
+  line-height: 1.8;     /* S3: bumped from 1.75 */
   color: #cbd5e1;
   margin: 8px 0;
 }
 .ig-tiptap-render .ProseMirror strong { color: #e2e8f0; font-weight: 700; }
 .ig-tiptap-render .ProseMirror code {
   font-family: var(--ig-font-mono);
-  background: #0d1117;
+  background: rgba(255, 255, 255, 0.06); /* S3: surface tint instead of pure dark */
   color: #4ade80;
-  padding: 1px 5px;
-  border-radius: 3px;
+  padding: 2px 6px;    /* S3: slightly more padding */
+  border-radius: 4px;  /* S3: slightly rounder */
   font-size: 0.85em;
 }
 .ig-tiptap-render .ProseMirror pre {
@@ -719,9 +735,10 @@ body {
   font-size: var(--ig-t-body-size);
   line-height: var(--ig-t-body-leading);
   color: #94a3b8;
+  font-style: italic; /* S3: editorial voice */
   margin: 10px 0;
-  padding: 8px 14px;
-  border-left: 3px solid #4ade8044;
+  padding: 1em 14px;  /* S3: 1em vertical padding */
+  border-left: 3px solid rgba(74, 222, 128, 0.4); /* S3: stronger than 0x44 */
   background: #040f08;
 }
 .ig-tiptap-render .ProseMirror blockquote p { margin: 0; color: inherit; }
@@ -835,7 +852,7 @@ body {
   color: #1a202c;
 }
 [data-document-theme="paper"] .ig-tiptap-render .ProseMirror code {
-  background: #f0ebe4;
+  background: rgba(0, 0, 0, 0.06); /* S3: paper mode code surface */
   color: #2d6a4f;
 }
 [data-document-theme="paper"] .ig-tiptap-render .ProseMirror pre {

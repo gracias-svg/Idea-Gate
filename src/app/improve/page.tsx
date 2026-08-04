@@ -14,6 +14,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { CheckCircle2, Moon, Sun, ChevronLeft, ChevronRight, MoreHorizontal, FileText, Kanban } from 'lucide-react';
 import KanbanView from '@/components/studio/KanbanView';
+import GenerationLoadingView from '@/components/studio/GenerationLoadingView';
 import { usePanelState } from '@/lib/usePanelState';
 import { useGlobalStore, getModelMeta, isModelFree } from '@/lib/GlobalStore';
 import { parseContent, parseContentDetailed } from '@/lib/parseContent';
@@ -201,7 +202,7 @@ function MD({content,fs=12,anchors=false,arrivalId=null,reducedMotion=false}:{co
 // Mission 2: `onPresetSelect` is additive — MD() ignores it (never destructured),
 // TipTapRenderer treats it as optional (bubble simply doesn't render without it).
 // Only the primary reading pane call site below passes it.
-function Doc(props:{content:string;fs?:number;anchors?:boolean;arrivalId?:string|null;reducedMotion?:boolean;onPresetSelect?:(intent:string)=>void;editable?:boolean;onContentChange?:(md:string)=>void;onSave?:(md:string)=>Promise<void>}){
+function Doc(props:{content:string;fs?:number;anchors?:boolean;arrivalId?:string|null;reducedMotion?:boolean;onPresetSelect?:(intent:string)=>void;editable?:boolean;onContentChange?:(md:string)=>void;onSave?:(md:string)=>Promise<void>;onFocusIntent?:()=>void}){
   const{state:{settings}}=useGlobalStore();
   return settings.useTipTapRenderer ? <TipTapRenderer {...props}/> : <MD {...props}/>;
 }
@@ -274,6 +275,92 @@ export default function ImprovePage() {
   // prevent SSR; only this guard does.
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
+
+  // S4 — Generation progress state (polled from /api/run + SSE from /api/stream)
+  const [runIsRunning,   setRunIsRunning]   = useState(false);
+  const [runCurrentStage,setRunCurrentStage]= useState(0);
+  const [runCurrentAgent,setRunCurrentAgent]= useState<string | null>(null);
+  const [runIdea,        setRunIdea]        = useState('');
+  const esRunRef = useRef<EventSource | null>(null);
+
+  // Poll /api/run every 2s for isRunning + idea text; open/close SSE accordingly
+  useEffect(() => {
+    let cancelled = false;
+    let prevRunning = false;
+
+    const poll = async () => {
+      try {
+        const d = await fetch('/api/run').then(r => r.json()) as { isRunning?: boolean; idea?: string; currentStage?: number; currentAgent?: string };
+        if (cancelled) return;
+        const nowRunning = d.isRunning ?? false;
+        if (d.idea) setRunIdea(d.idea);
+        if (d.currentStage != null) setRunCurrentStage(d.currentStage);
+        if (d.currentAgent != null) setRunCurrentAgent(d.currentAgent);
+        setRunIsRunning(nowRunning);
+
+        // Transition: running → stopped → auto-select newest artifact
+        if (prevRunning && !nowRunning) {
+          setRunCurrentAgent(null);
+          // Reload artifacts and select newest
+          try {
+            const data = await fetch('/api/data').then(r => r.json()) as { artifacts?: string[] };
+            if (!cancelled && data.artifacts && data.artifacts.length > 0) {
+              setArtifacts(data.artifacts);
+              setSelected(data.artifacts[data.artifacts.length - 1]);
+              setStudioViewPersist('document');
+            }
+          } catch { /* ignore */ }
+        }
+        prevRunning = nowRunning;
+      } catch { /* ignore */ }
+    };
+
+    poll();
+    const id = setInterval(poll, runIsRunning ? 2000 : 4000);
+    return () => { cancelled = true; clearInterval(id); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runIsRunning]);
+
+  // SSE: open EventSource when runIsRunning transitions to true
+  useEffect(() => {
+    if (!runIsRunning) {
+      if (esRunRef.current) { esRunRef.current.close(); esRunRef.current = null; }
+      return;
+    }
+    if (esRunRef.current) return; // already open
+    const es = new EventSource('/api/stream');
+    esRunRef.current = es;
+
+    es.addEventListener('stage_start', (e: MessageEvent) => {
+      try {
+        const d = JSON.parse(e.data) as { stage?: number };
+        if (d.stage != null) setRunCurrentStage(d.stage);
+      } catch { /* ignore */ }
+    });
+    es.addEventListener('agent_active', (e: MessageEvent) => {
+      try {
+        const d = JSON.parse(e.data) as { agent?: string };
+        if (d.agent) setRunCurrentAgent(d.agent);
+      } catch { /* ignore */ }
+    });
+    es.addEventListener('run_complete', () => {
+      setRunIsRunning(false);
+      setRunCurrentAgent(null);
+      if (esRunRef.current) { esRunRef.current.close(); esRunRef.current = null; }
+    });
+
+    return () => {
+      es.close();
+      esRunRef.current = null;
+    };
+  }, [runIsRunning]);
+
+  // intentTextareaRef — passed to Doc/TipTapRenderer Zone B "✦ AI" button
+  const intentTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const handleFocusIntent = useCallback(() => {
+    intentTextareaRef.current?.focus();
+    intentTextareaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, []);
 
   // C2 — collapsible panels (usePanelState persists to localStorage)
   const leftPanel  = usePanelState('left',  210, false);
@@ -930,7 +1017,18 @@ export default function ImprovePage() {
             </div>
           )}
 
-          {studioView === 'document' && !selected&&(
+          {/* S4 — Generation loading view: shown when lifecycle is running and no artifact is selected */}
+          {studioView === 'document' && runIsRunning && !selected && (
+            <GenerationLoadingView
+              isRunning={runIsRunning}
+              currentStage={Math.max(runCurrentStage, stage)}
+              currentAgent={runCurrentAgent}
+              idea={runIdea}
+              reducedMotion={reducedMotion}
+            />
+          )}
+
+          {studioView === 'document' && !runIsRunning && !selected&&(
             <div style={{...heroSurface,display:'flex',alignItems:'center',justifyContent:'center',padding:'48px 56px'}}>
               <div style={{...readingMeasure,display:'flex',flexDirection:'column',gap:'32px'}}>
                 <div style={{display:'flex',flexDirection:'column',gap:'14px'}}>
@@ -1066,7 +1164,7 @@ export default function ImprovePage() {
                     directly and doesn't use the V2 parse result — the warning is meaningless here */}
                 {parseWarn&&!gs.useTipTapRenderer&&<div style={{marginBottom:'16px',padding:'7px 10px',backgroundColor:'#0a0a00',border:'1px solid #f59e0b33',borderRadius:'3px',...T.caption,color:'#f59e0b88'}}>{parseWarn}</div>}
                 {/* B3 — main reading pane is editable; split/preview panes remain read-only */}
-                <Doc content={rawContent} fs={12} anchors arrivalId={arrivalSectionId} reducedMotion={reducedMotion} onPresetSelect={setIntent} editable onSave={handleSave} onContentChange={handleContentChange}/>
+                <Doc content={rawContent} fs={12} anchors arrivalId={arrivalSectionId} reducedMotion={reducedMotion} onPresetSelect={setIntent} editable onSave={handleSave} onContentChange={handleContentChange} onFocusIntent={handleFocusIntent}/>
               </div>
             </div>
           )}
@@ -1145,7 +1243,7 @@ export default function ImprovePage() {
           <div style={{padding:'16px 14px'}}>
             {/* Primary act of the Direct aide: brief the collaborator (human voice). */}
             <div style={{...T.label,color:'#2a5a30',marginBottom:'8px'}}>IMPROVEMENT INTENT</div>
-            <textarea value={intent} onChange={e=>setIntent(e.target.value)}
+            <textarea ref={intentTextareaRef} value={intent} onChange={e=>setIntent(e.target.value)}
               placeholder='Describe what to improve — e.g. "Strengthen competitive moat with a defensible advantage and long-term implications"'
               style={{width:'100%',minHeight:'120px',padding:'11px',fontFamily:FONT_SANS,fontSize:'13px',color:'#cbd5e1',backgroundColor:'#040b14',border:'1px solid #0f1923',borderRadius:'4px',resize:'vertical',outline:'none',lineHeight:1.55,boxSizing:'border-box' as const}}/>
 

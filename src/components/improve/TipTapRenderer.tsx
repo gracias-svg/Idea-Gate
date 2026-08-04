@@ -28,6 +28,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useEditor, EditorContent } from '@tiptap/react';
 import type { Editor } from '@tiptap/core';
 import StarterKit               from '@tiptap/starter-kit';
+import Highlight                from '@tiptap/extension-highlight';
 import { Markdown }             from 'tiptap-markdown';
 import { Table }                from '@tiptap/extension-table';
 import { TableRow }             from '@tiptap/extension-table-row';
@@ -60,6 +61,8 @@ interface TipTapRendererProps {
   onContentChange?: (md: string) => void;
   /** Mission 3 — called on ⌘S with the current markdown string. */
   onSave?:          (md: string) => Promise<void>;
+  /** Mission 19 — Zone B: focus the intent textarea when no text is selected. */
+  onFocusIntent?:   () => void;
 }
 
 // ── Toolbar state ─────────────────────────────────────────────────────────────
@@ -67,11 +70,15 @@ interface TipTapRendererProps {
 interface ToolbarState {
   bold: boolean; italic: boolean; underline: boolean; strike: boolean;
   code: boolean; bulletList: boolean; orderedList: boolean; blockquote: boolean;
+  activeHighlight: string | null;   // S1: currently active highlight color
+  hasSelection:    boolean;         // S2: text selection present
 }
 
 const EMPTY_TOOLBAR: ToolbarState = {
   bold: false, italic: false, underline: false, strike: false,
   code: false, bulletList: false, orderedList: false, blockquote: false,
+  activeHighlight: null,
+  hasSelection:    false,
 };
 
 // ── FormattingToolbar (Constitution §11) ─────────────────────────────────────
@@ -79,12 +86,14 @@ const EMPTY_TOOLBAR: ToolbarState = {
 // Hidden when editable=false — zero DOM impact on read-only path.
 
 interface ToolbarProps {
-  editor:        Editor | null;
-  visible:       boolean;
-  documentTheme: 'dark' | 'paper';
+  editor:          Editor | null;
+  visible:         boolean;
+  documentTheme:   'dark' | 'paper';
+  onPresetSelect?: (intent: string) => void;
+  onFocusIntent?:  () => void;
 }
 
-function FormattingToolbar({ editor, visible, documentTheme }: ToolbarProps) {
+function FormattingToolbar({ editor, visible, documentTheme, onPresetSelect, onFocusIntent }: ToolbarProps) {
   // Reactive toolbar state — updated on BOTH selectionUpdate and transaction
   // per Constitution §11 and §27. Using explicit event listeners rather than
   // useEditorState to guarantee both event types fire.
@@ -92,15 +101,19 @@ function FormattingToolbar({ editor, visible, documentTheme }: ToolbarProps) {
 
   const refresh = useCallback(() => {
     if (!editor) { setTs(EMPTY_TOOLBAR); return; }
+    const sel = editor.state.selection;
+    const hlAttrs = editor.isActive('highlight') ? editor.getAttributes('highlight') : null;
     setTs({
-      bold:        editor.isActive('bold'),
-      italic:      editor.isActive('italic'),
-      underline:   editor.isActive('underline'),
-      strike:      editor.isActive('strike'),
-      code:        editor.isActive('code'),
-      bulletList:  editor.isActive('bulletList'),
-      orderedList: editor.isActive('orderedList'),
-      blockquote:  editor.isActive('blockquote'),
+      bold:            editor.isActive('bold'),
+      italic:          editor.isActive('italic'),
+      underline:       editor.isActive('underline'),
+      strike:          editor.isActive('strike'),
+      code:            editor.isActive('code'),
+      bulletList:      editor.isActive('bulletList'),
+      orderedList:     editor.isActive('orderedList'),
+      blockquote:      editor.isActive('blockquote'),
+      activeHighlight: (hlAttrs?.color as string) ?? null,
+      hasSelection:    !sel.empty,
     });
   }, [editor]);
 
@@ -149,26 +162,23 @@ function FormattingToolbar({ editor, visible, documentTheme }: ToolbarProps) {
           : '',
       )}
     >
-      <Icon size={14} />
+      <Icon size={15} />
     </Toggle>
   );
 
   if (!visible) return null;
 
   return (
-    // V3 — floating card above document body, 40px height, elevated border-radius
+    // S2 — flush sticky bar: no floating card, no radius, no shadow
     // animation: opacity-only 120ms per Constitution §13
     <div
       style={{
         position: 'sticky', top: 0, zIndex: 10,
-        // Floating card look: margin insets the bar from the container edges
-        margin: '8px 16px 0',
-        background: isPaper ? 'rgba(253,248,243,0.97)' : 'var(--ig-surface-overlay)',
-        boxShadow: 'var(--ig-elev-2)',
-        border: `1px solid ${isPaper ? 'rgba(74,222,128,0.15)' : 'rgba(74,222,128,0.1)'}`,
-        borderRadius: 'var(--ig-radius-md)',
+        // Flush bar: full width, border-bottom only, no inset margins
+        background: isPaper ? 'rgba(253,248,243,0.97)' : 'rgba(9,14,20,0.97)',
+        borderBottom: `1px solid ${isPaper ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.06)'}`,
         height: '40px',
-        padding: '0 10px',
+        padding: '0 16px',
         display: 'flex',
         alignItems: 'center',
         gap: '2px',
@@ -193,11 +203,48 @@ function FormattingToolbar({ editor, visible, documentTheme }: ToolbarProps) {
       <Divider />
       <Btn pressed={ts.blockquote} onClick={() => editor?.chain().focus().toggleBlockquote().run()} icon={Quote}        label="Blockquote" />
 
-      {/* Zone B — AI pill (F5: gradient + glow, non-functional M3 placeholder) */}
+      {/* S1 — Highlight color circles: Amber / Emerald / Rose */}
+      <Divider />
+      {([
+        { color: '#fef08a', label: 'Amber highlight' },
+        { color: '#bbf7d0', label: 'Emerald highlight' },
+        { color: '#fecaca', label: 'Rose highlight' },
+      ] as const).map(({ color, label }) => {
+        const isActive = ts.activeHighlight === color;
+        return (
+          <button
+            key={color}
+            type="button"
+            aria-label={label}
+            title={label}
+            onMouseDown={e => e.preventDefault()}
+            onClick={() => {
+              if (isActive) {
+                editor?.chain().focus().unsetHighlight().run();
+              } else {
+                editor?.chain().focus().setHighlight({ color }).run();
+              }
+            }}
+            style={{
+              width: '14px', height: '14px',
+              borderRadius: '50%',
+              backgroundColor: color,
+              border: 'none',
+              cursor: 'pointer',
+              padding: 0,
+              flexShrink: 0,
+              outline: isActive ? `2px solid ${color}` : '2px solid transparent',
+              outlineOffset: '2px',
+              animation: isActive ? 'ig-highlight-pulse 1.4s ease-in-out infinite' : 'none',
+              transition: 'outline 80ms ease-out',
+            }}
+          />
+        );
+      })}
+
+      {/* Zone B — AI pill (S2: functional — selected text → quote into intent; empty → focus intent) */}
       <button
         type="button"
-        tabIndex={-1}
-        aria-hidden
         style={{
           marginLeft: 'auto',
           display: 'flex', alignItems: 'center', gap: '5px',
@@ -210,16 +257,26 @@ function FormattingToolbar({ editor, visible, documentTheme }: ToolbarProps) {
           letterSpacing: '0.3px',
           borderRadius: '100px',
           boxShadow: '0 0 12px rgba(74,222,128,0.12)',
-          cursor: 'default',
+          cursor: 'pointer',
           transition: 'box-shadow 120ms ease-out',
           fontFamily: 'var(--ig-font-mono)',
           flexShrink: 0,
         }}
         onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 20px rgba(74,222,128,0.20)'; }}
         onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 12px rgba(74,222,128,0.12)'; }}
+        onClick={() => {
+          if (ts.hasSelection && editor && onPresetSelect) {
+            const sel = editor.state.selection;
+            const text = editor.state.doc.textBetween(sel.from, sel.to, ' ').trim();
+            const snippet = text.slice(0, 180);
+            onPresetSelect(snippet ? `"${snippet}"\n\n` : '');
+          } else {
+            onFocusIntent?.();
+          }
+        }}
       >
         <Sparkles size={12} />
-        AI
+        ✦ AI
       </button>
     </div>
   );
@@ -249,6 +306,7 @@ export default function TipTapRenderer({
   editable = false,
   onContentChange,
   onSave,
+  onFocusIntent,
 }: TipTapRendererProps) {
   void fs;
   // V3/V4 — read document theme directly from GlobalStore (avoids prop-drilling)
@@ -277,6 +335,7 @@ export default function TipTapRenderer({
     {
       extensions: [
         StarterKit,
+        Highlight.configure({ multicolor: true }),
         Table.configure({ resizable: false }),
         TableRow,
         TableHeader,
@@ -391,8 +450,14 @@ export default function TipTapRenderer({
       onKeyDown={handleKeyDown}    // ⌘S wired here (Mission 3)
       style={{ display: 'flex', flexDirection: 'column' }}
     >
-      {/* V3 — Formatting toolbar — visible only when editable (Constitution §11) */}
-      <FormattingToolbar editor={editor} visible={editable} documentTheme={documentTheme} />
+      {/* V3/S2 — Formatting toolbar — visible only when editable (Constitution §11) */}
+      <FormattingToolbar
+        editor={editor}
+        visible={editable}
+        documentTheme={documentTheme}
+        onPresetSelect={onPresetSelect}
+        onFocusIntent={onFocusIntent}
+      />
 
       {editor && <EditorContent editor={editor} />}
 

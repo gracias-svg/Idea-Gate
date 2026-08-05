@@ -134,7 +134,7 @@ export const DEFAULT_MODEL_ID  = 'nvidia/nemotron-3-super-120b-a12b:free';
 export const RECOVERY_MODEL_IDS = [
   'nvidia/nemotron-3-super-120b-a12b:free',  // primary — production-proven (Mission 11D, 12C)
   'openai/gpt-oss-120b:free',                // second — catalog-confirmed, has ModelEntry
-  'nvidia/nemotron-3-ultra-550b-a55b:free',  // third — catalog-confirmed, no ModelEntry yet
+  'nvidia/nemotron-3-ultra-550b-a55b:free',  // third — ModelEntry added (M20 model ID fix)
 ] as const;
 
 /**
@@ -774,7 +774,7 @@ export const MODEL_REGISTRY: ModelEntry[] = [
   },
 
   {
-    modelId: 'nvidia/nemotron-3-ultra-253b',
+    modelId: 'nvidia/nemotron-3-ultra-550b-a55b:free',
     displayName: 'Nemotron 3 Ultra (Free)',
     provider: 'openrouter',
     category: 'zero-cost',

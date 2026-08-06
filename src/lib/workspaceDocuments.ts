@@ -1,21 +1,32 @@
 'use client';
 
 // src/lib/workspaceDocuments.ts
-// Mission 27 — Workspace document store.
-// localStorage-backed, BroadcastChannel-synced.
-// Holds user-created documents (New Document, Upload, Template).
-// Lifecycle artifacts are NOT stored here — they live in the backend workspace/.
+// Mission 27 — initial localStorage store.
+// Mission 28 — add kind='document'|'attachment' + attachment metadata.
+//
+// Documents: markdown content, editable in TipTap.
+// Attachments: files (images, PDFs, text) stored by metadata + dataUrl.
+//              Small files (<500 KB) carry a base64 dataUrl for preview.
+//              Large files store metadata only (cannot preview inline).
 
 import { useState, useEffect } from 'react';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+export type WorkspaceDocKind = 'document' | 'attachment';
+
 export interface WorkspaceDocument {
   id:         string;
-  folderId:   string;    // 'align' | 'plan' | 'measure' | 'archive' etc.
+  folderId:   string;
   title:      string;
-  content:    string;    // markdown
-  template?:  string;    // template name if created from a template
+  content:    string;       // markdown for documents; empty for attachments
+  template?:  string;
+  kind:       WorkspaceDocKind;
+  // Attachment-only
+  fileName?:  string;
+  fileType?:  string;       // MIME type
+  fileSize?:  number;       // bytes
+  dataUrl?:   string;       // base64 data URL for preview (optional for large files)
   createdAt:  number;
   updatedAt:  number;
 }
@@ -68,6 +79,32 @@ export function createDoc(
   const id  = `wdoc-${now}-${Math.random().toString(36).slice(2, 7)}`;
   const doc: WorkspaceDocument = {
     id, folderId, title: title || 'Untitled', content, template,
+    kind: 'document',
+    createdAt: now, updatedAt: now,
+  };
+  const docs = readStore();
+  docs.push(doc);
+  writeStore(docs);
+  broadcast({ type: 'created', id });
+  return doc;
+}
+
+export function createAttachment(
+  folderId:  string,
+  fileName:  string,
+  fileType:  string,
+  fileSize:  number,
+  dataUrl?:  string,
+): WorkspaceDocument {
+  const now = Date.now();
+  const id  = `watt-${now}-${Math.random().toString(36).slice(2, 7)}`;
+  const title = fileName.replace(/\.[^.]+$/, '');
+  const doc: WorkspaceDocument = {
+    id, folderId, title,
+    content:  '',
+    kind:     'attachment',
+    fileName, fileType, fileSize,
+    dataUrl:  dataUrl,
     createdAt: now, updatedAt: now,
   };
   const docs = readStore();

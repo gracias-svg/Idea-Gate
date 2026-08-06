@@ -48,7 +48,7 @@ export default function LifecycleTaskList({ currentStage, isRunning, idea }: Pro
   // V3: idea text shown as subtitle below the header, replacing the removed 18px idea div
   const title = idea
     ? `${idea.length > 60 ? idea.slice(0, 60) + '…' : idea}`
-    : `Building your product · ${clampedStage} of ${LIFECYCLE_LABELS.length} stages`;
+    : `Building your artifact · ${clampedStage} of ${LIFECYCLE_LABELS.length} stages`;
 
   return (
     <TaskList

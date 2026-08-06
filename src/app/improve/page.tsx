@@ -30,6 +30,7 @@ import { humanName, stageNum } from '@/lib/artifactDisplay';
 import WorkspaceExplorer, { type WorkspaceNode } from '@/components/shared/WorkspaceExplorer';
 import FolderWorkspace from '@/components/shared/FolderWorkspace';
 import { useWorkspaceState } from '@/lib/useWorkspaceState';
+import { getDoc, updateDoc, type WorkspaceDocument } from '@/lib/workspaceDocuments';
 import { parseSections } from '@/lib/parseSections';
 import { scrollElementIntoView } from '@/lib/smoothScroll';
 import { workspaceMotion } from '@/components/workspace/motion';
@@ -240,6 +241,13 @@ export default function ImprovePage() {
   const [stage,      setStage]      = useState(0);
   const [selected,   setSelected]   = useState<string|null>(null);
   const [selectedFolder, setSelectedFolder] = useState<WorkspaceNode | null>(null);
+  // Workspace doc editor mode (Mission 28): activated when a user-created doc is opened.
+  const [wsDocId,   setWsDocId]   = useState<string | null>(null);
+  const [wsDocData, setWsDocData] = useState<WorkspaceDocument | null>(null);
+  const [wsDocContent, setWsDocContent] = useState('');
+  const [wsDocTitle, setWsDocTitle] = useState('');
+  const [wsDocSaveState, setWsDocSaveState] = useState<'clean'|'dirty'|'saving'|'saved'>('clean');
+  const wsDocSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [rawContent, setRawContent] = useState<string|null>(null);
   const [parseWarn,  setParseWarn]  = useState<string|null>(null);
   const [fileLoading,setFileLoading]= useState(false);
@@ -538,6 +546,59 @@ export default function ImprovePage() {
     const requested = new URLSearchParams(window.location.search).get('artifact');
     if (requested && artifacts.includes(requested)) setSelected(requested);
   }, [artifacts]);
+
+  // Mission 28 — Workspace doc editor: read sessionStorage on mount.
+  // FolderWorkspace (Desk context) stores the target doc id in sessionStorage
+  // before navigating to /improve. We consume it here on mount so the doc
+  // editor opens automatically without needing URL params or Suspense.
+  useEffect(() => {
+    const pending = sessionStorage.getItem('ig-open-wsdoc');
+    if (pending) {
+      sessionStorage.removeItem('ig-open-wsdoc');
+      handleOpenWsDoc(pending);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Open a workspace doc in the editor
+  const handleOpenWsDoc = useCallback((docId: string) => {
+    const doc = getDoc(docId);
+    if (!doc) return;
+    setWsDocId(docId);
+    setWsDocData(doc);
+    setWsDocContent(doc.content);
+    setWsDocTitle(doc.title);
+    setWsDocSaveState('clean');
+    setSelectedFolder(null);
+    setSelected(null);
+  }, []);
+
+  // Close workspace doc editor
+  const handleCloseWsDoc = useCallback(() => {
+    if (wsDocSaveTimerRef.current) clearTimeout(wsDocSaveTimerRef.current);
+    setWsDocId(null);
+    setWsDocData(null);
+    setWsDocContent('');
+    setWsDocTitle('');
+    setWsDocSaveState('clean');
+  }, []);
+
+  // Save workspace doc to localStorage
+  const handleWsDocSave = useCallback(async (content: string): Promise<void> => {
+    if (!wsDocId) return;
+    setWsDocSaveState('saving');
+    updateDoc(wsDocId, { content, title: wsDocTitle || 'Untitled' });
+    setWsDocSaveState('saved');
+    setTimeout(() => setWsDocSaveState(s => s === 'saved' ? 'clean' : s), 2000);
+  }, [wsDocId, wsDocTitle]);
+
+  // Autosave on content change (8s debounce, matching artifact save)
+  const handleWsDocContentChange = useCallback((md: string) => {
+    setWsDocContent(md);
+    setWsDocSaveState('dirty');
+    if (wsDocSaveTimerRef.current) clearTimeout(wsDocSaveTimerRef.current);
+    wsDocSaveTimerRef.current = setTimeout(() => void handleWsDocSave(md), 8000);
+  }, [handleWsDocSave]);
 
   // Load artifact — now uses parseContentDetailed for warning visibility
   useEffect(()=>{
@@ -1008,15 +1069,19 @@ export default function ImprovePage() {
           transition: 'width 200ms ease-in-out, border-right 200ms ease-in-out',
         }}>
           {/* W6: WorkspaceExplorer replaces WorkspacePanel */}
+          {/* M28: onRenameNode added for Studio parity with Desk; wdocId handled */}
           <WorkspaceExplorer
             tree={studioTree}
             onNodeSelect={(node) => {
-              if (node.kind === 'folder') { setSelectedFolder(node); return; }
+              if (node.kind === 'folder') { setSelectedFolder(node); setWsDocId(null); return; }
               setSelectedFolder(null);
+              if (node.wdocId) { handleOpenWsDoc(node.wdocId); return; }
+              setWsDocId(null);
               if (node.file) setSelected(node.file);
             }}
             width={210}
             headerLabel="WORKSPACE"
+            onRenameNode={(_, newName) => updateSettings({ projectDisplayName: newName })}
           />
         </div>
 
@@ -1051,9 +1116,92 @@ export default function ImprovePage() {
                 key={selectedFolder.id}
                 node={selectedFolder}
                 onClose={() => { setSelectedFolder(null); ws.setActiveNodeId(null); }}
+                onOpenWorkspaceDoc={handleOpenWsDoc}
               />
             )}
           </AnimatePresence>
+
+          {/* Workspace doc editor — reuses existing TipTap (Mission 28) */}
+          {wsDocId && wsDocData && studioView === 'document' && (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              {/* Doc editor toolbar */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: '12px',
+                padding: '10px 40px', borderBottom: '1px solid #0a1a2e',
+                flexShrink: 0, fontFamily: "'JetBrains Mono','Fira Code',monospace",
+              }}>
+                <button
+                  onClick={handleCloseWsDoc}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#475569', fontSize: '11px', padding: 0, letterSpacing: '0.04em' }}
+                >
+                  ← Workspace
+                </button>
+
+                {/* Editable title */}
+                <input
+                  value={wsDocTitle}
+                  onChange={e => {
+                    setWsDocTitle(e.target.value);
+                    setWsDocSaveState('dirty');
+                  }}
+                  onBlur={() => wsDocId && updateDoc(wsDocId, { title: wsDocTitle })}
+                  placeholder="Document title"
+                  style={{
+                    flex: 1, background: 'transparent', border: 'none', outline: 'none',
+                    fontSize: '14px', fontWeight: 600, color: 'var(--ig-text-primary, #f1f5f9)',
+                    fontFamily: 'var(--ig-font-sans, system-ui, sans-serif)',
+                  }}
+                />
+
+                {/* Save state indicator */}
+                <span style={{ fontSize: '10px', color: wsDocSaveState === 'saved' ? '#4ade80' : wsDocSaveState === 'dirty' ? '#f59e0b' : '#334155', letterSpacing: '0.06em' }}>
+                  {wsDocSaveState === 'saving' ? '⟳ Saving…' : wsDocSaveState === 'saved' ? '✓ Saved' : wsDocSaveState === 'dirty' ? '● Unsaved' : ''}
+                </span>
+
+                <button
+                  onClick={() => handleWsDocSave(wsDocContent)}
+                  style={{
+                    padding: '5px 14px', background: '#0a1f0e', border: '1px solid #4ade8033',
+                    borderRadius: '4px', fontSize: '11px', fontWeight: 600,
+                    color: '#4ade80', cursor: 'pointer',
+                  }}
+                >
+                  Save
+                </button>
+              </div>
+
+              {/* TipTap editor — the same editor used for lifecycle artifacts */}
+              <div
+                data-document-theme={gs.documentTheme}
+                style={{
+                  ...heroSurface,
+                  padding: gs.documentTheme === 'paper' ? '8px 40px 32px' : '32px 40px',
+                  backgroundColor: gs.documentTheme === 'paper' ? '#D5CFC9' : undefined,
+                  display: gs.documentTheme === 'paper' ? 'flex' : undefined,
+                  flexDirection: gs.documentTheme === 'paper' ? 'column' as const : undefined,
+                  alignItems: gs.documentTheme === 'paper' ? 'center' : undefined,
+                }}
+              >
+                <div style={{
+                  ...readingMeasure,
+                  ...(gs.documentTheme === 'paper' ? {
+                    maxWidth: '760px', width: '100%', background: '#FDF8F3',
+                    borderRadius: '8px', boxShadow: '0 1px 2px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.06)',
+                    padding: '40px 48px', flexGrow: 1, boxSizing: 'border-box' as const,
+                  } : {}),
+                }}>
+                  <Doc
+                    content={wsDocContent}
+                    editable={true}
+                    anchors={false}
+                    reducedMotion={reducedMotion}
+                    onContentChange={handleWsDocContentChange}
+                    onSave={handleWsDocSave}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* K5 — Kanban view: replaces document surface when studioView === 'kanban' */}
           {!selectedFolder && studioView === 'kanban' && (
@@ -1069,7 +1217,7 @@ export default function ImprovePage() {
           )}
 
           {/* Document view — rendered only when studioView === 'document' and no folder selected */}
-          {!selectedFolder && studioView === 'document' && result&&uiState==='previewed'&&(
+          {!selectedFolder && !wsDocId && studioView === 'document' && result&&uiState==='previewed'&&(
             <div style={{display:'flex',alignItems:'center',gap:'5px',padding:'7px 14px',backgroundColor:'#020c06',borderBottom:'1px solid #0a1a2e',flexShrink:0}}>
               {(['original','split','improved'] as const).map(v=>(
                 <button key={v} onClick={()=>setView(v)} style={{...B,padding:'4px 9px',fontSize:'9px',
@@ -1088,56 +1236,43 @@ export default function ImprovePage() {
 
 
           {/* M20 G4 / M21 V3 — Generation view: checklist + ToolGroup */}
-          {/* M27: layout restructured so AgentToolGroup (Artifact Compilation feed) is   */}
-          {/* always pinned at the bottom. Lifecycle list scrolls independently above it.  */}
-          {!selectedFolder && studioView === 'document' && runIsRunning && !selected && (
+          {/* M28 Mission 6: Simple vertical stack. Lifecycle (collapsed) → Artifact  */}
+          {/* Compilation feed. No pinning. Container is scrollable so both are      */}
+          {/* accessible if lifecycle is expanded by the user.                        */}
+          {!selectedFolder && !wsDocId && studioView === 'document' && runIsRunning && !selected && (
             <div style={{
               flex: 1,
               display: 'flex',
               flexDirection: 'column',
-              overflow: 'hidden',
+              alignItems: 'center',
+              padding: '40px 32px',
+              gap: '16px',
+              overflowY: 'auto',
               animation: reducedMotion ? 'none' : 'ig-fade-in 150ms ease-out',
             }}>
-              {/* Scrollable lifecycle section — expands freely, scrolls if tall */}
-              <div style={{
-                flex: 1,
-                overflowY: 'auto',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'flex-end',
-                padding: '40px 32px 20px',
-              }}>
-                <div style={{ width: '100%', maxWidth: '480px' }}>
-                  <LifecycleTaskList
-                    currentStage={Math.max(runCurrentStage, stage)}
-                    isRunning={runIsRunning}
-                    idea={runIdea || undefined}
-                  />
-                </div>
+              {/* Lifecycle — collapsed by default (defaultOpen=false in LifecycleTaskList) */}
+              <div style={{ width: '100%', maxWidth: '480px' }}>
+                <LifecycleTaskList
+                  currentStage={Math.max(runCurrentStage, stage)}
+                  isRunning={runIsRunning}
+                  idea={runIdea || undefined}
+                />
               </div>
 
-              {/* Pinned execution feed — always visible, never pushed off-screen */}
-              <div style={{
-                flexShrink: 0,
-                display: 'flex',
-                justifyContent: 'center',
-                padding: '0 32px 40px',
-              }}>
-                <div style={{ width: '100%', maxWidth: '480px' }}>
-                  <AgentToolGroup
-                    currentStage={Math.max(runCurrentStage, stage)}
-                    currentAgent={runCurrentAgent}
-                    isRunning={runIsRunning}
-                    recentEvents={recentEvents}
-                    startedAt={runStartedAt}
-                  />
-                </div>
+              {/* Artifact Compilation execution feed — directly below, always visible when lifecycle is collapsed */}
+              <div style={{ width: '100%', maxWidth: '480px' }}>
+                <AgentToolGroup
+                  currentStage={Math.max(runCurrentStage, stage)}
+                  currentAgent={runCurrentAgent}
+                  isRunning={runIsRunning}
+                  recentEvents={recentEvents}
+                  startedAt={runStartedAt}
+                />
               </div>
             </div>
           )}
 
-          {!selectedFolder && studioView === 'document' && !runIsRunning && !selected&&(
+          {!selectedFolder && !wsDocId && studioView === 'document' && !runIsRunning && !selected&&(
             <div style={{...heroSurface,display:'flex',alignItems:'center',justifyContent:'center',padding:'48px 56px'}}>
               <div style={{...readingMeasure,display:'flex',flexDirection:'column',gap:'32px'}}>
                 <div style={{display:'flex',flexDirection:'column',gap:'14px'}}>
@@ -1167,9 +1302,9 @@ export default function ImprovePage() {
             </div>
           )}
 
-          {!selectedFolder && studioView === 'document' && selected&&fileLoading&&<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{fontSize:'11px',color:'#475569'}}>Loading artifact…</span></div>}
+          {!selectedFolder && !wsDocId && studioView === 'document' && selected&&fileLoading&&<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{fontSize:'11px',color:'#475569'}}>Loading artifact…</span></div>}
 
-          {!selectedFolder && studioView === 'document' && selected&&!fileLoading&&uiState==='idle'&&rawContent&&(
+          {!selectedFolder && !wsDocId && studioView === 'document' && selected&&!fileLoading&&uiState==='idle'&&rawContent&&(
             <div
               ref={readingContainerRef}
               data-document-theme={gs.documentTheme}
@@ -1278,7 +1413,7 @@ export default function ImprovePage() {
             </div>
           )}
 
-          {!selectedFolder && studioView === 'document' && uiState==='loading'&&(
+          {!selectedFolder && !wsDocId && studioView === 'document' && uiState==='loading'&&(
             <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:'12px'}}>
               <div style={{...T.label,color:'#475569',animation:'pulse 1.5s infinite'}}>GENERATING…</div>
               <div style={{...T.caption,color:activeModel.color}}>{activeModel.label} · {activeModel.provider} · {activeModel.cost}</div>
@@ -1286,7 +1421,7 @@ export default function ImprovePage() {
             </div>
           )}
 
-          {!selectedFolder && studioView === 'document' && uiState==='accepted'&&(
+          {!selectedFolder && !wsDocId && studioView === 'document' && uiState==='accepted'&&(
             <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:'14px'}}>
               <div style={{fontSize:'24px',color:'#4ade80'}}>✓</div>
               <div style={{...T.title,color:'#4ade80'}}>Improvement accepted · graph updated</div>
@@ -1299,7 +1434,7 @@ export default function ImprovePage() {
             </div>
           )}
 
-          {!selectedFolder && studioView === 'document' && result&&uiState==='previewed'&&view==='split'&&(
+          {!selectedFolder && !wsDocId && studioView === 'document' && result&&uiState==='previewed'&&view==='split'&&(
             <div style={{flex:1,display:'flex',overflow:'hidden'}}>
               <div style={{flex:1,overflowY:'auto',padding:'24px 28px',borderRight:'1px solid #0a1a2e'}}>
                 <div style={{...T.label,color:'#2a5a30',marginBottom:'16px'}}>ORIGINAL</div>
@@ -1311,8 +1446,8 @@ export default function ImprovePage() {
               </div>
             </div>
           )}
-          {!selectedFolder && studioView === 'document' && result&&uiState==='previewed'&&view==='original'&&<div style={{...heroSurface,padding:'24px 32px'}}><div style={readingMeasure}><Doc content={result.original} fs={12}/></div></div>}
-          {!selectedFolder && studioView === 'document' && result&&uiState==='previewed'&&view==='improved'&&<div style={{...heroSurface,padding:'24px 32px'}}><div style={readingMeasure}><Doc content={result.improved} fs={13}/></div></div>}
+          {!selectedFolder && !wsDocId && studioView === 'document' && result&&uiState==='previewed'&&view==='original'&&<div style={{...heroSurface,padding:'24px 32px'}}><div style={readingMeasure}><Doc content={result.original} fs={12}/></div></div>}
+          {!selectedFolder && !wsDocId && studioView === 'document' && result&&uiState==='previewed'&&view==='improved'&&<div style={{...heroSurface,padding:'24px 32px'}}><div style={readingMeasure}><Doc content={result.improved} fs={13}/></div></div>}
 
           {error&&<div style={{padding:'8px 16px',backgroundColor:'#150005',borderTop:'1px solid #f8717133',flexShrink:0,fontSize:'11px',color:'#f87171'}}>⚠ {error}</div>}
         </div>

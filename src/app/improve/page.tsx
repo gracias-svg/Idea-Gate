@@ -12,9 +12,11 @@
 // - RuntimeContext integration preserved
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { CheckCircle2, Moon, Sun, ChevronLeft, ChevronRight, MoreHorizontal, FileText, Kanban } from 'lucide-react';
 import KanbanView from '@/components/studio/KanbanView';
-import GenerationLoadingView from '@/components/studio/GenerationLoadingView';
+import LifecycleTaskList from '@/components/studio/LifecycleTaskList';
+import AgentToolGroup, { type StreamEvent } from '@/components/studio/AgentToolGroup';
 import { usePanelState } from '@/lib/usePanelState';
 import { useGlobalStore, getModelMeta, isModelFree } from '@/lib/GlobalStore';
 import { parseContent, parseContentDetailed } from '@/lib/parseContent';
@@ -26,6 +28,8 @@ import ViewSwitcher from '@/components/improve/ViewSwitcher';
 import TipTapRenderer from '@/components/improve/TipTapRenderer';
 import { humanName, stageNum } from '@/lib/artifactDisplay';
 import WorkspaceExplorer, { type WorkspaceNode } from '@/components/shared/WorkspaceExplorer';
+import FolderWorkspace from '@/components/shared/FolderWorkspace';
+import { useWorkspaceState } from '@/lib/useWorkspaceState';
 import { parseSections } from '@/lib/parseSections';
 import { scrollElementIntoView } from '@/lib/smoothScroll';
 import { workspaceMotion } from '@/components/workspace/motion';
@@ -235,6 +239,7 @@ export default function ImprovePage() {
   const [artifacts,  setArtifacts]  = useState<string[]>([]);
   const [stage,      setStage]      = useState(0);
   const [selected,   setSelected]   = useState<string|null>(null);
+  const [selectedFolder, setSelectedFolder] = useState<WorkspaceNode | null>(null);
   const [rawContent, setRawContent] = useState<string|null>(null);
   const [parseWarn,  setParseWarn]  = useState<string|null>(null);
   const [fileLoading,setFileLoading]= useState(false);
@@ -244,6 +249,7 @@ export default function ImprovePage() {
   const [scope,    setScope]    = useState<Scope>('stage');
   // Model key is driven by GlobalStore settings — persists across pages and reloads
   const { state: { settings: gs }, updateSettings } = useGlobalStore();
+  const ws = useWorkspaceState();
   const modelKey = gs.defaultModel as ModelKey;
   const setModelKey = (k: ModelKey) => updateSettings({ defaultModel: k });
 
@@ -281,6 +287,8 @@ export default function ImprovePage() {
   const [runCurrentStage,setRunCurrentStage]= useState(0);
   const [runCurrentAgent,setRunCurrentAgent]= useState<string | null>(null);
   const [runIdea,        setRunIdea]        = useState('');
+  const [recentEvents,   setRecentEvents]   = useState<StreamEvent[]>([]);
+  const [runStartedAt,   setRunStartedAt]   = useState<number | undefined>(undefined);
   const esRunRef = useRef<EventSource | null>(null);
 
   // Poll /api/run every 2s for isRunning + idea text; open/close SSE accordingly
@@ -330,17 +338,37 @@ export default function ImprovePage() {
     if (esRunRef.current) return; // already open
     const es = new EventSource('/api/stream');
     esRunRef.current = es;
+    // Record when SSE opened (drives AgentToolGroup elapsed timer)
+    setRunStartedAt(Date.now());
+    setRecentEvents([]);
 
     es.addEventListener('stage_start', (e: MessageEvent) => {
       try {
-        const d = JSON.parse(e.data) as { stage?: number };
+        const d = JSON.parse(e.data) as { stage?: number; name?: string };
         if (d.stage != null) setRunCurrentStage(d.stage);
+        // Clear recentEvents on each new stage so ToolGroup shows current-stage activity
+        setRecentEvents([{ type: 'stage_start', stage: d.stage, name: d.name }]);
       } catch { /* ignore */ }
     });
     es.addEventListener('agent_active', (e: MessageEvent) => {
       try {
         const d = JSON.parse(e.data) as { agent?: string };
-        if (d.agent) setRunCurrentAgent(d.agent);
+        if (d.agent) {
+          setRunCurrentAgent(d.agent);
+          setRecentEvents(prev => [...prev, { type: 'agent_active', agent: d.agent }]);
+        }
+      } catch { /* ignore */ }
+    });
+    es.addEventListener('stage_retry', (e: MessageEvent) => {
+      try {
+        const d = JSON.parse(e.data) as { stage?: number };
+        setRecentEvents(prev => [...prev, { type: 'stage_retry', stage: d.stage }]);
+      } catch { /* ignore */ }
+    });
+    es.addEventListener('agent_error', (e: MessageEvent) => {
+      try {
+        const d = JSON.parse(e.data) as { message?: string };
+        setRecentEvents(prev => [...prev, { type: 'agent_error', message: d.message }]);
       } catch { /* ignore */ }
     });
     es.addEventListener('run_complete', () => {
@@ -539,7 +567,8 @@ export default function ImprovePage() {
       { id: 'architect', label: 'Architect', color: '#fb923c', stages: [10, 11]         },
       { id: 'ship',      label: 'Ship',      color: '#fde047', stages: [12, 13, 14]     },
     ];
-    return [{
+    // Fix 4 (Mission 22): wrap in project-root to match Desk's explorer structure.
+    const documentsNode: WorkspaceNode = {
       id:    'documents',
       kind:  'folder',
       label: 'Documents',
@@ -564,8 +593,34 @@ export default function ImprovePage() {
           } satisfies WorkspaceNode;
         }),
       })),
+    };
+    const optionalFolders: WorkspaceNode[] = [
+      {
+        id: 'align', kind: 'folder', label: 'Align', children: [],
+        emptyHint: 'Vision · Goals · OKRs\nDecision Log · Stakeholders · RACI',
+      },
+      {
+        id: 'plan', kind: 'folder', label: 'Plan', children: [],
+        emptyHint: 'Roadmaps · Milestones\nDependencies · Launch Plans · RAID',
+      },
+      {
+        id: 'measure', kind: 'folder', label: 'Measure', children: [],
+        emptyHint: 'North Star Metrics · Experiments\nFunnels · Analytics · Feedback',
+      },
+      {
+        id: 'archive', kind: 'folder', label: 'Archive', children: [],
+        emptyHint: 'Final PRDs · Retrospectives\nPast Versions · Launch Packages',
+      },
+    ];
+    return [{
+      id:       'project-root',
+      kind:     'folder',
+      label:    ws.projectDisplayName ?? activeProject?.name ?? 'Project',
+      icon:     'project',
+      count:    artifacts.length,
+      children: [documentsNode, ...optionalFolders],
     }];
-  }, [artifacts, runtime]);
+  }, [artifacts, runtime, activeProject, ws.projectDisplayName]);
 
   const activeModel = MODELS.find(m => m.key === modelKey) ?? (() => {
     const meta = getModelMeta(modelKey);
@@ -955,8 +1010,11 @@ export default function ImprovePage() {
           {/* W6: WorkspaceExplorer replaces WorkspacePanel */}
           <WorkspaceExplorer
             tree={studioTree}
-            activeNodeId={selected ? `stage-${stageNum(selected)}` : null}
-            onNodeSelect={(node) => { if (node.file) setSelected(node.file); }}
+            onNodeSelect={(node) => {
+              if (node.kind === 'folder') { setSelectedFolder(node); return; }
+              setSelectedFolder(null);
+              if (node.file) setSelected(node.file);
+            }}
             width={210}
             headerLabel="WORKSPACE"
           />
@@ -986,8 +1044,19 @@ export default function ImprovePage() {
         {/* Centre content */}
         <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
 
+          {/* Folder workspace — shown when a folder node is selected */}
+          <AnimatePresence mode="wait">
+            {selectedFolder && studioView === 'document' && (
+              <FolderWorkspace
+                key={selectedFolder.id}
+                node={selectedFolder}
+                onClose={() => { setSelectedFolder(null); ws.setActiveNodeId(null); }}
+              />
+            )}
+          </AnimatePresence>
+
           {/* K5 — Kanban view: replaces document surface when studioView === 'kanban' */}
-          {studioView === 'kanban' && (
+          {!selectedFolder && studioView === 'kanban' && (
             <KanbanView
               artifacts={artifacts}
               onSelectArtifact={(file) => {
@@ -999,8 +1068,8 @@ export default function ImprovePage() {
             />
           )}
 
-          {/* Document view — rendered only when studioView === 'document' */}
-          {studioView === 'document' && result&&uiState==='previewed'&&(
+          {/* Document view — rendered only when studioView === 'document' and no folder selected */}
+          {!selectedFolder && studioView === 'document' && result&&uiState==='previewed'&&(
             <div style={{display:'flex',alignItems:'center',gap:'5px',padding:'7px 14px',backgroundColor:'#020c06',borderBottom:'1px solid #0a1a2e',flexShrink:0}}>
               {(['original','split','improved'] as const).map(v=>(
                 <button key={v} onClick={()=>setView(v)} style={{...B,padding:'4px 9px',fontSize:'9px',
@@ -1017,18 +1086,43 @@ export default function ImprovePage() {
             </div>
           )}
 
-          {/* S4 — Generation loading view: shown when lifecycle is running and no artifact is selected */}
-          {studioView === 'document' && runIsRunning && !selected && (
-            <GenerationLoadingView
-              isRunning={runIsRunning}
-              currentStage={Math.max(runCurrentStage, stage)}
-              currentAgent={runCurrentAgent}
-              idea={runIdea}
-              reducedMotion={reducedMotion}
-            />
+
+          {/* M20 G4 / M21 V3 — Generation view: checklist + ToolGroup (idea text moved to checklist title) */}
+          {!selectedFolder && studioView === 'document' && runIsRunning && !selected && (
+            <div style={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '40px 32px',
+              gap: '20px',
+              overflow: 'hidden',
+              animation: reducedMotion ? 'none' : 'ig-fade-in 150ms ease-out',
+            }}>
+              {/* Checklist — idea text relocated here as the title (V3) */}
+              <div style={{ width: '100%', maxWidth: '480px' }}>
+                <LifecycleTaskList
+                  currentStage={Math.max(runCurrentStage, stage)}
+                  isRunning={runIsRunning}
+                  idea={runIdea || undefined}
+                />
+              </div>
+
+              {/* Agent tool group */}
+              <div style={{ width: '100%', maxWidth: '480px' }}>
+                <AgentToolGroup
+                  currentStage={Math.max(runCurrentStage, stage)}
+                  currentAgent={runCurrentAgent}
+                  isRunning={runIsRunning}
+                  recentEvents={recentEvents}
+                  startedAt={runStartedAt}
+                />
+              </div>
+            </div>
           )}
 
-          {studioView === 'document' && !runIsRunning && !selected&&(
+          {!selectedFolder && studioView === 'document' && !runIsRunning && !selected&&(
             <div style={{...heroSurface,display:'flex',alignItems:'center',justifyContent:'center',padding:'48px 56px'}}>
               <div style={{...readingMeasure,display:'flex',flexDirection:'column',gap:'32px'}}>
                 <div style={{display:'flex',flexDirection:'column',gap:'14px'}}>
@@ -1058,9 +1152,9 @@ export default function ImprovePage() {
             </div>
           )}
 
-          {studioView === 'document' && selected&&fileLoading&&<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{fontSize:'11px',color:'#475569'}}>Loading artifact…</span></div>}
+          {!selectedFolder && studioView === 'document' && selected&&fileLoading&&<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{fontSize:'11px',color:'#475569'}}>Loading artifact…</span></div>}
 
-          {studioView === 'document' && selected&&!fileLoading&&uiState==='idle'&&rawContent&&(
+          {!selectedFolder && studioView === 'document' && selected&&!fileLoading&&uiState==='idle'&&rawContent&&(
             <div
               ref={readingContainerRef}
               data-document-theme={gs.documentTheme}
@@ -1169,7 +1263,7 @@ export default function ImprovePage() {
             </div>
           )}
 
-          {studioView === 'document' && uiState==='loading'&&(
+          {!selectedFolder && studioView === 'document' && uiState==='loading'&&(
             <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:'12px'}}>
               <div style={{...T.label,color:'#475569',animation:'pulse 1.5s infinite'}}>GENERATING…</div>
               <div style={{...T.caption,color:activeModel.color}}>{activeModel.label} · {activeModel.provider} · {activeModel.cost}</div>
@@ -1177,7 +1271,7 @@ export default function ImprovePage() {
             </div>
           )}
 
-          {studioView === 'document' && uiState==='accepted'&&(
+          {!selectedFolder && studioView === 'document' && uiState==='accepted'&&(
             <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:'14px'}}>
               <div style={{fontSize:'24px',color:'#4ade80'}}>✓</div>
               <div style={{...T.title,color:'#4ade80'}}>Improvement accepted · graph updated</div>
@@ -1190,7 +1284,7 @@ export default function ImprovePage() {
             </div>
           )}
 
-          {studioView === 'document' && result&&uiState==='previewed'&&view==='split'&&(
+          {!selectedFolder && studioView === 'document' && result&&uiState==='previewed'&&view==='split'&&(
             <div style={{flex:1,display:'flex',overflow:'hidden'}}>
               <div style={{flex:1,overflowY:'auto',padding:'24px 28px',borderRight:'1px solid #0a1a2e'}}>
                 <div style={{...T.label,color:'#2a5a30',marginBottom:'16px'}}>ORIGINAL</div>
@@ -1202,8 +1296,8 @@ export default function ImprovePage() {
               </div>
             </div>
           )}
-          {studioView === 'document' && result&&uiState==='previewed'&&view==='original'&&<div style={{...heroSurface,padding:'24px 32px'}}><div style={readingMeasure}><Doc content={result.original} fs={12}/></div></div>}
-          {studioView === 'document' && result&&uiState==='previewed'&&view==='improved'&&<div style={{...heroSurface,padding:'24px 32px'}}><div style={readingMeasure}><Doc content={result.improved} fs={13}/></div></div>}
+          {!selectedFolder && studioView === 'document' && result&&uiState==='previewed'&&view==='original'&&<div style={{...heroSurface,padding:'24px 32px'}}><div style={readingMeasure}><Doc content={result.original} fs={12}/></div></div>}
+          {!selectedFolder && studioView === 'document' && result&&uiState==='previewed'&&view==='improved'&&<div style={{...heroSurface,padding:'24px 32px'}}><div style={readingMeasure}><Doc content={result.improved} fs={13}/></div></div>}
 
           {error&&<div style={{padding:'8px 16px',backgroundColor:'#150005',borderTop:'1px solid #f8717133',flexShrink:0,fontSize:'11px',color:'#f87171'}}>⚠ {error}</div>}
         </div>

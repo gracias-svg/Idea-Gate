@@ -8,13 +8,16 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Search, GitBranch, FileText, Cpu, Rocket, Clock } from 'lucide-react';
 import { useGlobalStore } from '@/lib/GlobalStore';
 import { useRuntime } from '@/lib/RuntimeContext';
 import { parseContent } from '@/lib/parseContent';
 import { type StageData } from '@/components/desk/LifecycleNodeChain';
 import ArtifactReaderOverlay, { type ReaderArtifact } from '@/components/desk/ArtifactReader';
 import WorkspaceExplorer, { type WorkspaceNode } from '@/components/shared/WorkspaceExplorer';
+import FolderWorkspace from '@/components/shared/FolderWorkspace';
+import { useWorkspaceState } from '@/lib/useWorkspaceState';
 import AttentionDrawer from '@/components/desk/AttentionDrawer';
 import ArtifactInspector from '@/components/desk/ArtifactInspector';
 
@@ -55,6 +58,29 @@ const STAGE_COLOR: Record<number,string> = {
   0:'#22c55e',1:'#22c55e',2:'#22c55e',3:'#38bdf8',4:'#38bdf8',5:'#38bdf8',
   6:'#a78bfa',7:'#a78bfa',8:'#a78bfa',9:'#a78bfa',10:'#fb923c',11:'#fb923c',
   12:'#fde047',13:'#fde047',14:'#fde047',
+};
+
+// ── V2: Phase icon mapping for dashed-border artifact cards ──────────────────
+const STAGE_PHASE_ID: Record<number, string> = {
+   0:'discover', 1:'discover', 2:'discover',
+   3:'decide',   4:'decide',   5:'decide',   6:'decide',
+   7:'specify',  8:'specify',  9:'specify',
+  10:'architect',11:'architect',
+  12:'ship',    13:'ship',    14:'ship',
+};
+const PHASE_ICON: Record<string, React.ReactNode> = {
+  discover:  <Search    size={14} />,
+  decide:    <GitBranch size={14} />,
+  specify:   <FileText  size={14} />,
+  architect: <Cpu       size={14} />,
+  ship:      <Rocket    size={14} />,
+};
+const PHASE_ICON_COLOR: Record<string, string> = {
+  discover:  '#4ade80',
+  decide:    '#38bdf8',
+  specify:   '#818cf8',
+  architect: '#fb923c',
+  ship:      '#fde047',
 };
 
 // ── B1: 5-phase lifecycle grouping with PM questions ─────────────────────────
@@ -108,9 +134,18 @@ const titleCase = (s:string) => s.replace(/\b\w/g,c=>c.toUpperCase());
 const wordCount = (t:string) => t.split(/\s+/).filter(Boolean).length;
 const readTime  = (t:string) => { const m=Math.ceil(wordCount(t)/220); return m<=1?'<1 min':`~${m} min`; };
 
-// ── B3: Artifact card — health-aware, hover-reactive ─────────────────────────
+// ── B3: Artifact card — M22 Lovable-faithful design ──────────────────────────
+// Reference: /tmp/lovable-ref/src/routes/desk.tsx ArtifactCard
+//
+// Key differences from M21:
+//   - Transparent background (cards are grid cells, not boxes)
+//   - Only borderRight + borderBottom (container carries top + left)
+//   - CSS card-blur-in (globals.css) with animationDelay stagger
+//   - Hover: border tints emerald at 42%, bg gets 4% emerald wash
+//   - Footer: plain text "v1 · confidence", no Studio button
 function ArtifactCard({
-  stageN, artifacts, journeyStages, summaries, runtime, isRunning, currentStage, onSelect, onOpenStudio,
+  stageN, artifacts, journeyStages, summaries, runtime, isRunning, currentStage,
+  onSelect, onOpenStudio, index,
 }: {
   stageN: number;
   artifacts: string[];
@@ -121,94 +156,123 @@ function ArtifactCard({
   currentStage: number;
   onSelect: (f: string) => void;
   onOpenStudio: (f: string) => void;
+  index: number;
 }) {
   const [hovered, setHovered] = useState(false);
-  const file   = artifacts.find(a => stageNum(a) === stageN);
-  const isGen  = !!file;
-  const health = getHealthState(file, stageN, journeyStages, runtime, isRunning, currentStage);
-  const hColor = HEALTH_COLOR[health];
-  const hLabel = HEALTH_LABEL[health];
-  const summary = file ? (summaries[file] ?? '') : '';
-  const ver    = file ? runtime.getVersion(file) : 0;
-  const jStage = journeyStages[String(stageN)];
+  const file     = artifacts.find(a => stageNum(a) === stageN);
+  const isGen    = !!file;
+  const health   = getHealthState(file, stageN, journeyStages, runtime, isRunning, currentStage);
+  const hColor   = HEALTH_COLOR[health];
+  const summary  = file ? (summaries[file] ?? '') : '';
+  const ver      = file ? runtime.getVersion(file) : 0;
+  const jStage   = journeyStages[String(stageN)];
+  const phaseId  = STAGE_PHASE_ID[stageN] ?? 'discover';
+  const phaseColor = PHASE_ICON_COLOR[phaseId];
 
   const isGenerating = health === 'generating';
-  const nameColor = health === 'stale' ? '#ef4444' : health === 'questionable' ? '#f59e0b' : isGen ? '#cbd5e1' : '#334155';
+  const isPending    = !isGen && !isGenerating;
+
+  const stagger = `${Math.min(index * 40, 480)}ms`;
+
+  // Dashed border helpers — matches Lovable's `dash` function
+  const borderResting = '1px dashed rgba(255,255,255,0.08)';
+  const borderHover   = '1px dashed rgba(74,222,128,0.42)';
 
   return (
     <div
+      className="card-blur-in"
       onClick={() => file && onSelect(file)}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        padding: '10px 12px',
-        backgroundColor: isGen ? '#040b14' : '#020609',
-        border: `1px solid ${hovered && isGen ? '#1e293b' : '#0a1a2e'}`,
-        borderLeft: `3px solid ${hColor}`,
-        borderRadius: '3px',
+        animationDelay: stagger,
+        padding: '20px',
+        // Transparent: cards are cells in the grid, not boxes
+        background: hovered && isGen ? 'rgba(74,222,128,0.04)' : 'transparent',
+        // Only right + bottom — container carries top + left
+        borderRight:  hovered && isGen ? borderHover : borderResting,
+        borderBottom: hovered && isGen ? borderHover : borderResting,
         cursor: isGen ? 'pointer' : 'default',
-        opacity: health === 'queued' ? 0.38 : 1,
-        display: 'flex', flexDirection: 'column', gap: '5px',
-        minHeight: '90px',
-        ...MONO,
+        display: 'flex', flexDirection: 'column',
+        minHeight: '168px',
+        transition: 'background 300ms ease-out, border-color 200ms ease-out',
       }}
     >
-      {/* Health badge + stage number */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: '11px', color: hColor, letterSpacing: '0.08em', fontWeight: 700, opacity: 0.55 }}>
-          {hLabel}
+      {/* Top row: phase icon (left) + health dot (right) */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+        <span style={{
+          color: isPending ? 'rgba(255,255,255,0.25)' : phaseColor,
+          transition: 'color 200ms ease-out',
+        }}>
+          {isPending ? <Clock size={15} /> : PHASE_ICON[phaseId]}
         </span>
-        <span style={{ fontSize: '11px', color: '#334155', opacity: 0.55 }}>{stageN}</span>
+        <span style={{
+          width: '6px', height: '6px', borderRadius: '50%',
+          backgroundColor: isPending ? 'transparent' : hColor,
+          marginTop: '2px',
+          flexShrink: 0,
+          transition: 'background-color 200ms ease-out',
+        }} />
       </div>
 
-      {/* Stage name — Fix 4: 15px min, weight 600 */}
-      {isGenerating ? (
-        <div className="shimmer-bar" style={{ height: '12px', borderRadius: '2px', width: '70%' }} />
-      ) : (
-        <div style={{ fontSize: '15px', color: nameColor, fontWeight: 600, lineHeight: 1.2 }}>
-          {STAGE_LABEL[stageN]}
-        </div>
-      )}
+      {/* Title */}
+      <div style={{ marginTop: '12px' }}>
+        {isGenerating ? (
+          <div className="shimmer-bar" style={{ height: '13px', borderRadius: '2px', width: '65%' }} />
+        ) : (
+          <div style={{
+            fontSize: '15px', fontWeight: 600, lineHeight: 1.3, letterSpacing: '-0.005em',
+            color: isPending
+              ? 'rgba(255,255,255,0.22)'
+              : health === 'stale'       ? '#ef4444'
+              : health === 'questionable' ? '#f59e0b'
+              : hovered ? '#f1f5f9' : '#e2e8f0',
+            fontFamily: 'var(--ig-font-sans, system-ui, sans-serif)',
+            transition: 'color 200ms ease-out',
+          }}>
+            {STAGE_LABEL[stageN]}
+          </div>
+        )}
+      </div>
 
-      {/* Summary — Fix 4: 13px, 1.65 line-height, var(--ig-text-secondary) */}
-      {isGenerating ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
-          <div className="shimmer-bar" style={{ height: '9px', borderRadius: '2px', width: '100%' }} />
-          <div className="shimmer-bar" style={{ height: '9px', borderRadius: '2px', width: '80%' }} />
-        </div>
-      ) : (
-        <div style={{ fontSize: '13px', color: isGen ? 'var(--ig-text-secondary,#64748b)' : '#1e293b', lineHeight: 1.65, flex: 1 }}>
-          {isGen
-            ? summary
-              ? `${summary.slice(0, 120)}${summary.length >= 120 ? '…' : ''}`
-              : (jStage?.reasoning ? `${String(jStage.reasoning).slice(0, 120)}…` : '')
-            : 'Not yet generated'}
-        </div>
-      )}
+      {/* Description */}
+      <div style={{ marginTop: '8px', flex: 1 }}>
+        {isGenerating ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div className="shimmer-bar" style={{ height: '9px', borderRadius: '2px', width: '100%' }} />
+            <div className="shimmer-bar" style={{ height: '9px', borderRadius: '2px', width: '75%' }} />
+          </div>
+        ) : (
+          <div style={{
+            fontSize: '12px', lineHeight: 1.55,
+            color: isPending ? 'rgba(255,255,255,0.12)' : 'var(--ig-text-secondary, #64748b)',
+            fontFamily: 'var(--ig-font-sans, system-ui, sans-serif)',
+            display: '-webkit-box',
+            WebkitLineClamp: 3,
+            WebkitBoxOrient: 'vertical' as const,
+            overflow: 'hidden',
+          }}>
+            {isPending
+              ? `Not yet generated`
+              : summary || (jStage?.reasoning ? String(jStage.reasoning) : '')}
+          </div>
+        )}
+      </div>
 
-      {/* Footer: version tag + Studio → */}
-      {isGen && !isGenerating && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '3px' }}>
-          <span style={{ fontSize: '11px', color: ver > 0 ? '#4ade80' : '#334155', opacity: 0.55 }}>
-            {ver > 0 ? `v${ver}` : 'v1'}
-            {health === 'stale' && ' · stale'}
-          </span>
-          <button
-            onClick={e => { e.stopPropagation(); onOpenStudio(file!); }}
-            style={{
-              padding: '2px 7px', fontSize: '9px', letterSpacing: '0.04em',
-              backgroundColor: 'transparent', border: '1px solid #818cf833',
-              borderRadius: '2px', color: '#818cf8', cursor: 'pointer',
-              opacity: hovered ? 1 : 0,
-              transition: 'opacity 150ms ease',
-              pointerEvents: hovered ? 'auto' : 'none',
-              ...MONO,
-            }}
-          >
-            Studio →
-          </button>
-        </div>
-      )}
+      {/* Footer: version · confidence — plain text, no button (matches Lovable reference) */}
+      <div style={{
+        marginTop: 'auto', paddingTop: '14px',
+        fontSize: '10px', fontFamily: "'JetBrains Mono','Fira Code',monospace",
+        color: 'rgba(255,255,255,0.28)',
+        letterSpacing: '0.02em',
+      }}>
+        {isPending
+          ? <span style={{ opacity: 0.5 }}>stage {stageN}</span>
+          : isGenerating
+            ? <span>generating…</span>
+            : <span>{ver > 0 ? `v${ver}` : 'v1'}{health === 'stale' ? ' · stale' : health === 'questionable' ? ' · review' : ''}</span>
+        }
+      </div>
     </div>
   );
 }
@@ -218,6 +282,7 @@ export default function DeskPage() {
   const runtime = useRuntime();
   const router  = useRouter();
   const { state: { settings }, updateSettings } = useGlobalStore();
+  const ws = useWorkspaceState();
 
   // ── Core artifact state ────────────────────────────────────────────────────
   const [artifacts,    setArtifacts]    = useState<string[]>([]);
@@ -226,6 +291,9 @@ export default function DeskPage() {
   const [focusMode,    setFocusMode]    = useState(false);
   const [summaries,    setSummaries]    = useState<Record<string, string>>({});
   const [isRunning,    setIsRunning]    = useState(false);
+
+  // ── Folder workspace state ────────────────────────────────────────────────
+  const [selectedFolder, setSelectedFolder] = useState<WorkspaceNode | null>(null);
 
   // ── Inspector state (W4) ─────────────────────────────────────────────────
   const [inspectorArtifact, setInspectorArtifact] = useState<ReaderArtifact | null>(null);
@@ -495,6 +563,7 @@ export default function DeskPage() {
     }));
     const idx = sortedArtifacts.indexOf(f);
     setInspectorIndex(idx >= 0 ? idx : 0);
+    ws.setActiveNodeId(`stage-${n}`);
     setInspectorArtifact({
       file: f,
       stageIndex: n,
@@ -510,13 +579,19 @@ export default function DeskPage() {
       downstreamItems,
       upstreamItems,
     });
-  }, [journeyState.stages, runtime, isRunning, currentStage, summaries, artifacts, sortedArtifacts]);
+  }, [journeyState.stages, runtime, isRunning, currentStage, summaries, artifacts, sortedArtifacts, ws]);
 
-  // Triggered by WorkspaceExplorer file node click
+  // Triggered by WorkspaceExplorer node click — folders open FolderWorkspace, files open inspector
   const handleOpenInspector = useCallback((node: WorkspaceNode) => {
+    if (node.kind === 'folder') {
+      setSelectedFolder(node);
+      ws.setActiveNodeId(node.id);
+      return;
+    }
+    setSelectedFolder(null);
     if (!node.file) return;
     openInspectorForFile(node.file);
-  }, [openInspectorForFile]);
+  }, [openInspectorForFile, ws]);
 
   // Fix 3 — Inspector prev/next navigation
   const handleInspectorNavigate = useCallback((direction: 'prev' | 'next') => {
@@ -568,6 +643,22 @@ export default function DeskPage() {
       });
     }
     innerNodes.push(
+      {
+        id: 'align', kind: 'folder', label: 'Align', children: [],
+        emptyHint: 'Vision · Goals · OKRs\nDecision Log · Stakeholders · RACI',
+      },
+      {
+        id: 'plan', kind: 'folder', label: 'Plan', children: [],
+        emptyHint: 'Roadmaps · Milestones\nDependencies · Launch Plans · RAID',
+      },
+      {
+        id: 'measure', kind: 'folder', label: 'Measure', children: [],
+        emptyHint: 'North Star Metrics · Experiments\nFunnels · Analytics · Feedback',
+      },
+      {
+        id: 'archive', kind: 'folder', label: 'Archive', children: [],
+        emptyHint: 'Final PRDs · Retrospectives\nPast Versions · Launch Packages',
+      },
       { id: 'decisions', kind: 'disabled', label: 'Decision Log', comingSoon: true, icon: 'decisions' },
       { id: 'knowledge', kind: 'disabled', label: 'Knowledge',    comingSoon: true, icon: 'knowledge' },
       { id: 'assets',    kind: 'disabled', label: 'Assets',       comingSoon: true, icon: 'assets'    },
@@ -627,7 +718,6 @@ export default function DeskPage() {
         {!focusMode && (
           <WorkspaceExplorer
             tree={workspaceTree}
-            activeNodeId={inspectorArtifact ? `stage-${stageNum(inspectorArtifact.file)}` : null}
             onNodeSelect={handleOpenInspector}
             width={240}
             headerLabel="WORKSPACE"
@@ -637,6 +727,14 @@ export default function DeskPage() {
 
         {/* ── B3: Center — the hero ── */}
         <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',minWidth:0}}>
+
+          {/* Folder workspace — replaces zones when a folder is selected */}
+          {selectedFolder ? (
+            <FolderWorkspace
+              node={selectedFolder}
+              onClose={() => { setSelectedFolder(null); ws.setActiveNodeId(null); }}
+            />
+          ) : (
           <div style={{flex:1,overflowY:'auto',padding:'32px 40px'}}>
             <div style={{maxWidth:'1080px',margin:'0 auto'}}>
 
@@ -720,16 +818,22 @@ export default function DeskPage() {
                         {phase.question}
                       </span>
                     </div>
-                    {/* 2-column card grid */}
+                    {/* 2-column card grid — M22: container carries top+left border, cards carry right+bottom.
+                        This creates perfect grid-line joins with no doubled edges. */}
                     <div style={{
                       display:'grid',
                       gridTemplateColumns:'repeat(2,1fr)',
-                      gap:'10px',
+                      gap:0,
+                      borderTop: '1px dashed rgba(255,255,255,0.08)',
+                      borderLeft: '1px dashed rgba(255,255,255,0.08)',
+                      borderRadius: '8px',
+                      overflow: 'hidden',
                     }}>
-                      {phase.stages.map(n => (
+                      {phase.stages.map((n, i) => (
                         <ArtifactCard
                           key={n}
                           stageN={n}
+                          index={i}
                           artifacts={artifacts}
                           journeyStages={journeyState.stages}
                           summaries={summaries}
@@ -747,6 +851,7 @@ export default function DeskPage() {
 
             </div>
           </div>
+          )}
         </div>
 
         {/* B1: Right panel — ABSENT. The DOM element does not exist. */}
@@ -760,7 +865,7 @@ export default function DeskPage() {
             artifact={inspectorArtifact}
             fullContent={inspectorContent}
             loading={inspectorLoading}
-            onClose={() => { setInspectorArtifact(null); setInspectorContent(null); }}
+            onClose={() => { setInspectorArtifact(null); setInspectorContent(null); ws.setActiveNodeId(null); }}
             onOpenInStudio={(file: string) => {
               setInspectorArtifact(null);
               setInspectorContent(null);

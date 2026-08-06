@@ -620,6 +620,47 @@ body {
   from { opacity: 0; }
   to   { opacity: 1; }
 }
+@keyframes ig-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+/* ig-progress-glow removed — M22 Fix 5 */
+
+/* ── Flowing thoughts (ToolGroup) ── */
+@keyframes shimmer-flow {
+  0%   { background-position: 100% center; }
+  100% { background-position: -100% center; }
+}
+.tool-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(203,213,225,0.45) 0%,
+    #f1f5f9 35%,
+    rgba(203,213,225,0.45) 65%,
+    rgba(203,213,225,0.45) 100%
+  );
+  background-size: 300% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: shimmer-flow 1.8s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tool-shimmer { animation: none; -webkit-text-fill-color: rgba(203,213,225,0.8); }
+}
+
+/* ── Artifact card blur-in entrance ── */
+@keyframes ig-card-blur-in {
+  from { opacity: 0; filter: blur(4px); transform: translateY(-6px); }
+  to   { opacity: 1; filter: blur(0);   transform: translateY(0); }
+}
+.card-blur-in {
+  animation: ig-card-blur-in 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .card-blur-in { animation: none; }
+}
+
 .ig-ws-row-in {
   animation: ig-ws-row-in 150ms ease-out;
 }

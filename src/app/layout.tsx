@@ -29,6 +29,8 @@ import { GeistSans } from "geist/font/sans";
 import { cn } from "@/lib/utils";
 import GrainFilter from "@/components/ui/GrainFilter";
 import ThemeSync from "@/components/ui/ThemeSync";
+import dynamic from 'next/dynamic';
+const FloatingTaskPill = dynamic(() => import('@/components/studio/FloatingTaskPill'), { ssr: false });
 
 export const metadata: Metadata = {
   title:       'IdeaGate — AI-Native PM Operating System',
@@ -42,7 +44,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         margin:          0,
         padding:         0,
         backgroundColor: 'var(--ig-canvas)',
-        fontFamily:      "'JetBrains Mono','Fira Code',monospace",
+        fontFamily:      'var(--ig-font-sans)',
         overflowX:       'hidden',
       }}>
         {/* W0-B: filter defined, not applied to anything yet — see GrainFilter.tsx */}
@@ -70,6 +72,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                       </div>
                     </div>
                     <CommandPalette />
+                    <FloatingTaskPill />
                   </CommandPaletteProvider>
                 </DataProvider>
               </GlobalStore>

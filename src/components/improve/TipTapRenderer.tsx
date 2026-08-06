@@ -5,10 +5,11 @@
 // MISSION 1 — Document Render Swap (Phase B, read-only).
 // MISSION 2 — Selection Bubble Menu (additive, read-only-safe).
 // MISSION 3 — Collaborative Document Editor (additive, editable mode).
+// MISSION 30 — Premium Collaborative Toolbar (5 groups, dropdowns, text color, align).
 //
-// All three missions are additive. When editable=false (default), behaviour
-// is byte-for-byte what shipped after Mission 2. When editable=true, the
-// editor is writable, the formatting toolbar renders, and the ⌘S / autosave
+// All missions are additive. When editable=false (default), behaviour is
+// byte-for-byte what shipped after Mission 2. When editable=true, the editor
+// is writable, the premium formatting toolbar renders, and the ⌘S / autosave
 // pipeline is active.
 //
 // Constitution references:
@@ -34,12 +35,18 @@ import { Table }                from '@tiptap/extension-table';
 import { TableRow }             from '@tiptap/extension-table-row';
 import { TableCell }            from '@tiptap/extension-table-cell';
 import { TableHeader }          from '@tiptap/extension-table-header';
+import { TextStyle }            from '@tiptap/extension-text-style';
+import { Color }                from '@tiptap/extension-color';
+import { TextAlign }            from '@tiptap/extension-text-align';
+import { TaskList }             from '@tiptap/extension-task-list';
+import { TaskItem }             from '@tiptap/extension-task-item';
 import {
   Bold, Italic, Underline, Strikethrough, Code,
-  List, ListOrdered, Quote, Sparkles,
+  List, ListOrdered, Quote, Sparkles, Paperclip,
+  AlignLeft, AlignCenter, AlignRight, AlignJustify,
+  MoreHorizontal, CheckSquare, Minus, Terminal, ChevronDown,
   type LucideIcon,
 } from 'lucide-react';
-import { Toggle } from '@/components/ui/toggle';
 import { cn } from '@/lib/utils';
 import { parseSections } from '@/lib/parseSections';
 import { workspaceMotion } from '@/components/workspace/motion';
@@ -69,21 +76,24 @@ interface TipTapRendererProps {
 
 interface ToolbarState {
   bold: boolean; italic: boolean; underline: boolean; strike: boolean;
-  code: boolean; bulletList: boolean; orderedList: boolean; blockquote: boolean;
-  activeHighlight: string | null;   // S1: currently active highlight color
-  hasSelection:    boolean;         // S2: text selection present
+  code: boolean; codeBlock: boolean; bulletList: boolean; orderedList: boolean;
+  blockquote: boolean; taskList: boolean;
+  activeHighlight: string | null;
+  hasSelection:    boolean;
+  headingLevel:    0 | 1 | 2 | 3;
+  textColor:       string | null;
+  textAlign:       'left' | 'center' | 'right' | 'justify';
 }
 
 const EMPTY_TOOLBAR: ToolbarState = {
   bold: false, italic: false, underline: false, strike: false,
-  code: false, bulletList: false, orderedList: false, blockquote: false,
-  activeHighlight: null,
-  hasSelection:    false,
+  code: false, codeBlock: false, bulletList: false, orderedList: false,
+  blockquote: false, taskList: false,
+  activeHighlight: null, hasSelection: false,
+  headingLevel: 0, textColor: null, textAlign: 'left',
 };
 
-// ── FormattingToolbar (Constitution §11) ─────────────────────────────────────
-// Rendered inside TipTapRenderer so it has access to the editor instance.
-// Hidden when editable=false — zero DOM impact on read-only path.
+// ── FormattingToolbar (M30 — Premium 5-group Collaborative Toolbar) ───────────
 
 interface ToolbarProps {
   editor:          Editor | null;
@@ -93,34 +103,51 @@ interface ToolbarProps {
   onFocusIntent?:  () => void;
 }
 
-function FormattingToolbar({ editor, visible, documentTheme, onPresetSelect, onFocusIntent }: ToolbarProps) {
-  // Reactive toolbar state — updated on BOTH selectionUpdate and transaction
-  // per Constitution §11 and §27. Using explicit event listeners rather than
-  // useEditorState to guarantee both event types fire.
-  const [ts, setTs] = useState<ToolbarState>(EMPTY_TOOLBAR);
+type OpenMenu = 'type' | 'color' | 'align' | 'more' | null;
 
+function FormattingToolbar({ editor, visible, documentTheme, onPresetSelect, onFocusIntent }: ToolbarProps) {
+  const [ts, setTs] = useState<ToolbarState>(EMPTY_TOOLBAR);
+  const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const openMenuRef = useRef<OpenMenu>(null);
+  openMenuRef.current = openMenu;
+
+  // Reactive toolbar state — updated on BOTH selectionUpdate and transaction
   const refresh = useCallback(() => {
     if (!editor) { setTs(EMPTY_TOOLBAR); return; }
     const sel = editor.state.selection;
     const hlAttrs = editor.isActive('highlight') ? editor.getAttributes('highlight') : null;
+    const colorAttrs = editor.getAttributes('textStyle');
+    const headingLevel =
+      editor.isActive('heading', { level: 1 }) ? 1 :
+      editor.isActive('heading', { level: 2 }) ? 2 :
+      editor.isActive('heading', { level: 3 }) ? 3 : 0;
+    const paraAttrs = editor.getAttributes('paragraph');
+    const headAttrs = editor.getAttributes('heading');
+    const rawAlign = paraAttrs.textAlign ?? headAttrs.textAlign ?? 'left';
     setTs({
       bold:            editor.isActive('bold'),
       italic:          editor.isActive('italic'),
       underline:       editor.isActive('underline'),
       strike:          editor.isActive('strike'),
       code:            editor.isActive('code'),
+      codeBlock:       editor.isActive('codeBlock'),
       bulletList:      editor.isActive('bulletList'),
       orderedList:     editor.isActive('orderedList'),
       blockquote:      editor.isActive('blockquote'),
+      taskList:        editor.isActive('taskList'),
       activeHighlight: (hlAttrs?.color as string) ?? null,
       hasSelection:    !sel.empty,
+      headingLevel:    headingLevel as 0 | 1 | 2 | 3,
+      textColor:       (colorAttrs?.color as string) || null,
+      textAlign:       rawAlign as 'left' | 'center' | 'right' | 'justify',
     });
   }, [editor]);
 
   useEffect(() => {
     if (!editor) return;
-    editor.on('selectionUpdate', refresh);  // cursor moves
-    editor.on('transaction', refresh);      // programmatic changes (⌘B etc.) — §11
+    editor.on('selectionUpdate', refresh);
+    editor.on('transaction', refresh);
     refresh();
     return () => {
       editor.off('selectionUpdate', refresh);
@@ -128,142 +155,109 @@ function FormattingToolbar({ editor, visible, documentTheme, onPresetSelect, onF
     };
   }, [editor, refresh]);
 
-  // F5 — hoist theme check so Divider/Btn can access it (isPaper used in Divider bg)
-  const isPaper = documentTheme === 'paper';
+  // Close dropdown on click outside the toolbar
+  useEffect(() => {
+    const close = (e: MouseEvent) => {
+      if (!openMenuRef.current) return;
+      if (toolbarRef.current?.contains(e.target as Node)) return;
+      setOpenMenu(null);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, []);
 
-  // F5 — Divider: softer treatment, theme-aware
+  // Close dropdown on Escape
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpenMenu(null); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
+
+  const toggleMenu = (name: NonNullable<OpenMenu>) => {
+    setOpenMenu(m => m === name ? null : name);
+  };
+
+  const isPaper = documentTheme === 'paper';
+  const borderC = isPaper ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)';
+  const textSec = isPaper ? 'rgba(30,41,59,0.55)' : 'rgba(148,163,184,0.75)';
+  const hoverBg = isPaper ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.07)';
+  const pressedBg = isPaper ? 'rgba(74,222,128,0.12)' : 'rgba(74,222,128,0.10)';
+  const dropBg = isPaper ? '#fdf8f3' : '#0c111a';
+  const dropBorder = isPaper ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.09)';
+  const dropShadow = '0 8px 32px rgba(0,0,0,0.35), 0 2px 8px rgba(0,0,0,0.2)';
+
   const Divider = () => (
     <div style={{
-      width: '1px', height: '16px', margin: '0 6px',
-      backgroundColor: isPaper ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.10)',
-      flexShrink: 0,
+      width: '1px', height: '16px', margin: '0 3px',
+      backgroundColor: borderC, flexShrink: 0,
     }} aria-hidden />
   );
 
-  // F5 — Button builder: ghost hover (barely perceptible), no border on inactive
   const Btn = ({
     pressed, onClick, icon: Icon, label,
   }: { pressed: boolean; onClick: () => void; icon: LucideIcon; label: string }) => (
-    <Toggle
-      pressed={pressed}
-      onPressedChange={onClick}
+    <button
+      type="button"
       aria-label={label}
       title={label}
-      className={cn(
-        'h-7 w-7 p-0',
-        // F5 — no border/outline on inactive; ghost hover only
-        'bg-transparent border-none outline-none',
-        'hover:bg-[rgba(255,255,255,0.08)] hover:rounded-[6px]',
-        'focus-visible:ring-1 focus-visible:ring-[var(--ig-emerald)]',
-        '[&_svg]:text-[var(--ig-text-secondary)]',
-        'transition-colors duration-[80ms]',
-        pressed
-          ? 'bg-[var(--ig-surface-active)] rounded-[6px] [&_svg]:!text-[var(--ig-emerald)]'
-          : '',
-      )}
+      onMouseDown={e => e.preventDefault()}
+      onClick={onClick}
+      style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        width: '28px', height: '28px',
+        borderRadius: '6px', border: 'none',
+        background: pressed ? pressedBg : 'transparent',
+        color: pressed ? '#4ade80' : textSec,
+        cursor: 'pointer',
+        transition: 'background 80ms ease, color 80ms ease',
+        flexShrink: 0, padding: 0,
+      }}
+      onMouseEnter={e => { if (!pressed) (e.currentTarget).style.background = hoverBg; }}
+      onMouseLeave={e => { if (!pressed) (e.currentTarget).style.background = 'transparent'; }}
     >
-      <Icon size={15} />
-    </Toggle>
+      <Icon size={14} />
+    </button>
   );
+
+  // Shared dropdown container style
+  const dropStyle: React.CSSProperties = {
+    position: 'absolute', top: 'calc(100% + 6px)',
+    background: dropBg, border: `1px solid ${dropBorder}`,
+    borderRadius: '10px', boxShadow: dropShadow,
+    overflow: 'hidden', zIndex: 200,
+  };
+
+  const AlignIcon: LucideIcon =
+    ts.textAlign === 'center' ? AlignCenter :
+    ts.textAlign === 'right'  ? AlignRight  :
+    ts.textAlign === 'justify' ? AlignJustify : AlignLeft;
+
+  const typeLabel = ts.headingLevel === 0 ? 'P' : `H${ts.headingLevel}`;
 
   if (!visible) return null;
 
   return (
-    // S2 — flush sticky bar: no floating card, no radius, no shadow
-    // animation: opacity-only 120ms per Constitution §13
     <div
+      ref={toolbarRef}
       style={{
         position: 'sticky', top: 0, zIndex: 10,
-        // Flush bar: full width, border-bottom only, no inset margins
         background: isPaper ? 'rgba(253,248,243,0.97)' : 'rgba(9,14,20,0.97)',
-        borderBottom: `1px solid ${isPaper ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.06)'}`,
+        borderBottom: `1px solid ${borderC}`,
         height: '40px',
-        padding: '0 16px',
+        padding: '0 12px',
         display: 'flex',
         alignItems: 'center',
         gap: '2px',
-        animation: 'ig-toolbar-in 120ms ease-out',  // §13
+        animation: 'ig-toolbar-in 120ms ease-out',
         flexShrink: 0,
       }}
-      onMouseDown={e => e.preventDefault()} // don't steal focus from editor
+      onMouseDown={e => e.preventDefault()}
     >
-      {/* Zone A — Formatting (Constitution §11 left zone) */}
-      <Btn pressed={ts.bold}      onClick={() => editor?.chain().focus().toggleBold().run()}        icon={Bold}          label="Bold (⌘B)" />
-      <Btn pressed={ts.italic}    onClick={() => editor?.chain().focus().toggleItalic().run()}      icon={Italic}        label="Italic (⌘I)" />
-      <Btn pressed={ts.underline} onClick={() => editor?.chain().focus().toggleUnderline().run()}   icon={Underline}     label="Underline (⌘U)" />
-      <Btn pressed={ts.strike}    onClick={() => editor?.chain().focus().toggleStrike().run()}      icon={Strikethrough} label="Strikethrough" />
-
-      <Divider />
-      <Btn pressed={ts.code}      onClick={() => editor?.chain().focus().toggleCode().run()}        icon={Code}          label="Inline code" />
-
-      <Divider />
-      <Btn pressed={ts.bulletList}  onClick={() => editor?.chain().focus().toggleBulletList().run()}  icon={List}        label="Bullet list" />
-      <Btn pressed={ts.orderedList} onClick={() => editor?.chain().focus().toggleOrderedList().run()} icon={ListOrdered} label="Ordered list" />
-
-      <Divider />
-      <Btn pressed={ts.blockquote} onClick={() => editor?.chain().focus().toggleBlockquote().run()} icon={Quote}        label="Blockquote" />
-
-      {/* S1 — Highlight color circles: Amber / Emerald / Rose */}
-      <Divider />
-      {([
-        { color: '#fef08a', label: 'Amber highlight' },
-        { color: '#bbf7d0', label: 'Emerald highlight' },
-        { color: '#fecaca', label: 'Rose highlight' },
-      ] as const).map(({ color, label }) => {
-        const isActive = ts.activeHighlight === color;
-        return (
-          <button
-            key={color}
-            type="button"
-            aria-label={label}
-            title={label}
-            onMouseDown={e => e.preventDefault()}
-            onClick={() => {
-              if (isActive) {
-                editor?.chain().focus().unsetHighlight().run();
-              } else {
-                editor?.chain().focus().setHighlight({ color }).run();
-              }
-            }}
-            style={{
-              width: '14px', height: '14px',
-              borderRadius: '50%',
-              backgroundColor: color,
-              border: 'none',
-              cursor: 'pointer',
-              padding: 0,
-              flexShrink: 0,
-              outline: isActive ? `2px solid ${color}` : '2px solid transparent',
-              outlineOffset: '2px',
-              animation: isActive ? 'ig-highlight-pulse 1.4s ease-in-out infinite' : 'none',
-              transition: 'outline 80ms ease-out',
-            }}
-          />
-        );
-      })}
-
-      {/* Zone B — AI pill (S2: functional — selected text → quote into intent; empty → focus intent) */}
+      {/* ── Group 1: AI + Text Type ── */}
       <button
         type="button"
-        style={{
-          marginLeft: 'auto',
-          display: 'flex', alignItems: 'center', gap: '5px',
-          background: 'linear-gradient(135deg, rgba(74,222,128,0.15), rgba(74,222,128,0.05))',
-          border: '1px solid rgba(74,222,128,0.3)',
-          color: '#4ade80',
-          padding: '4px 12px',
-          fontSize: '11.5px',
-          fontWeight: 600,
-          letterSpacing: '0.3px',
-          borderRadius: '100px',
-          boxShadow: '0 0 12px rgba(74,222,128,0.12)',
-          cursor: 'pointer',
-          transition: 'box-shadow 120ms ease-out',
-          fontFamily: 'var(--ig-font-mono)',
-          flexShrink: 0,
-        }}
-        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 20px rgba(74,222,128,0.20)'; }}
-        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 12px rgba(74,222,128,0.12)'; }}
+        aria-label="AI actions"
+        onMouseDown={e => e.preventDefault()}
         onClick={() => {
           if (ts.hasSelection && editor && onPresetSelect) {
             const sel = editor.state.selection;
@@ -274,10 +268,385 @@ function FormattingToolbar({ editor, visible, documentTheme, onPresetSelect, onF
             onFocusIntent?.();
           }
         }}
+        style={{
+          display: 'flex', alignItems: 'center', gap: '4px',
+          background: 'linear-gradient(135deg, rgba(74,222,128,0.14), rgba(74,222,128,0.04))',
+          border: '1px solid rgba(74,222,128,0.28)',
+          color: '#4ade80',
+          padding: '3px 9px',
+          fontSize: '11px', fontWeight: 600,
+          borderRadius: '100px',
+          cursor: 'pointer',
+          fontFamily: 'var(--ig-font-mono)',
+          flexShrink: 0, marginRight: '2px',
+          transition: 'opacity 120ms ease',
+        }}
+        onMouseEnter={e => { (e.currentTarget).style.opacity = '0.8'; }}
+        onMouseLeave={e => { (e.currentTarget).style.opacity = '1'; }}
       >
-        <Sparkles size={12} />
-        ✦ AI
+        <Sparkles size={11} />
+        AI
       </button>
+
+      {/* Type selector */}
+      <div style={{ position: 'relative', flexShrink: 0 }}>
+        <button
+          type="button"
+          aria-label="Text type"
+          title="Text type"
+          onMouseDown={e => e.preventDefault()}
+          onClick={() => toggleMenu('type')}
+          style={{
+            display: 'flex', alignItems: 'center', gap: '2px',
+            height: '28px', padding: '0 7px',
+            borderRadius: '6px', border: 'none',
+            background: openMenu === 'type' ? pressedBg : 'transparent',
+            color: openMenu === 'type' ? '#4ade80' : textSec,
+            cursor: 'pointer',
+            fontSize: '12px', fontWeight: 600,
+            fontFamily: 'var(--ig-font-mono)',
+            transition: 'background 80ms ease, color 80ms ease',
+          }}
+          onMouseEnter={e => { if (openMenu !== 'type') (e.currentTarget).style.background = hoverBg; }}
+          onMouseLeave={e => { if (openMenu !== 'type') (e.currentTarget).style.background = 'transparent'; }}
+        >
+          {typeLabel}
+          <ChevronDown size={10} style={{ opacity: 0.5, marginLeft: '1px' }} />
+        </button>
+
+        {openMenu === 'type' && (
+          <div style={{ ...dropStyle, left: 0, minWidth: '136px' }}>
+            {([
+              { label: 'Paragraph', key: 'P',
+                action: () => editor?.chain().focus().setParagraph().run(),
+                active: ts.headingLevel === 0,
+                fontSize: '13px', fontWeight: 400 },
+              { label: 'Heading 1', key: 'H1',
+                action: () => editor?.chain().focus().setHeading({ level: 1 }).run(),
+                active: ts.headingLevel === 1,
+                fontSize: '16px', fontWeight: 700 },
+              { label: 'Heading 2', key: 'H2',
+                action: () => editor?.chain().focus().setHeading({ level: 2 }).run(),
+                active: ts.headingLevel === 2,
+                fontSize: '14px', fontWeight: 600 },
+              { label: 'Heading 3', key: 'H3',
+                action: () => editor?.chain().focus().setHeading({ level: 3 }).run(),
+                active: ts.headingLevel === 3,
+                fontSize: '13px', fontWeight: 600 },
+            ]).map(({ label, key, action, active, fontSize, fontWeight }) => (
+              <button
+                key={key}
+                type="button"
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => { action(); setOpenMenu(null); }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                  width: '100%', padding: '7px 12px',
+                  border: 'none',
+                  background: active ? pressedBg : 'transparent',
+                  color: active ? '#4ade80' : textSec,
+                  cursor: 'pointer', textAlign: 'left',
+                  fontSize, fontWeight,
+                  fontFamily: 'var(--ig-font-sans)',
+                  transition: 'background 80ms ease',
+                }}
+                onMouseEnter={e => { if (!active) (e.currentTarget).style.background = hoverBg; }}
+                onMouseLeave={e => { if (!active) (e.currentTarget).style.background = active ? pressedBg : 'transparent'; }}
+              >
+                <span style={{ fontSize: '10px', fontWeight: 500, opacity: 0.45, fontFamily: 'var(--ig-font-mono)', minWidth: '16px' }}>{key}</span>
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <Divider />
+
+      {/* ── Group 2: Bold / Italic / Underline / Text Color ── */}
+      <Btn pressed={ts.bold}      onClick={() => editor?.chain().focus().toggleBold().run()}      icon={Bold}      label="Bold (⌘B)" />
+      <Btn pressed={ts.italic}    onClick={() => editor?.chain().focus().toggleItalic().run()}    icon={Italic}    label="Italic (⌘I)" />
+      <Btn pressed={ts.underline} onClick={() => editor?.chain().focus().toggleUnderline().run()} icon={Underline} label="Underline (⌘U)" />
+
+      {/* Text color */}
+      <div style={{ position: 'relative', flexShrink: 0 }}>
+        <button
+          type="button"
+          aria-label="Text color"
+          title="Text color"
+          onMouseDown={e => e.preventDefault()}
+          onClick={() => toggleMenu('color')}
+          style={{
+            display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center',
+            width: '28px', height: '28px', gap: '2px',
+            borderRadius: '6px', border: 'none',
+            background: openMenu === 'color' ? pressedBg : 'transparent',
+            cursor: 'pointer',
+            transition: 'background 80ms ease',
+            flexShrink: 0, padding: 0,
+          }}
+          onMouseEnter={e => { if (openMenu !== 'color') (e.currentTarget).style.background = hoverBg; }}
+          onMouseLeave={e => { if (openMenu !== 'color') (e.currentTarget).style.background = 'transparent'; }}
+        >
+          <span style={{
+            fontSize: '13px', fontWeight: 700, lineHeight: 1,
+            color: ts.textColor ?? textSec,
+            fontFamily: 'var(--ig-font-sans)',
+            transition: 'color 120ms ease',
+          }}>A</span>
+          <div style={{
+            width: '14px', height: '2px', borderRadius: '1px',
+            backgroundColor: ts.textColor ?? 'rgba(148,163,184,0.4)',
+            transition: 'background-color 120ms ease',
+          }} />
+        </button>
+
+        {openMenu === 'color' && (
+          <div style={{
+            ...dropStyle,
+            left: '50%', transform: 'translateX(-50%)',
+            padding: '10px',
+            overflow: 'visible',
+          }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px' }}>
+              {([
+                '#f8fafc', '#94a3b8', '#64748b', '#1e293b',
+                '#4ade80', '#38bdf8', '#fb923c', '#f87171',
+                '#c084fc', '#fde68a',
+              ]).map(color => (
+                <button
+                  key={color}
+                  type="button"
+                  aria-label={`Set text color ${color}`}
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => { editor?.chain().focus().setColor(color).run(); setOpenMenu(null); }}
+                  style={{
+                    width: '22px', height: '22px',
+                    borderRadius: '50%',
+                    backgroundColor: color,
+                    border: ts.textColor === color
+                      ? '2px solid #4ade80'
+                      : `2px solid ${isPaper ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.12)'}`,
+                    cursor: 'pointer', padding: 0,
+                    outline: 'none',
+                    transition: 'border-color 80ms ease, transform 80ms ease',
+                  }}
+                  onMouseEnter={e => { (e.currentTarget).style.transform = 'scale(1.15)'; }}
+                  onMouseLeave={e => { (e.currentTarget).style.transform = 'scale(1)'; }}
+                />
+              ))}
+            </div>
+            {ts.textColor && (
+              <button
+                type="button"
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => { editor?.chain().focus().unsetColor().run(); setOpenMenu(null); }}
+                style={{
+                  marginTop: '8px', width: '100%',
+                  padding: '4px 6px', border: 'none',
+                  background: 'transparent', color: textSec,
+                  fontSize: '10.5px', cursor: 'pointer',
+                  borderRadius: '4px',
+                  fontFamily: 'var(--ig-font-mono)',
+                  transition: 'background 80ms ease',
+                }}
+                onMouseEnter={e => { (e.currentTarget).style.background = hoverBg; }}
+                onMouseLeave={e => { (e.currentTarget).style.background = 'transparent'; }}
+              >
+                Clear color
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      <Divider />
+
+      {/* ── Group 3: Alignment ── */}
+      <div style={{ position: 'relative', flexShrink: 0 }}>
+        <button
+          type="button"
+          aria-label="Text alignment"
+          title="Text alignment"
+          onMouseDown={e => e.preventDefault()}
+          onClick={() => toggleMenu('align')}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: '28px', height: '28px',
+            borderRadius: '6px', border: 'none',
+            background: openMenu === 'align' ? pressedBg : 'transparent',
+            color: openMenu === 'align' ? '#4ade80' : textSec,
+            cursor: 'pointer',
+            transition: 'background 80ms ease, color 80ms ease',
+          }}
+          onMouseEnter={e => { if (openMenu !== 'align') (e.currentTarget).style.background = hoverBg; }}
+          onMouseLeave={e => { if (openMenu !== 'align') (e.currentTarget).style.background = 'transparent'; }}
+        >
+          <AlignIcon size={14} />
+        </button>
+
+        {openMenu === 'align' && (
+          <div style={{ ...dropStyle, left: 0, minWidth: '148px' }}>
+            {([
+              { label: 'Left',    icon: AlignLeft,    value: 'left'    as const },
+              { label: 'Center',  icon: AlignCenter,  value: 'center'  as const },
+              { label: 'Right',   icon: AlignRight,   value: 'right'   as const },
+              { label: 'Justify', icon: AlignJustify, value: 'justify' as const },
+            ]).map(({ label, icon: Icon, value }) => {
+              const active = ts.textAlign === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => { editor?.chain().focus().setTextAlign(value).run(); setOpenMenu(null); }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '8px',
+                    width: '100%', padding: '7px 12px',
+                    border: 'none',
+                    background: active ? pressedBg : 'transparent',
+                    color: active ? '#4ade80' : textSec,
+                    cursor: 'pointer', textAlign: 'left',
+                    fontSize: '12px',
+                    transition: 'background 80ms ease',
+                  }}
+                  onMouseEnter={e => { if (!active) (e.currentTarget).style.background = hoverBg; }}
+                  onMouseLeave={e => { if (!active) (e.currentTarget).style.background = 'transparent'; }}
+                >
+                  <Icon size={13} />
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <Divider />
+
+      {/* ── Group 4: Attachment ── */}
+      <button
+        type="button"
+        aria-label="Attach file"
+        title="Attach file"
+        onMouseDown={e => e.preventDefault()}
+        onClick={() => {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.multiple = true;
+          input.click();
+        }}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          width: '28px', height: '28px',
+          borderRadius: '6px', border: 'none',
+          background: 'transparent', color: textSec,
+          cursor: 'pointer',
+          transition: 'background 80ms ease',
+          flexShrink: 0,
+        }}
+        onMouseEnter={e => { (e.currentTarget).style.background = hoverBg; }}
+        onMouseLeave={e => { (e.currentTarget).style.background = 'transparent'; }}
+      >
+        <Paperclip size={14} />
+      </button>
+
+      {/* ── Spacer ── */}
+      <div style={{ flex: 1 }} />
+
+      {/* ── Group 5: More (⋯) ── */}
+      <div style={{ position: 'relative', flexShrink: 0 }}>
+        <button
+          type="button"
+          aria-label="More formatting"
+          title="More formatting"
+          onMouseDown={e => e.preventDefault()}
+          onClick={() => toggleMenu('more')}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: '28px', height: '28px',
+            borderRadius: '6px', border: 'none',
+            background: openMenu === 'more' ? pressedBg : 'transparent',
+            color: openMenu === 'more' ? '#4ade80' : textSec,
+            cursor: 'pointer',
+            transition: 'background 80ms ease, color 80ms ease',
+          }}
+          onMouseEnter={e => { if (openMenu !== 'more') (e.currentTarget).style.background = hoverBg; }}
+          onMouseLeave={e => { if (openMenu !== 'more') (e.currentTarget).style.background = 'transparent'; }}
+        >
+          <MoreHorizontal size={14} />
+        </button>
+
+        {openMenu === 'more' && (
+          <div style={{ ...dropStyle, right: 0, minWidth: '180px' }}>
+            {([
+              {
+                label: 'Strikethrough', icon: Strikethrough,
+                action: () => editor?.chain().focus().toggleStrike().run(),
+                active: ts.strike,
+              },
+              {
+                label: 'Inline Code', icon: Code,
+                action: () => editor?.chain().focus().toggleCode().run(),
+                active: ts.code,
+              },
+              {
+                label: 'Code Block', icon: Terminal,
+                action: () => editor?.chain().focus().toggleCodeBlock().run(),
+                active: ts.codeBlock,
+              },
+              {
+                label: 'Bullet List', icon: List,
+                action: () => editor?.chain().focus().toggleBulletList().run(),
+                active: ts.bulletList,
+              },
+              {
+                label: 'Numbered List', icon: ListOrdered,
+                action: () => editor?.chain().focus().toggleOrderedList().run(),
+                active: ts.orderedList,
+              },
+              {
+                label: 'Task List', icon: CheckSquare,
+                action: () => editor?.chain().focus().toggleTaskList().run(),
+                active: ts.taskList,
+              },
+              {
+                label: 'Blockquote', icon: Quote,
+                action: () => editor?.chain().focus().toggleBlockquote().run(),
+                active: ts.blockquote,
+              },
+              {
+                label: 'Divider', icon: Minus,
+                action: () => { editor?.chain().focus().setHorizontalRule().run(); setOpenMenu(null); },
+                active: false,
+              },
+            ]).map(({ label, icon: Icon, action, active }) => (
+              <button
+                key={label}
+                type="button"
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => { action(); if (active || label === 'Divider') setOpenMenu(null); }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '9px',
+                  width: '100%', padding: '7px 12px',
+                  border: 'none',
+                  background: active ? pressedBg : 'transparent',
+                  color: active ? '#4ade80' : textSec,
+                  cursor: 'pointer', textAlign: 'left',
+                  fontSize: '12px',
+                  transition: 'background 80ms ease',
+                }}
+                onMouseEnter={e => { if (!active) (e.currentTarget).style.background = hoverBg; }}
+                onMouseLeave={e => { if (!active) (e.currentTarget).style.background = 'transparent'; }}
+              >
+                <Icon size={13} />
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -309,14 +678,12 @@ export default function TipTapRenderer({
   onFocusIntent,
 }: TipTapRendererProps) {
   void fs;
-  // V3/V4 — read document theme directly from GlobalStore (avoids prop-drilling)
   const { state: { settings: gs } } = useGlobalStore();
   const documentTheme = gs.documentTheme;
 
   const containerRef = useRef<HTMLDivElement>(null);
   const bubbleRef    = useRef<HTMLDivElement>(null);
 
-  // ── Anchor-id assignment (Mission 2 fix: onCreate/onUpdate, not useEffect)
   const assignAnchorIds = (dom: HTMLElement) => {
     if (!anchors) return;
     const sectionIds = parseSections(content);
@@ -327,7 +694,6 @@ export default function TipTapRenderer({
     });
   };
 
-  // ── Editor (Mission 3: initialise with correct editable state) ──────────────
   // Re-created whenever `content` changes — correct for read-only; for editable
   // mode, content only changes on artifact switch (not on user typing), so this
   // never discards live edits.
@@ -337,22 +703,24 @@ export default function TipTapRenderer({
         StarterKit,
         Highlight.configure({ multicolor: true }),
         Table.configure({ resizable: false }),
-        TableRow,
-        TableHeader,
-        TableCell,
+        TableRow, TableHeader, TableCell,
+        TextStyle,
+        Color,
+        TextAlign.configure({ types: ['heading', 'paragraph'] }),
+        TaskList,
+        TaskItem.configure({ nested: true }),
         Markdown.configure({ html: false, linkify: false, breaks: false, tightLists: true }),
       ],
       content,
-      editable,                        // Mission 3: honour initial prop value
+      editable,
       immediatelyRender: false,
       onCreate: ({ editor: ed }) => {
         assignAnchorIds(ed.view.dom as HTMLElement);
       },
       onUpdate: ({ editor: ed }) => {
         assignAnchorIds(ed.view.dom as HTMLElement);
-        // Mission 3: serialise and forward to page.tsx dirty-tracking
         if (editable && onContentChange) {
-          const md = (ed.storage as unknown as { markdown: { getMarkdown(): string } }).markdown.getMarkdown(); // A3
+          const md = (ed.storage as unknown as { markdown: { getMarkdown(): string } }).markdown.getMarkdown();
           onContentChange(md);
         }
       },
@@ -360,13 +728,13 @@ export default function TipTapRenderer({
     [content],
   );
 
-  // ── Runtime editable toggle (Mission 3, A1 confirmed: setEditable is live) ──
+  // Runtime editable toggle
   useEffect(() => {
     if (!editor) return;
-    editor.setEditable(editable, false); // false = don't emit update transaction
+    editor.setEditable(editable, false);
   }, [editor, editable]);
 
-  // ── ⌘S save handler (Mission 3, Constitution §7, §15) ────────────────────
+  // ⌘S save handler
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
     if (!editable || !onSave || !editor) return;
     if ((e.metaKey || e.ctrlKey) && e.key === 's') {
@@ -376,7 +744,7 @@ export default function TipTapRenderer({
     }
   }, [editable, onSave, editor]);
 
-  // ── Arrival highlight (Mission 1 port, unchanged) ──────────────────────────
+  // Arrival highlight
   useEffect(() => {
     if (!containerRef.current) return;
     const h2s = containerRef.current.querySelectorAll('.ProseMirror h2');
@@ -387,7 +755,7 @@ export default function TipTapRenderer({
     });
   }, [arrivalId, reducedMotion, editor, content]);
 
-  // ── Mission 2: Selection Bubble (unchanged from M2) ───────────────────────
+  // Selection Bubble
   const [bubble, setBubble] = useState<BubbleState>({ visible: false, top: 0, anchorX: 0 });
   const [bubbleLeft, setBubbleLeft] = useState(0);
 
@@ -421,7 +789,6 @@ export default function TipTapRenderer({
     return () => document.removeEventListener('selectionchange', handleSelectionChange);
   }, []);
 
-  // V4 — useLayoutEffect clamps bubble position; fires when visible or anchor moves
   useLayoutEffect(() => {
     if (!bubble.visible) return;
     const container = containerRef.current;
@@ -447,10 +814,9 @@ export default function TipTapRenderer({
     <div
       ref={containerRef}
       className="ig-tiptap-render"
-      onKeyDown={handleKeyDown}    // ⌘S wired here (Mission 3)
+      onKeyDown={handleKeyDown}
       style={{ display: 'flex', flexDirection: 'column' }}
     >
-      {/* V3/S2 — Formatting toolbar — visible only when editable (Constitution §11) */}
       <FormattingToolbar
         editor={editor}
         visible={editable}
@@ -461,7 +827,6 @@ export default function TipTapRenderer({
 
       {editor && <EditorContent editor={editor} />}
 
-      {/* V4 — Selection bubble: framer-motion AnimatePresence entrance/exit */}
       {onPresetSelect && (
         <AnimatePresence>
           {bubble.visible && (
@@ -477,7 +842,6 @@ export default function TipTapRenderer({
               style={{
                 top: bubble.top,
                 left: bubbleLeft,
-                // V4 — elevated pill: border + shadow for depth; no blur (CLAUDE.md §9)
                 background: documentTheme === 'paper'
                   ? 'rgba(253,248,243,0.97)'
                   : 'var(--ig-surface-overlay)',

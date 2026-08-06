@@ -1,16 +1,15 @@
 'use client';
 
 // src/components/studio/AgentToolGroup.tsx
-// Mission 26 — Honest execution feed.
+// Mission 29 — Stable all-agents view.
 //
-// Previous version used a THOUGHT_FEED circular buffer of fake AI thoughts.
-// This version shows ONLY real SSE events from the backend.
+// Shows all 6 agents as a stable list with their current status:
+//   active   — the agent currently executing (SSE agent_active or currentAgent prop)
+//   done     — agents that have been active in this run (from recentEvents)
+//   waiting  — not yet reached
 //
-// When streaming with no recent events: show a stage-progress waiting state.
-// When streaming with events: show up to 4 real events (newest on top).
-// When complete: show completion summary.
-//
-// "Only show genuine execution events. Never invent fake AI thinking."
+// The card header shows the current stage name as a fixed label.
+// This replaces the sliding-window SSE event buffer from M26.
 
 import React from 'react';
 import { ToolGroup, ToolEntry, ToolGroupState } from '@/components/ui/tool-group';
@@ -25,9 +24,20 @@ export interface StreamEvent {
   message?: string;
 }
 
-// ── Agent display names ────────────────────────────────────────────────────────
+// ── All agents in execution order ─────────────────────────────────────────────
 
-const AGENT_DISPLAY: Record<string, string> = {
+const ALL_AGENTS: Array<{ key: string; label: string }> = [
+  { key: 'CoordinatorAgent',     label: 'Coordinator'     },
+  { key: 'ResearchAgent',        label: 'Researcher'      },
+  { key: 'ProductStrategyAgent', label: 'Product Strategy'},
+  { key: 'UXAgent',              label: 'UX Designer'     },
+  { key: 'ArchitectAgent',       label: 'Architect'       },
+  { key: 'QAAgent',              label: 'QA Engineer'     },
+];
+
+// ── Agent display names (kept for backward compat) ────────────────────────────
+
+export const AGENT_DISPLAY: Record<string, string> = {
   ProductStrategyAgent: 'Product Strategy',
   ResearchAgent:        'Researcher',
   UXAgent:              'UX Designer',
@@ -77,72 +87,35 @@ export default function AgentToolGroup({
 }: Props) {
   const groupState: ToolGroupState = isRunning ? 'streaming' : 'completed';
 
-  const agentDisplayName = currentAgent ? (AGENT_DISPLAY[currentAgent] ?? currentAgent) : null;
-  const stageName = STAGE_NAMES[currentStage] ?? `Stage ${currentStage}`;
-
-  const shimmerLabel = agentDisplayName
-    ? `${agentDisplayName} · ${stageName}`
-    : stageName;
-
+  const stageName    = STAGE_NAMES[currentStage] ?? `Stage ${currentStage}`;
   const completeLabel = `${Math.min(currentStage, 15)} of 15 stages complete`;
 
-  // ── Build real event entries from SSE stream ──────────────────────────────
-  // Only real events from the backend are shown. No circular buffer.
-  const entries: ToolEntry[] = recentEvents
-    .slice(-4)
-    .map((evt, i): ToolEntry | null => {
-      if (evt.type === 'stage_start') {
-        const name = evt.name ?? STAGE_NAMES[evt.stage ?? -1] ?? `Stage ${evt.stage}`;
-        return {
-          id:       `sse-stage-${evt.stage}-${i}`,
-          category: 'file',
-          title:    name,
-          subtitle: evt.stage != null ? `stage ${evt.stage}` : undefined,
-        };
-      }
-      if (evt.type === 'agent_active') {
-        const disp = evt.agent ? (AGENT_DISPLAY[evt.agent] ?? evt.agent) : 'Agent';
-        return {
-          id:       `sse-agent-${evt.agent}-${i}`,
-          category: 'search',
-          title:    disp,
-          subtitle: 'active',
-        };
-      }
-      if (evt.type === 'stage_retry') {
-        return {
-          id:       `sse-retry-${evt.stage}-${i}`,
-          category: 'command',
-          title:    `Retrying stage`,
-          subtitle: evt.stage != null ? `stage ${evt.stage}` : undefined,
-        };
-      }
-      if (evt.type === 'agent_error') {
-        return {
-          id:       `sse-error-${i}`,
-          category: 'command',
-          title:    evt.message ?? 'Agent error',
-          subtitle: 'error',
-        };
-      }
-      return null;
-    })
-    .filter((e): e is ToolEntry => e !== null);
+  // ── Build stable all-agents entry list ───────────────────────────────────
+  // Agents that have been active (from SSE history) are marked done.
+  // The current active agent is marked active.
+  // The rest are waiting.
+  const seenAgents = new Set(
+    recentEvents.filter(e => e.type === 'agent_active').map(e => e.agent)
+  );
 
-  // When running but no real events yet, inject a single "waiting" entry
-  // so the feed doesn't appear empty. This is real state (we know the stage),
-  // not a fake thought.
-  const displayEntries: ToolEntry[] = isRunning && entries.length === 0
-    ? [{ id: 'waiting-stage', category: 'file', title: stageName, subtitle: 'initialising' }]
-    : entries;
+  const entries: ToolEntry[] = ALL_AGENTS.map(({ key, label }) => {
+    const isActive  = key === currentAgent && isRunning;
+    const isDone    = seenAgents.has(key) && !isActive;
+    return {
+      id:       key,
+      category: isActive ? 'search' : isDone ? 'command' : 'file',
+      title:    label,
+      subtitle: isActive ? 'active' : isDone ? 'done' : 'waiting',
+    };
+  });
 
   return (
     <ToolGroup
       state={groupState}
-      shimmerLabel={shimmerLabel}
+      shimmerLabel={stageName}
       completeLabel={completeLabel}
-      nestedTools={displayEntries}
-      maxVisibleTools={4}
+      nestedTools={entries}
+      maxVisibleTools={6}
       startedAt={startedAt}
     />
   );

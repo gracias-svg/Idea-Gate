@@ -190,10 +190,11 @@ export default function FolderWorkspace({ node, onClose, onOpenWorkspaceDoc }: F
   const isPhase     = node.id.startsWith('phase-');
   const isDocuments = node.id === 'documents' || isPhase;
 
-  // All workspace docs, filtered to this folder
+  // All workspace items for this folder, sorted newest first
   const allDocs = useWorkspaceDocs();
-  const folderDocs    = allDocs.filter(d => d.folderId === node.id && d.kind === 'document');
-  const folderAttach  = allDocs.filter(d => d.folderId === node.id && d.kind === 'attachment');
+  const workspaceItems = allDocs
+    .filter(d => d.folderId === node.id)
+    .sort((a, b) => b.updatedAt - a.updatedAt);
 
   // ── Open a document for editing ────────────────────────────────────────────
   const openDoc = (docId: string) => {
@@ -361,42 +362,27 @@ export default function FolderWorkspace({ node, onClose, onOpenWorkspaceDoc }: F
             </div>
           )}
 
-          {/* ── Document grid ── */}
-          {folderDocs.length > 0 && (
+          {/* ── Unified workspace items grid ── */}
+          {workspaceItems.length > 0 && (
             <section style={{ marginBottom: '32px' }}>
               <div style={{
                 fontSize: '9px', fontWeight: 700, color: '#475569',
                 letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '12px', ...MONO,
               }}>
-                Documents · {folderDocs.length}
+                Workspace Items · {workspaceItems.length}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '10px' }}>
-                {folderDocs.map(doc => (
-                  <DocCard key={doc.id} doc={doc} accent={accent} onOpen={() => openDoc(doc.id)} onDelete={() => deleteDoc(doc.id)} />
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* ── Attachment grid ── */}
-          {folderAttach.length > 0 && (
-            <section style={{ marginBottom: '32px' }}>
-              <div style={{
-                fontSize: '9px', fontWeight: 700, color: '#475569',
-                letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '12px', ...MONO,
-              }}>
-                Attachments · {folderAttach.length}
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '10px' }}>
-                {folderAttach.map(att => (
-                  <AttachmentCard key={att.id} att={att} onOpen={() => handleOpenAttachment(att)} onDelete={() => deleteDoc(att.id)} />
+                {workspaceItems.map(item => (
+                  item.kind === 'document'
+                    ? <DocCard key={item.id} doc={item} accent={accent} onOpen={() => openDoc(item.id)} onDelete={() => deleteDoc(item.id)} />
+                    : <AttachmentCard key={item.id} att={item} onOpen={() => handleOpenAttachment(item)} onDelete={() => deleteDoc(item.id)} />
                 ))}
               </div>
             </section>
           )}
 
           {/* ── Empty state ── */}
-          {folderDocs.length === 0 && folderAttach.length === 0 && !isReadOnly && !isDocuments && (
+          {workspaceItems.length === 0 && !isReadOnly && !isDocuments && (
             <div style={{
               padding: '32px 0', marginBottom: '24px',
               borderTop: '1px solid #0a1a2e',

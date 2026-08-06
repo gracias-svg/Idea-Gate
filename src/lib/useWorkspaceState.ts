@@ -24,20 +24,23 @@ type WsMsg =
   | { type: 'PROJECT_RENAME'; name: string };
 
 export function useWorkspaceState() {
-  const [activeNodeId, _setNode] = useState<string | null>(() => {
-    if (typeof window === 'undefined') return null;
-    return localStorage.getItem(KEY_NODE);
-  });
-
-  const [projectDisplayName, _setName] = useState<string | null>(() => {
-    if (typeof window === 'undefined') return null;
-    return localStorage.getItem(KEY_NAME);
-  });
+  // SSR-safe: always null on first render (matches server), then useEffect syncs localStorage.
+  // Reading localStorage inside useState(() => ...) causes a hydration mismatch because
+  // the client can read localStorage but the server cannot.
+  const [activeNodeId, _setNode] = useState<string | null>(null);
+  const [projectDisplayName, _setName] = useState<string | null>(null);
 
   const ch = useRef<BroadcastChannel | null>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+
+    // Sync from localStorage after mount (no SSR mismatch — runs client-only)
+    const storedNode = localStorage.getItem(KEY_NODE);
+    if (storedNode) _setNode(storedNode);
+    const storedName = localStorage.getItem(KEY_NAME);
+    if (storedName) _setName(storedName);
+
     const channel = new BroadcastChannel(CHANNEL);
     ch.current = channel;
 

@@ -122,8 +122,9 @@ function useElapsed(startedAt: number | undefined, active: boolean): string {
 }
 
 // ── Opacity ramp — oldest is dimmest, newest is fully lit ─────────────────────
+// Supports up to 6 entries (6 agents in the execution panel).
 
-const ROW_OPACITY = [0.15, 0.40, 0.75, 1.0];
+const ROW_OPACITY = [0.10, 0.20, 0.35, 0.55, 0.75, 1.0];
 
 // ── Main component ─────────────────────────────────────────────────────────────
 

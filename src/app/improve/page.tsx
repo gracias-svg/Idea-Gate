@@ -1081,7 +1081,7 @@ export default function ImprovePage() {
             }}
             width={210}
             headerLabel="WORKSPACE"
-            onRenameNode={(_, newName) => updateSettings({ projectDisplayName: newName })}
+            onRenameNode={(_, newName) => ws.setProjectDisplayName(newName)}
           />
         </div>
 
@@ -1170,7 +1170,7 @@ export default function ImprovePage() {
                 </button>
               </div>
 
-              {/* TipTap editor — the same editor used for lifecycle artifacts */}
+              {/* TipTap editor — used directly (not via Doc) so editable always works */}
               <div
                 data-document-theme={gs.documentTheme}
                 style={{
@@ -1190,10 +1190,9 @@ export default function ImprovePage() {
                     padding: '40px 48px', flexGrow: 1, boxSizing: 'border-box' as const,
                   } : {}),
                 }}>
-                  <Doc
+                  <TipTapRenderer
                     content={wsDocContent}
                     editable={true}
-                    anchors={false}
                     reducedMotion={reducedMotion}
                     onContentChange={handleWsDocContentChange}
                     onSave={handleWsDocSave}

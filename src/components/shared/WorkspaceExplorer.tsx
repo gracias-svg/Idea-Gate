@@ -20,6 +20,7 @@ import {
   Files, FilesHighlight, FileHighlight, FolderHighlight,
 } from '@/components/ui/primitives-animate-files';
 import { useWorkspaceState } from '@/lib/useWorkspaceState';
+import { useWorkspaceDocs } from '@/lib/workspaceDocuments';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export type { HealthState };
@@ -44,6 +45,8 @@ export interface WorkspaceNode {
   emptyHint?:  string;
   // Icon override
   icon?: 'project' | 'journey' | 'decisions' | 'history' | 'knowledge' | 'assets' | 'snapshots' | 'exports';
+  // Workspace document id (user-created docs, not lifecycle artifacts)
+  wdocId?: string;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -406,6 +409,24 @@ export interface WorkspaceExplorerProps {
   onRenameNode?: (id: string, newName: string) => void;
 }
 
+// ── Merge workspace docs into the folder tree ─────────────────────────────────
+// Folders that can hold user-created docs.
+const WDOC_FOLDERS = new Set(['align', 'plan', 'measure', 'archive']);
+
+function mergeDocsIntoNode(
+  node: WorkspaceNode,
+  docsByFolder: Map<string, WorkspaceNode[]>,
+): WorkspaceNode {
+  if (node.kind !== 'folder') return node;
+  const docNodes = WDOC_FOLDERS.has(node.id) ? (docsByFolder.get(node.id) ?? []) : [];
+  const mergedChildren = [
+    ...(node.children ?? []).map(c => mergeDocsIntoNode(c, docsByFolder)),
+    ...docNodes,
+  ];
+  if (mergedChildren.length === (node.children?.length ?? 0) && docNodes.length === 0) return node;
+  return { ...node, children: mergedChildren, count: mergedChildren.length || node.count };
+}
+
 export default function WorkspaceExplorer({
   tree,
   onNodeSelect,
@@ -413,7 +434,30 @@ export default function WorkspaceExplorer({
   headerLabel = 'WORKSPACE',
   onRenameNode,
 }: WorkspaceExplorerProps) {
-  const ws = useWorkspaceState();
+  const ws   = useWorkspaceState();
+  const docs = useWorkspaceDocs();
+
+  // Build wdoc nodes grouped by folderId
+  const docsByFolder = React.useMemo(() => {
+    const map = new Map<string, WorkspaceNode[]>();
+    for (const doc of docs) {
+      const nodes = map.get(doc.folderId) ?? [];
+      nodes.push({
+        id:     `wdoc-${doc.id}`,
+        kind:   'file',
+        label:  doc.title,
+        wdocId: doc.id,
+      });
+      map.set(doc.folderId, nodes);
+    }
+    return map;
+  }, [docs]);
+
+  // Merge docs into tree (immutable — original tree prop untouched)
+  const mergedTree = React.useMemo(
+    () => tree.map(n => mergeDocsIntoNode(n, docsByFolder)),
+    [tree, docsByFolder],
+  );
 
   // Rename state
   const [renamingId,  setRenamingId]  = useState<string | null>(null);
@@ -495,7 +539,7 @@ export default function WorkspaceExplorer({
 
         {/* Tree rows */}
         <div style={{ paddingTop: '4px', paddingBottom: '16px' }}>
-          {tree.map(node => (
+          {mergedTree.map(node => (
             <TreeNode
               key={node.id}
               node={node}

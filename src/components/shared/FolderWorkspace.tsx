@@ -1,22 +1,23 @@
 'use client';
 
 // src/components/shared/FolderWorkspace.tsx
-// Mission 26 — Complete folder workspace panel.
-// Grammar §10: empty states educate. §5: two-voice typography.
-// §9: one screen, one question. Each folder answers "what belongs here?"
+// Mission 27 — Workflow Completion Pass.
 //
-// Changes from M25:
-// - Animated entrance (opacity + y slide, 200ms)
-// - Functional buttons: New Document → /improve, Upload → file dialog
-// - Color-coded accent strip per folder type
-// - Richer layout: stat line, better chip hierarchy, template affordance
-// - Phase folders get artifact-specific content
-// - Disabled → enabled actions with real navigation
+// Adds inline editor mode so New Document / Template / Upload flows
+// complete end-to-end inside this panel — no blind router.push('/improve').
+//
+// Editor mode: title input + content textarea + Save / Cancel.
+// On save → createDoc() writes to localStorage → BroadcastChannel notifies
+// WorkspaceExplorer → document appears in the tree.
+//
+// "Open in Studio →" for phase folders: navigates to /improve (correct — lets
+// the user pick the lifecycle artifact they want to refine).
 
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { useRouter } from 'next/navigation';
 import type { WorkspaceNode } from './WorkspaceExplorer';
+import { createDoc } from '@/lib/workspaceDocuments';
+import { getTemplateContent } from '@/lib/templates';
 
 // ── Typography ────────────────────────────────────────────────────────────────
 const SANS: React.CSSProperties = { fontFamily: 'var(--ig-font-sans, system-ui, sans-serif)' };
@@ -140,26 +141,186 @@ export interface FolderWorkspaceProps {
 }
 
 export default function FolderWorkspace({ node, onClose, docCount }: FolderWorkspaceProps) {
-  const router     = useRouter();
   const fileRef    = useRef<HTMLInputElement>(null);
+  const titleRef   = useRef<HTMLInputElement>(null);
   const spec       = FOLDER_SPECS[node.id] ?? DEFAULT_SPEC;
   const accent     = node.phaseColor ?? spec.accentColor;
   const isReadOnly = node.id === 'archive' || node.id === 'history';
   const isPhase    = node.id.startsWith('phase-');
   const isDocuments = node.id === 'documents' || isPhase;
 
+  // ── Editor state ──────────────────────────────────────────────────────────
+  const [editMode,    setEditMode]    = useState(false);
+  const [editTitle,   setEditTitle]   = useState('');
+  const [editContent, setEditContent] = useState('');
+  const [editTemplate,setEditTemplate]= useState<string | undefined>(undefined);
+  const [saveState,   setSaveState]   = useState<'idle' | 'saving' | 'saved'>('idle');
+
+  // Focus title input when entering edit mode
+  useEffect(() => {
+    if (editMode && titleRef.current) {
+      titleRef.current.focus();
+    }
+  }, [editMode]);
+
+  // Reset edit mode when folder changes
+  useEffect(() => {
+    setEditMode(false);
+    setSaveState('idle');
+  }, [node.id]);
+
+  const enterEditor = (title = '', content = '', template?: string) => {
+    setEditTitle(title);
+    setEditContent(content);
+    setEditTemplate(template);
+    setSaveState('idle');
+    setEditMode(true);
+  };
+
   const handleNewDocument = () => {
-    router.push('/improve');
+    enterEditor('', '');
   };
 
   const handleTemplate = (t: string) => {
-    router.push(`/improve?template=${encodeURIComponent(t)}`);
+    enterEditor(t, getTemplateContent(t), t);
   };
 
   const handleUpload = () => {
     fileRef.current?.click();
   };
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string ?? '';
+      const title = file.name.replace(/\.[^.]+$/, '');
+      enterEditor(title, text);
+    };
+    reader.readAsText(file);
+    // Reset input so the same file can be re-selected
+    if (fileRef.current) fileRef.current.value = '';
+  };
+
+  const handleSave = () => {
+    if (!editTitle.trim() && !editContent.trim()) return;
+    setSaveState('saving');
+    createDoc(node.id, editTitle.trim() || 'Untitled', editContent, editTemplate);
+    setSaveState('saved');
+    setTimeout(() => {
+      setEditMode(false);
+      setSaveState('idle');
+    }, 600);
+  };
+
+  const handleCancel = () => {
+    setEditMode(false);
+    setSaveState('idle');
+  };
+
+  // ── Editor view ───────────────────────────────────────────────────────────
+  if (editMode) {
+    return (
+      <motion.div
+        key={`${node.id}-editor`}
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 4 }}
+        transition={{ duration: 0.15, ease: [0.4, 0, 0.2, 1] }}
+        style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+      >
+        {/* Accent line */}
+        <div style={{ height: '2px', background: `linear-gradient(90deg, ${accent} 0%, transparent 60%)`, flexShrink: 0 }} />
+
+        {/* Editor toolbar */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '10px',
+          padding: '10px 52px',
+          borderBottom: '1px solid #0a1a2e',
+          flexShrink: 0,
+          ...MONO,
+        }}>
+          <button
+            onClick={handleCancel}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: '#475569', fontSize: '11px', padding: 0,
+              letterSpacing: '0.04em', ...MONO,
+            }}
+          >
+            ← {node.label}
+          </button>
+
+          {editTemplate && (
+            <span style={{ fontSize: '10px', color: accent, opacity: 0.7, letterSpacing: '0.06em' }}>
+              · {editTemplate}
+            </span>
+          )}
+
+          <div style={{ flex: 1 }} />
+
+          <button
+            onClick={handleSave}
+            disabled={saveState === 'saving'}
+            style={{
+              padding: '6px 16px',
+              background: saveState === 'saved' ? `${accent}22` : `${accent}14`,
+              border: `1px solid ${accent}${saveState === 'saved' ? '55' : '33'}`,
+              borderRadius: '4px',
+              fontSize: '11px', fontWeight: 600,
+              color: saveState === 'saved' ? accent : accent,
+              cursor: 'pointer',
+              transition: 'all 150ms ease',
+              ...MONO,
+            }}
+          >
+            {saveState === 'saving' ? '⟳ Saving…' : saveState === 'saved' ? '✓ Saved' : 'Save'}
+          </button>
+        </div>
+
+        {/* Title */}
+        <div style={{ padding: '32px 52px 0', flexShrink: 0 }}>
+          <input
+            ref={titleRef}
+            value={editTitle}
+            onChange={e => setEditTitle(e.target.value)}
+            placeholder="Document title"
+            onKeyDown={e => { if (e.key === 'Enter') e.preventDefault(); }}
+            style={{
+              width: '100%',
+              background: 'transparent', border: 'none', outline: 'none',
+              fontSize: '26px', fontWeight: 700, letterSpacing: '-0.01em',
+              color: 'var(--ig-text-primary, #f1f5f9)',
+              lineHeight: 1.2,
+              boxSizing: 'border-box',
+              ...SANS,
+            }}
+          />
+        </div>
+
+        {/* Content area */}
+        <div style={{ flex: 1, padding: '16px 52px 40px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <textarea
+            value={editContent}
+            onChange={e => setEditContent(e.target.value)}
+            placeholder="Start writing in Markdown…"
+            style={{
+              flex: 1, width: '100%',
+              background: 'transparent', border: 'none', outline: 'none',
+              resize: 'none',
+              fontSize: '14px', fontWeight: 400, lineHeight: 1.7,
+              color: 'var(--ig-text-secondary, #94a3b8)',
+              boxSizing: 'border-box',
+              ...SANS,
+            }}
+          />
+        </div>
+      </motion.div>
+    );
+  }
+
+  // ── Folder info view ──────────────────────────────────────────────────────
   return (
     <motion.div
       key={node.id}
@@ -176,9 +337,9 @@ export default function FolderWorkspace({ node, onClose, docCount }: FolderWorks
       <input
         ref={fileRef}
         type="file"
-        accept=".md,.txt,.pdf,.docx"
+        accept=".md,.txt"
         style={{ display: 'none' }}
-        onChange={() => { router.push('/improve'); }}
+        onChange={handleFileChange}
       />
 
       {/* Accent line at top */}
@@ -403,12 +564,13 @@ export default function FolderWorkspace({ node, onClose, docCount }: FolderWorks
             </div>
           )}
 
-          {/* ── Phase folders: if documents exist, open Studio ── */}
+          {/* ── Phase folders: open Studio ── */}
           {isDocuments && (
             <div style={{ marginTop: '8px' }}>
-              <button
-                onClick={() => router.push('/improve')}
+              <a
+                href="/improve"
                 style={{
+                  display: 'inline-block',
                   padding: '9px 18px',
                   background: `${accent}14`,
                   border: `1px solid ${accent}33`,
@@ -416,11 +578,12 @@ export default function FolderWorkspace({ node, onClose, docCount }: FolderWorks
                   fontSize: '12px', fontWeight: 500,
                   color: accent,
                   cursor: 'pointer',
+                  textDecoration: 'none',
                   ...MONO,
                 }}
               >
                 Open in Studio →
-              </button>
+              </a>
             </div>
           )}
 

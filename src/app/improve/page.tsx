@@ -1087,37 +1087,52 @@ export default function ImprovePage() {
           )}
 
 
-          {/* M20 G4 / M21 V3 — Generation view: checklist + ToolGroup (idea text moved to checklist title) */}
+          {/* M20 G4 / M21 V3 — Generation view: checklist + ToolGroup */}
+          {/* M27: layout restructured so AgentToolGroup (Artifact Compilation feed) is   */}
+          {/* always pinned at the bottom. Lifecycle list scrolls independently above it.  */}
           {!selectedFolder && studioView === 'document' && runIsRunning && !selected && (
             <div style={{
               flex: 1,
               display: 'flex',
               flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '40px 32px',
-              gap: '20px',
               overflow: 'hidden',
               animation: reducedMotion ? 'none' : 'ig-fade-in 150ms ease-out',
             }}>
-              {/* Checklist — idea text relocated here as the title (V3) */}
-              <div style={{ width: '100%', maxWidth: '480px' }}>
-                <LifecycleTaskList
-                  currentStage={Math.max(runCurrentStage, stage)}
-                  isRunning={runIsRunning}
-                  idea={runIdea || undefined}
-                />
+              {/* Scrollable lifecycle section — expands freely, scrolls if tall */}
+              <div style={{
+                flex: 1,
+                overflowY: 'auto',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                padding: '40px 32px 20px',
+              }}>
+                <div style={{ width: '100%', maxWidth: '480px' }}>
+                  <LifecycleTaskList
+                    currentStage={Math.max(runCurrentStage, stage)}
+                    isRunning={runIsRunning}
+                    idea={runIdea || undefined}
+                  />
+                </div>
               </div>
 
-              {/* Agent tool group */}
-              <div style={{ width: '100%', maxWidth: '480px' }}>
-                <AgentToolGroup
-                  currentStage={Math.max(runCurrentStage, stage)}
-                  currentAgent={runCurrentAgent}
-                  isRunning={runIsRunning}
-                  recentEvents={recentEvents}
-                  startedAt={runStartedAt}
-                />
+              {/* Pinned execution feed — always visible, never pushed off-screen */}
+              <div style={{
+                flexShrink: 0,
+                display: 'flex',
+                justifyContent: 'center',
+                padding: '0 32px 40px',
+              }}>
+                <div style={{ width: '100%', maxWidth: '480px' }}>
+                  <AgentToolGroup
+                    currentStage={Math.max(runCurrentStage, stage)}
+                    currentAgent={runCurrentAgent}
+                    isRunning={runIsRunning}
+                    recentEvents={recentEvents}
+                    startedAt={runStartedAt}
+                  />
+                </div>
               </div>
             </div>
           )}

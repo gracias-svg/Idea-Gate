@@ -630,25 +630,19 @@ function FormattingToolbar({ editor, visible, documentTheme, onPresetSelect, onF
                   />
                 ))}
 
-                {/* Future */}
-                <div style={{
-                  padding: '8px 13px 4px',
-                  fontSize: '9.5px', fontFamily: 'var(--ig-font-mono)',
-                  color: 'rgba(148,163,184,0.28)',
-                  letterSpacing: '0.07em', textTransform: 'uppercase',
-                  borderTop: `1px solid ${T.divider}`, marginTop: '4px',
-                }}>Coming soon</div>
-                {([
-                  { icon: Globe,   label: 'Figma file' },
-                  { icon: BarChart2, label: 'Loom video' },
-                ] as const).map(({ icon, label }) => (
-                  <DropItem key={label} icon={icon} label={label} disabled badge="soon" />
-                ))}
-                <div style={{ height: '6px' }} />
+                <div style={{ height: '4px' }} />
               </DropPanel>
             )}
           </AnimatePresence>
         </div>
+
+        <TDivider />
+
+        {/* ── Group 5: Promoted — Strikethrough / Task / Numbered / Code ── */}
+        <ToolbarBtn pressed={ts.strike}      onClick={() => editor?.chain().focus().toggleStrike().run()}      icon={Strikethrough} label="Strikethrough" />
+        <ToolbarBtn pressed={ts.taskList}    onClick={() => editor?.chain().focus().toggleTaskList().run()}    icon={CheckSquare}   label="Task list" />
+        <ToolbarBtn pressed={ts.orderedList} onClick={() => editor?.chain().focus().toggleOrderedList().run()} icon={ListOrdered}   label="Numbered list" />
+        <ToolbarBtn pressed={ts.code}        onClick={() => editor?.chain().focus().toggleCode().run()}        icon={Code}          label="Inline code" />
 
         {/* ── Spacer ──────────────────────────────────────────────────────── */}
         <div style={{ flex: 1 }} />
@@ -660,34 +654,12 @@ function FormattingToolbar({ editor, visible, documentTheme, onPresetSelect, onF
           <AnimatePresence>
             {openMenu === 'more' && (
               <DropPanel align="right">
-                {/* Active formatting */}
-                {([
-                  { icon: Strikethrough, label: 'Strikethrough', active: ts.strike,
-                    action: () => { editor?.chain().focus().toggleStrike().run(); } },
-                  { icon: Code,          label: 'Inline code',   active: ts.code,
-                    action: () => { editor?.chain().focus().toggleCode().run(); } },
-                  { icon: Terminal,      label: 'Code block',    active: ts.codeBlock,
-                    action: () => { editor?.chain().focus().toggleCodeBlock().run(); } },
-                ] as const).map(({ icon, label, active, action }) => (
-                  <DropItem key={label} icon={icon} label={label} active={active}
-                    onClick={() => { action(); close(); }} />
-                ))}
-
-                <div style={{ height: '1px', background: T.divider, margin: '4px 0' }} />
-
-                {([
-                  { icon: List,         label: 'Bullet list',    active: ts.bulletList,
-                    action: () => editor?.chain().focus().toggleBulletList().run() },
-                  { icon: ListOrdered,  label: 'Numbered list',  active: ts.orderedList,
-                    action: () => editor?.chain().focus().toggleOrderedList().run() },
-                  { icon: CheckSquare,  label: 'Task list',      active: ts.taskList,
-                    action: () => editor?.chain().focus().toggleTaskList().run() },
-                  { icon: Quote,        label: 'Blockquote',     active: ts.blockquote,
-                    action: () => editor?.chain().focus().toggleBlockquote().run() },
-                ] as const).map(({ icon, label, active, action }) => (
-                  <DropItem key={label} icon={icon} label={label} active={active}
-                    onClick={() => { action(); close(); }} />
-                ))}
+                <DropItem icon={Terminal}    label="Code block"     active={ts.codeBlock}
+                  onClick={() => { editor?.chain().focus().toggleCodeBlock().run(); close(); }} />
+                <DropItem icon={List}        label="Bullet list"    active={ts.bulletList}
+                  onClick={() => { editor?.chain().focus().toggleBulletList().run(); close(); }} />
+                <DropItem icon={Quote}       label="Blockquote"     active={ts.blockquote}
+                  onClick={() => { editor?.chain().focus().toggleBlockquote().run(); close(); }} />
 
                 <div style={{ height: '1px', background: T.divider, margin: '4px 0' }} />
 
@@ -698,24 +670,7 @@ function FormattingToolbar({ editor, visible, documentTheme, onPresetSelect, onF
                     editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
                     close();
                   }} />
-
-                {/* Future items — disabled */}
-                <div style={{
-                  padding: '8px 13px 4px',
-                  fontSize: '9.5px', fontFamily: 'var(--ig-font-mono)',
-                  color: 'rgba(148,163,184,0.28)',
-                  letterSpacing: '0.07em', textTransform: 'uppercase',
-                  borderTop: `1px solid ${T.divider}`, marginTop: '4px',
-                }}>Coming soon</div>
-                {([
-                  { icon: Pen,        label: 'Drawing canvas'  },
-                  { icon: Globe,      label: 'Embed'           },
-                  { icon: BarChart2,  label: 'Mermaid diagram' },
-                  { icon: Calculator, label: 'Math block'      },
-                ] as const).map(({ icon, label }) => (
-                  <DropItem key={label} icon={icon} label={label} disabled badge="soon" />
-                ))}
-                <div style={{ height: '6px' }} />
+                <div style={{ height: '4px' }} />
               </DropPanel>
             )}
           </AnimatePresence>

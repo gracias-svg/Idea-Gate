@@ -5,22 +5,15 @@
 // MISSION 1 — Document Render Swap (Phase B, read-only).
 // MISSION 2 — Selection Bubble Menu (additive, read-only-safe).
 // MISSION 3 — Collaborative Document Editor (additive, editable mode).
-// MISSION 30 — Premium Collaborative Toolbar (5 groups, dropdowns, text color, align).
+// MISSION 30 — Premium Collaborative Toolbar: floating rounded card, animated
+//              dropdowns, 5 logical groups, attachment menu, future-ready More.
 //
 // All missions are additive. When editable=false (default), behaviour is
-// byte-for-byte what shipped after Mission 2. When editable=true, the editor
-// is writable, the premium formatting toolbar renders, and the ⌘S / autosave
-// pipeline is active.
+// byte-for-byte what shipped after Mission 2.
 //
 // Constitution references:
-//   §5   — editing philosophy (no mode toggle; doc always editable when flag active)
-//   §5.1 — caret-color: var(--ig-emerald) (CSS, not JS)
-//   §6   — ::selection override, rgba(74,222,128,0.18)
-//   §7   — save state machine; autosave 8s debounce
-//   §11  — formatting toolbar spec (two zones; selectionUpdate + transaction)
-//   §13  — toolbar entrance 120ms ease-out, opacity only
-//   §14  — lucide-react 14px icons, every icon-only button has aria-label
-//   §27  — one editor instance per artifact; toolbar on selectionUpdate+transaction
+//   §5   — editing philosophy; §7 — save state; §11 — toolbar spec;
+//   §13  — 120ms entrance; §14 — aria-labels; §27 — one editor per artifact
 
 import React, {
   useCallback, useEffect, useLayoutEffect, useRef, useState,
@@ -45,9 +38,10 @@ import {
   List, ListOrdered, Quote, Sparkles, Paperclip,
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
   MoreHorizontal, CheckSquare, Minus, Terminal, ChevronDown,
+  FileText, Image, FileCode, FileType, Table2, Pen, Globe,
+  BarChart2, Calculator, Type,
   type LucideIcon,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import { parseSections } from '@/lib/parseSections';
 import { workspaceMotion } from '@/components/workspace/motion';
 import { useGlobalStore } from '@/lib/GlobalStore';
@@ -56,23 +50,18 @@ import { useGlobalStore } from '@/lib/GlobalStore';
 
 interface TipTapRendererProps {
   content:          string;
-  fs?:              number;           // kept for MD() call-site parity; unused
+  fs?:              number;
   anchors?:         boolean;
   arrivalId?:       string | null;
   reducedMotion?:   boolean;
-  /** Mission 2 — populates caller's intent textarea (page.tsx setIntent). */
   onPresetSelect?:  (intent: string) => void;
-  /** Mission 3 — editable mode. default false. When false: identical to pre-M3. */
   editable?:        boolean;
-  /** Mission 3 — called on every editor update with the current markdown string. */
   onContentChange?: (md: string) => void;
-  /** Mission 3 — called on ⌘S with the current markdown string. */
   onSave?:          (md: string) => Promise<void>;
-  /** Mission 19 — Zone B: focus the intent textarea when no text is selected. */
   onFocusIntent?:   () => void;
 }
 
-// ── Toolbar state ─────────────────────────────────────────────────────────────
+// ── Toolbar reactive state ────────────────────────────────────────────────────
 
 interface ToolbarState {
   bold: boolean; italic: boolean; underline: boolean; strike: boolean;
@@ -93,7 +82,178 @@ const EMPTY_TOOLBAR: ToolbarState = {
   headingLevel: 0, textColor: null, textAlign: 'left',
 };
 
-// ── FormattingToolbar (M30 — Premium 5-group Collaborative Toolbar) ───────────
+// ── Design tokens — toolbar is ALWAYS dark regardless of document theme ───────
+
+const T = {
+  bg:          'rgba(13, 17, 27, 0.97)',
+  border:      'rgba(255,255,255,0.09)',
+  shadow:      '0 4px 24px rgba(0,0,0,0.45), 0 1px 6px rgba(0,0,0,0.25)',
+  text:        'rgba(148,163,184,0.80)',
+  textActive:  '#4ade80',
+  hover:       'rgba(255,255,255,0.07)',
+  pressed:     'rgba(74,222,128,0.11)',
+  divider:     'rgba(255,255,255,0.08)',
+  dropBg:      'rgb(17, 22, 34)',
+  dropBorder:  'rgba(255,255,255,0.09)',
+  dropShadow:  '0 12px 40px rgba(0,0,0,0.55), 0 2px 10px rgba(0,0,0,0.35)',
+  radius:      '12px',
+  dropRadius:  '11px',
+};
+
+// ── Dropdown animation spring ─────────────────────────────────────────────────
+
+const DROP_VARIANTS = {
+  hidden: { opacity: 0, scale: 0.95, y: -6 },
+  shown:  { opacity: 1, scale: 1,    y: 0  },
+  exit:   { opacity: 0, scale: 0.95, y: -6 },
+};
+const DROP_TRANSITION = { duration: 0.14, ease: [0.16, 1, 0.3, 1] as const };
+
+// ── Reusable toolbar button ────────────────────────────────────────────────────
+
+function ToolbarBtn({
+  pressed = false, onClick, icon: Icon, label, children, wide,
+}: {
+  pressed?: boolean; onClick: () => void; icon?: LucideIcon;
+  label: string; children?: React.ReactNode; wide?: boolean;
+}) {
+  const ref = useRef<HTMLButtonElement>(null);
+
+  return (
+    <button
+      ref={ref}
+      type="button"
+      aria-label={label}
+      title={label}
+      onMouseDown={e => {
+        e.preventDefault();
+        if (ref.current) ref.current.style.transform = 'scale(0.92)';
+      }}
+      onMouseUp={() => { if (ref.current) ref.current.style.transform = 'scale(1)'; }}
+      onMouseLeave={() => {
+        const el = ref.current; if (!el) return;
+        el.style.background = pressed ? T.pressed : 'transparent';
+        el.style.boxShadow  = 'none';
+        el.style.transform  = 'scale(1)';
+      }}
+      onMouseEnter={() => {
+        const el = ref.current; if (!el) return;
+        if (!pressed) el.style.background = T.hover;
+        el.style.boxShadow = '0 1px 4px rgba(0,0,0,0.20)';
+      }}
+      onClick={onClick}
+      style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px',
+        width: wide ? 'auto' : '28px', height: '28px',
+        padding: wide ? '0 8px' : '0',
+        borderRadius: '7px', border: 'none',
+        background: pressed ? T.pressed : 'transparent',
+        color: pressed ? T.textActive : T.text,
+        cursor: 'pointer',
+        transition: 'background 80ms ease, color 80ms ease, box-shadow 80ms ease',
+        flexShrink: 0,
+      }}
+    >
+      {Icon && <Icon size={14} strokeWidth={1.8} />}
+      {children}
+    </button>
+  );
+}
+
+function TDivider() {
+  return (
+    <div style={{
+      width: '1px', height: '18px', margin: '0 4px',
+      backgroundColor: T.divider, flexShrink: 0,
+    }} aria-hidden />
+  );
+}
+
+// ── Shared dropdown wrapper ────────────────────────────────────────────────────
+
+function DropPanel({
+  children, align = 'left',
+}: { children: React.ReactNode; align?: 'left' | 'right' | 'center' }) {
+  const posStyle: React.CSSProperties =
+    align === 'right'  ? { right: 0 } :
+    align === 'center' ? { left: '50%', transform: 'translateX(-50%)' } :
+    { left: 0 };
+
+  return (
+    <motion.div
+      variants={DROP_VARIANTS}
+      initial="hidden"
+      animate="shown"
+      exit="exit"
+      transition={DROP_TRANSITION}
+      style={{
+        position: 'absolute', top: 'calc(100% + 8px)',
+        ...posStyle,
+        background: T.dropBg,
+        border: `1px solid ${T.dropBorder}`,
+        borderRadius: T.dropRadius,
+        boxShadow: T.dropShadow,
+        zIndex: 300,
+        overflow: 'hidden',
+        minWidth: '160px',
+      }}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+// ── Dropdown item row ──────────────────────────────────────────────────────────
+
+function DropItem({
+  icon: Icon, label, active, disabled, badge, onClick,
+}: {
+  icon: LucideIcon; label: string; active?: boolean;
+  disabled?: boolean; badge?: string; onClick?: () => void;
+}) {
+  const ref = useRef<HTMLButtonElement>(null);
+  return (
+    <button
+      ref={ref}
+      type="button"
+      disabled={disabled}
+      onMouseDown={e => e.preventDefault()}
+      onClick={onClick}
+      onMouseEnter={() => {
+        const el = ref.current;
+        if (el && !disabled) el.style.background = T.hover;
+      }}
+      onMouseLeave={() => {
+        const el = ref.current;
+        if (el) el.style.background = active ? T.pressed : 'transparent';
+      }}
+      style={{
+        display: 'flex', alignItems: 'center', gap: '9px',
+        width: '100%', padding: '7px 13px',
+        border: 'none',
+        background: active ? T.pressed : 'transparent',
+        color: disabled ? 'rgba(148,163,184,0.30)' : active ? T.textActive : T.text,
+        cursor: disabled ? 'default' : 'pointer',
+        textAlign: 'left', fontSize: '12px',
+        transition: 'background 80ms ease',
+      }}
+    >
+      <Icon size={13} strokeWidth={1.8} style={{ flexShrink: 0 }} />
+      <span style={{ flex: 1 }}>{label}</span>
+      {badge && (
+        <span style={{
+          fontSize: '9px', fontFamily: 'var(--ig-font-mono)',
+          color: 'rgba(148,163,184,0.35)',
+          background: 'rgba(255,255,255,0.05)',
+          padding: '1px 5px', borderRadius: '4px',
+          letterSpacing: '0.04em', textTransform: 'uppercase',
+        }}>{badge}</span>
+      )}
+    </button>
+  );
+}
+
+// ── FormattingToolbar ─────────────────────────────────────────────────────────
 
 interface ToolbarProps {
   editor:          Editor | null;
@@ -103,28 +263,27 @@ interface ToolbarProps {
   onFocusIntent?:  () => void;
 }
 
-type OpenMenu = 'type' | 'color' | 'align' | 'more' | null;
+type OpenMenu = 'type' | 'color' | 'align' | 'attach' | 'more' | null;
 
 function FormattingToolbar({ editor, visible, documentTheme, onPresetSelect, onFocusIntent }: ToolbarProps) {
-  const [ts, setTs] = useState<ToolbarState>(EMPTY_TOOLBAR);
+  const [ts, setTs]       = useState<ToolbarState>(EMPTY_TOOLBAR);
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
-  const toolbarRef = useRef<HTMLDivElement>(null);
+  const toolbarRef  = useRef<HTMLDivElement>(null);
   const openMenuRef = useRef<OpenMenu>(null);
   openMenuRef.current = openMenu;
 
-  // Reactive toolbar state — updated on BOTH selectionUpdate and transaction
+  // ── Reactive state ────────────────────────────────────────────────────────
   const refresh = useCallback(() => {
     if (!editor) { setTs(EMPTY_TOOLBAR); return; }
-    const sel = editor.state.selection;
-    const hlAttrs = editor.isActive('highlight') ? editor.getAttributes('highlight') : null;
+    const sel       = editor.state.selection;
+    const hlAttrs   = editor.isActive('highlight') ? editor.getAttributes('highlight') : null;
     const colorAttrs = editor.getAttributes('textStyle');
     const headingLevel =
       editor.isActive('heading', { level: 1 }) ? 1 :
       editor.isActive('heading', { level: 2 }) ? 2 :
       editor.isActive('heading', { level: 3 }) ? 3 : 0;
-    const paraAttrs = editor.getAttributes('paragraph');
-    const headAttrs = editor.getAttributes('heading');
-    const rawAlign = paraAttrs.textAlign ?? headAttrs.textAlign ?? 'left';
+    const pa = editor.getAttributes('paragraph');
+    const ha = editor.getAttributes('heading');
     setTs({
       bold:            editor.isActive('bold'),
       italic:          editor.isActive('italic'),
@@ -140,22 +299,19 @@ function FormattingToolbar({ editor, visible, documentTheme, onPresetSelect, onF
       hasSelection:    !sel.empty,
       headingLevel:    headingLevel as 0 | 1 | 2 | 3,
       textColor:       (colorAttrs?.color as string) || null,
-      textAlign:       rawAlign as 'left' | 'center' | 'right' | 'justify',
+      textAlign:       ((pa.textAlign ?? ha.textAlign) || 'left') as ToolbarState['textAlign'],
     });
   }, [editor]);
 
   useEffect(() => {
     if (!editor) return;
     editor.on('selectionUpdate', refresh);
-    editor.on('transaction', refresh);
+    editor.on('transaction',    refresh);
     refresh();
-    return () => {
-      editor.off('selectionUpdate', refresh);
-      editor.off('transaction', refresh);
-    };
+    return () => { editor.off('selectionUpdate', refresh); editor.off('transaction', refresh); };
   }, [editor, refresh]);
 
-  // Close dropdown on click outside the toolbar
+  // ── Close dropdown on outside click (single mount listener) ──────────────
   useEffect(() => {
     const close = (e: MouseEvent) => {
       if (!openMenuRef.current) return;
@@ -166,73 +322,28 @@ function FormattingToolbar({ editor, visible, documentTheme, onPresetSelect, onF
     return () => document.removeEventListener('mousedown', close);
   }, []);
 
-  // Close dropdown on Escape
+  // ── Close on Escape ───────────────────────────────────────────────────────
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpenMenu(null); };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, []);
 
-  const toggleMenu = (name: NonNullable<OpenMenu>) => {
+  const toggleMenu = (name: NonNullable<OpenMenu>) =>
     setOpenMenu(m => m === name ? null : name);
-  };
 
-  const isPaper = documentTheme === 'paper';
-  const borderC = isPaper ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)';
-  const textSec = isPaper ? 'rgba(30,41,59,0.55)' : 'rgba(148,163,184,0.75)';
-  const hoverBg = isPaper ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.07)';
-  const pressedBg = isPaper ? 'rgba(74,222,128,0.12)' : 'rgba(74,222,128,0.10)';
-  const dropBg = isPaper ? '#fdf8f3' : '#0c111a';
-  const dropBorder = isPaper ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.09)';
-  const dropShadow = '0 8px 32px rgba(0,0,0,0.35), 0 2px 8px rgba(0,0,0,0.2)';
+  const close = () => setOpenMenu(null);
 
-  const Divider = () => (
-    <div style={{
-      width: '1px', height: '16px', margin: '0 3px',
-      backgroundColor: borderC, flexShrink: 0,
-    }} aria-hidden />
-  );
-
-  const Btn = ({
-    pressed, onClick, icon: Icon, label,
-  }: { pressed: boolean; onClick: () => void; icon: LucideIcon; label: string }) => (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onMouseDown={e => e.preventDefault()}
-      onClick={onClick}
-      style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        width: '28px', height: '28px',
-        borderRadius: '6px', border: 'none',
-        background: pressed ? pressedBg : 'transparent',
-        color: pressed ? '#4ade80' : textSec,
-        cursor: 'pointer',
-        transition: 'background 80ms ease, color 80ms ease',
-        flexShrink: 0, padding: 0,
-      }}
-      onMouseEnter={e => { if (!pressed) (e.currentTarget).style.background = hoverBg; }}
-      onMouseLeave={e => { if (!pressed) (e.currentTarget).style.background = 'transparent'; }}
-    >
-      <Icon size={14} />
-    </button>
-  );
-
-  // Shared dropdown container style
-  const dropStyle: React.CSSProperties = {
-    position: 'absolute', top: 'calc(100% + 6px)',
-    background: dropBg, border: `1px solid ${dropBorder}`,
-    borderRadius: '10px', boxShadow: dropShadow,
-    overflow: 'hidden', zIndex: 200,
-  };
-
+  // ── Derived state ─────────────────────────────────────────────────────────
+  const typeLabel = ts.headingLevel === 0 ? 'Text' : `H${ts.headingLevel}`;
   const AlignIcon: LucideIcon =
-    ts.textAlign === 'center' ? AlignCenter :
-    ts.textAlign === 'right'  ? AlignRight  :
+    ts.textAlign === 'center'  ? AlignCenter  :
+    ts.textAlign === 'right'   ? AlignRight   :
     ts.textAlign === 'justify' ? AlignJustify : AlignLeft;
 
-  const typeLabel = ts.headingLevel === 0 ? 'P' : `H${ts.headingLevel}`;
+  // ── Wrapper bg — bleeds the sticky area so content scrolls cleanly ────────
+  const isPaper = documentTheme === 'paper';
+  const wrapBg  = isPaper ? 'rgba(255,255,255,0.97)' : 'rgba(9,14,20,0.97)';
 
   if (!visible) return null;
 
@@ -241,424 +352,387 @@ function FormattingToolbar({ editor, visible, documentTheme, onPresetSelect, onF
       ref={toolbarRef}
       style={{
         position: 'sticky', top: 0, zIndex: 10,
-        background: isPaper ? 'rgba(253,248,243,0.97)' : 'rgba(9,14,20,0.97)',
-        borderBottom: `1px solid ${borderC}`,
-        height: '40px',
-        padding: '0 12px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '2px',
-        animation: 'ig-toolbar-in 120ms ease-out',
+        padding: '7px 14px 7px',
+        background: wrapBg,
         flexShrink: 0,
       }}
       onMouseDown={e => e.preventDefault()}
     >
-      {/* ── Group 1: AI + Text Type ── */}
-      <button
-        type="button"
-        aria-label="AI actions"
-        onMouseDown={e => e.preventDefault()}
-        onClick={() => {
-          if (ts.hasSelection && editor && onPresetSelect) {
-            const sel = editor.state.selection;
-            const text = editor.state.doc.textBetween(sel.from, sel.to, ' ').trim();
-            const snippet = text.slice(0, 180);
-            onPresetSelect(snippet ? `"${snippet}"\n\n` : '');
-          } else {
-            onFocusIntent?.();
-          }
-        }}
-        style={{
-          display: 'flex', alignItems: 'center', gap: '4px',
-          background: 'linear-gradient(135deg, rgba(74,222,128,0.14), rgba(74,222,128,0.04))',
-          border: '1px solid rgba(74,222,128,0.28)',
-          color: '#4ade80',
-          padding: '3px 9px',
-          fontSize: '11px', fontWeight: 600,
-          borderRadius: '100px',
-          cursor: 'pointer',
-          fontFamily: 'var(--ig-font-mono)',
-          flexShrink: 0, marginRight: '2px',
-          transition: 'opacity 120ms ease',
-        }}
-        onMouseEnter={e => { (e.currentTarget).style.opacity = '0.8'; }}
-        onMouseLeave={e => { (e.currentTarget).style.opacity = '1'; }}
-      >
-        <Sparkles size={11} />
-        AI
-      </button>
+      {/* ── Floating rounded toolbar card ── */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: '2px',
+        height: '40px', padding: '0 10px',
+        background: T.bg,
+        border: `1px solid ${T.border}`,
+        borderRadius: T.radius,
+        boxShadow: T.shadow,
+        animation: 'ig-toolbar-in 120ms ease-out',
+        overflow: 'visible',
+      }}>
 
-      {/* Type selector */}
-      <div style={{ position: 'relative', flexShrink: 0 }}>
+        {/* ── Group 1: AI + Text Type ─────────────────────────────────────── */}
+        {/* AI pill */}
         <button
           type="button"
-          aria-label="Text type"
-          title="Text type"
+          aria-label="AI actions"
           onMouseDown={e => e.preventDefault()}
-          onClick={() => toggleMenu('type')}
+          onClick={() => {
+            if (ts.hasSelection && editor && onPresetSelect) {
+              const sel  = editor.state.selection;
+              const text = editor.state.doc.textBetween(sel.from, sel.to, ' ').trim();
+              onPresetSelect(text ? `"${text.slice(0, 180)}"\n\n` : '');
+            } else {
+              onFocusIntent?.();
+            }
+          }}
           style={{
-            display: 'flex', alignItems: 'center', gap: '2px',
-            height: '28px', padding: '0 7px',
-            borderRadius: '6px', border: 'none',
-            background: openMenu === 'type' ? pressedBg : 'transparent',
-            color: openMenu === 'type' ? '#4ade80' : textSec,
+            display: 'flex', alignItems: 'center', gap: '5px',
+            background: 'linear-gradient(135deg, rgba(74,222,128,0.14), rgba(74,222,128,0.05))',
+            border: '1px solid rgba(74,222,128,0.28)',
+            color: '#4ade80',
+            padding: '3px 10px 3px 8px',
+            fontSize: '11.5px', fontWeight: 600,
+            borderRadius: '100px',
             cursor: 'pointer',
-            fontSize: '12px', fontWeight: 600,
             fontFamily: 'var(--ig-font-mono)',
-            transition: 'background 80ms ease, color 80ms ease',
+            flexShrink: 0, marginRight: '2px',
+            transition: 'opacity 120ms ease, box-shadow 120ms ease',
           }}
-          onMouseEnter={e => { if (openMenu !== 'type') (e.currentTarget).style.background = hoverBg; }}
-          onMouseLeave={e => { if (openMenu !== 'type') (e.currentTarget).style.background = 'transparent'; }}
+          onMouseEnter={e => {
+            (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 0 1px rgba(74,222,128,0.3), 0 2px 8px rgba(74,222,128,0.15)';
+          }}
+          onMouseLeave={e => {
+            (e.currentTarget as HTMLButtonElement).style.boxShadow = 'none';
+          }}
         >
-          {typeLabel}
-          <ChevronDown size={10} style={{ opacity: 0.5, marginLeft: '1px' }} />
+          <Sparkles size={11} strokeWidth={2} />
+          AI
         </button>
 
-        {openMenu === 'type' && (
-          <div style={{ ...dropStyle, left: 0, minWidth: '136px' }}>
-            {([
-              { label: 'Paragraph', key: 'P',
-                action: () => editor?.chain().focus().setParagraph().run(),
-                active: ts.headingLevel === 0,
-                fontSize: '13px', fontWeight: 400 },
-              { label: 'Heading 1', key: 'H1',
-                action: () => editor?.chain().focus().setHeading({ level: 1 }).run(),
-                active: ts.headingLevel === 1,
-                fontSize: '16px', fontWeight: 700 },
-              { label: 'Heading 2', key: 'H2',
-                action: () => editor?.chain().focus().setHeading({ level: 2 }).run(),
-                active: ts.headingLevel === 2,
-                fontSize: '14px', fontWeight: 600 },
-              { label: 'Heading 3', key: 'H3',
-                action: () => editor?.chain().focus().setHeading({ level: 3 }).run(),
-                active: ts.headingLevel === 3,
-                fontSize: '13px', fontWeight: 600 },
-            ]).map(({ label, key, action, active, fontSize, fontWeight }) => (
-              <button
-                key={key}
-                type="button"
-                onMouseDown={e => e.preventDefault()}
-                onClick={() => { action(); setOpenMenu(null); }}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '10px',
-                  width: '100%', padding: '7px 12px',
-                  border: 'none',
-                  background: active ? pressedBg : 'transparent',
-                  color: active ? '#4ade80' : textSec,
-                  cursor: 'pointer', textAlign: 'left',
-                  fontSize, fontWeight,
-                  fontFamily: 'var(--ig-font-sans)',
-                  transition: 'background 80ms ease',
-                }}
-                onMouseEnter={e => { if (!active) (e.currentTarget).style.background = hoverBg; }}
-                onMouseLeave={e => { if (!active) (e.currentTarget).style.background = active ? pressedBg : 'transparent'; }}
-              >
-                <span style={{ fontSize: '10px', fontWeight: 500, opacity: 0.45, fontFamily: 'var(--ig-font-mono)', minWidth: '16px' }}>{key}</span>
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+        {/* Type selector */}
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          <ToolbarBtn
+            pressed={openMenu === 'type'}
+            onClick={() => toggleMenu('type')}
+            label="Text type"
+            wide
+          >
+            <span style={{
+              fontSize: '11.5px', fontWeight: 600,
+              fontFamily: 'var(--ig-font-mono)',
+              color: openMenu === 'type' ? T.textActive : T.text,
+              minWidth: '30px', textAlign: 'center',
+            }}>{typeLabel}</span>
+            <ChevronDown size={10} strokeWidth={2} style={{
+              opacity: 0.5,
+              transform: openMenu === 'type' ? 'rotate(180deg)' : 'rotate(0deg)',
+              transition: 'transform 150ms ease',
+            }} />
+          </ToolbarBtn>
 
-      <Divider />
-
-      {/* ── Group 2: Bold / Italic / Underline / Text Color ── */}
-      <Btn pressed={ts.bold}      onClick={() => editor?.chain().focus().toggleBold().run()}      icon={Bold}      label="Bold (⌘B)" />
-      <Btn pressed={ts.italic}    onClick={() => editor?.chain().focus().toggleItalic().run()}    icon={Italic}    label="Italic (⌘I)" />
-      <Btn pressed={ts.underline} onClick={() => editor?.chain().focus().toggleUnderline().run()} icon={Underline} label="Underline (⌘U)" />
-
-      {/* Text color */}
-      <div style={{ position: 'relative', flexShrink: 0 }}>
-        <button
-          type="button"
-          aria-label="Text color"
-          title="Text color"
-          onMouseDown={e => e.preventDefault()}
-          onClick={() => toggleMenu('color')}
-          style={{
-            display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'center',
-            width: '28px', height: '28px', gap: '2px',
-            borderRadius: '6px', border: 'none',
-            background: openMenu === 'color' ? pressedBg : 'transparent',
-            cursor: 'pointer',
-            transition: 'background 80ms ease',
-            flexShrink: 0, padding: 0,
-          }}
-          onMouseEnter={e => { if (openMenu !== 'color') (e.currentTarget).style.background = hoverBg; }}
-          onMouseLeave={e => { if (openMenu !== 'color') (e.currentTarget).style.background = 'transparent'; }}
-        >
-          <span style={{
-            fontSize: '13px', fontWeight: 700, lineHeight: 1,
-            color: ts.textColor ?? textSec,
-            fontFamily: 'var(--ig-font-sans)',
-            transition: 'color 120ms ease',
-          }}>A</span>
-          <div style={{
-            width: '14px', height: '2px', borderRadius: '1px',
-            backgroundColor: ts.textColor ?? 'rgba(148,163,184,0.4)',
-            transition: 'background-color 120ms ease',
-          }} />
-        </button>
-
-        {openMenu === 'color' && (
-          <div style={{
-            ...dropStyle,
-            left: '50%', transform: 'translateX(-50%)',
-            padding: '10px',
-            overflow: 'visible',
-          }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px' }}>
-              {([
-                '#f8fafc', '#94a3b8', '#64748b', '#1e293b',
-                '#4ade80', '#38bdf8', '#fb923c', '#f87171',
-                '#c084fc', '#fde68a',
-              ]).map(color => (
-                <button
-                  key={color}
-                  type="button"
-                  aria-label={`Set text color ${color}`}
-                  onMouseDown={e => e.preventDefault()}
-                  onClick={() => { editor?.chain().focus().setColor(color).run(); setOpenMenu(null); }}
-                  style={{
-                    width: '22px', height: '22px',
-                    borderRadius: '50%',
-                    backgroundColor: color,
-                    border: ts.textColor === color
-                      ? '2px solid #4ade80'
-                      : `2px solid ${isPaper ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.12)'}`,
-                    cursor: 'pointer', padding: 0,
-                    outline: 'none',
-                    transition: 'border-color 80ms ease, transform 80ms ease',
-                  }}
-                  onMouseEnter={e => { (e.currentTarget).style.transform = 'scale(1.15)'; }}
-                  onMouseLeave={e => { (e.currentTarget).style.transform = 'scale(1)'; }}
-                />
-              ))}
-            </div>
-            {ts.textColor && (
-              <button
-                type="button"
-                onMouseDown={e => e.preventDefault()}
-                onClick={() => { editor?.chain().focus().unsetColor().run(); setOpenMenu(null); }}
-                style={{
-                  marginTop: '8px', width: '100%',
-                  padding: '4px 6px', border: 'none',
-                  background: 'transparent', color: textSec,
-                  fontSize: '10.5px', cursor: 'pointer',
-                  borderRadius: '4px',
-                  fontFamily: 'var(--ig-font-mono)',
-                  transition: 'background 80ms ease',
-                }}
-                onMouseEnter={e => { (e.currentTarget).style.background = hoverBg; }}
-                onMouseLeave={e => { (e.currentTarget).style.background = 'transparent'; }}
-              >
-                Clear color
-              </button>
+          <AnimatePresence>
+            {openMenu === 'type' && (
+              <DropPanel>
+                {([
+                  { label: 'Text',      key: 'Text', level: 0 as const,
+                    action: () => editor?.chain().focus().setParagraph().run(),
+                    active: ts.headingLevel === 0, size: '13px', weight: 400 },
+                  { label: 'Heading 1', key: 'H1',  level: 1 as const,
+                    action: () => editor?.chain().focus().setHeading({ level: 1 }).run(),
+                    active: ts.headingLevel === 1, size: '16px', weight: 700 },
+                  { label: 'Heading 2', key: 'H2',  level: 2 as const,
+                    action: () => editor?.chain().focus().setHeading({ level: 2 }).run(),
+                    active: ts.headingLevel === 2, size: '14px', weight: 600 },
+                  { label: 'Heading 3', key: 'H3',  level: 3 as const,
+                    action: () => editor?.chain().focus().setHeading({ level: 3 }).run(),
+                    active: ts.headingLevel === 3, size: '13px', weight: 600 },
+                ]).map(({ label, key, action, active, size, weight }) => (
+                  <DropItem
+                    key={key}
+                    icon={Type}
+                    label={label}
+                    active={active}
+                    onClick={() => { action(); close(); }}
+                  />
+                ))}
+              </DropPanel>
             )}
-          </div>
-        )}
-      </div>
+          </AnimatePresence>
+        </div>
 
-      <Divider />
+        <TDivider />
 
-      {/* ── Group 3: Alignment ── */}
-      <div style={{ position: 'relative', flexShrink: 0 }}>
-        <button
-          type="button"
-          aria-label="Text alignment"
-          title="Text alignment"
-          onMouseDown={e => e.preventDefault()}
-          onClick={() => toggleMenu('align')}
-          style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            width: '28px', height: '28px',
-            borderRadius: '6px', border: 'none',
-            background: openMenu === 'align' ? pressedBg : 'transparent',
-            color: openMenu === 'align' ? '#4ade80' : textSec,
-            cursor: 'pointer',
-            transition: 'background 80ms ease, color 80ms ease',
-          }}
-          onMouseEnter={e => { if (openMenu !== 'align') (e.currentTarget).style.background = hoverBg; }}
-          onMouseLeave={e => { if (openMenu !== 'align') (e.currentTarget).style.background = 'transparent'; }}
-        >
-          <AlignIcon size={14} />
-        </button>
+        {/* ── Group 2: Bold / Italic / Underline / Text Color ─────────────── */}
+        <ToolbarBtn pressed={ts.bold}      onClick={() => editor?.chain().focus().toggleBold().run()}      icon={Bold}      label="Bold (⌘B)" />
+        <ToolbarBtn pressed={ts.italic}    onClick={() => editor?.chain().focus().toggleItalic().run()}    icon={Italic}    label="Italic (⌘I)" />
+        <ToolbarBtn pressed={ts.underline} onClick={() => editor?.chain().focus().toggleUnderline().run()} icon={Underline} label="Underline (⌘U)" />
 
-        {openMenu === 'align' && (
-          <div style={{ ...dropStyle, left: 0, minWidth: '148px' }}>
-            {([
-              { label: 'Left',    icon: AlignLeft,    value: 'left'    as const },
-              { label: 'Center',  icon: AlignCenter,  value: 'center'  as const },
-              { label: 'Right',   icon: AlignRight,   value: 'right'   as const },
-              { label: 'Justify', icon: AlignJustify, value: 'justify' as const },
-            ]).map(({ label, icon: Icon, value }) => {
-              const active = ts.textAlign === value;
-              return (
-                <button
-                  key={value}
-                  type="button"
-                  onMouseDown={e => e.preventDefault()}
-                  onClick={() => { editor?.chain().focus().setTextAlign(value).run(); setOpenMenu(null); }}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '8px',
-                    width: '100%', padding: '7px 12px',
-                    border: 'none',
-                    background: active ? pressedBg : 'transparent',
-                    color: active ? '#4ade80' : textSec,
-                    cursor: 'pointer', textAlign: 'left',
-                    fontSize: '12px',
-                    transition: 'background 80ms ease',
-                  }}
-                  onMouseEnter={e => { if (!active) (e.currentTarget).style.background = hoverBg; }}
-                  onMouseLeave={e => { if (!active) (e.currentTarget).style.background = 'transparent'; }}
-                >
-                  <Icon size={13} />
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
+        {/* Text Color */}
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          <ToolbarBtn pressed={openMenu === 'color'} onClick={() => toggleMenu('color')} label="Text color">
+            <span style={{
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px',
+            }}>
+              <span style={{
+                fontSize: '13px', fontWeight: 700, lineHeight: 1,
+                color: ts.textColor ?? T.text,
+                fontFamily: 'var(--ig-font-sans)',
+                transition: 'color 120ms ease',
+              }}>A</span>
+              <span style={{
+                display: 'block', width: '14px', height: '2.5px', borderRadius: '1.5px',
+                backgroundColor: ts.textColor ?? 'rgba(148,163,184,0.35)',
+                transition: 'background-color 120ms ease',
+              }} />
+            </span>
+          </ToolbarBtn>
 
-      <Divider />
+          <AnimatePresence>
+            {openMenu === 'color' && (
+              <DropPanel align="center">
+                <div style={{ padding: '12px', minWidth: '188px' }}>
+                  {/* Color grid */}
+                  <p style={{
+                    fontSize: '10px', fontFamily: 'var(--ig-font-mono)',
+                    color: 'rgba(148,163,184,0.40)', letterSpacing: '0.06em',
+                    textTransform: 'uppercase', margin: '0 0 8px',
+                  }}>Color</p>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '6px' }}>
+                    {[
+                      { hex: '#f8fafc', name: 'White'   },
+                      { hex: '#94a3b8', name: 'Slate'   },
+                      { hex: '#64748b', name: 'Steel'   },
+                      { hex: '#4ade80', name: 'Emerald' },
+                      { hex: '#38bdf8', name: 'Sky'     },
+                      { hex: '#818cf8', name: 'Indigo'  },
+                      { hex: '#c084fc', name: 'Violet'  },
+                      { hex: '#fb923c', name: 'Orange'  },
+                      { hex: '#f87171', name: 'Red'     },
+                      { hex: '#fde68a', name: 'Amber'   },
+                      { hex: '#86efac', name: 'Mint'    },
+                      { hex: '#7dd3fc', name: 'Blue'    },
+                    ].map(({ hex, name }) => {
+                      const isActive = ts.textColor === hex;
+                      return (
+                        <button
+                          key={hex}
+                          type="button"
+                          aria-label={name}
+                          title={name}
+                          onMouseDown={e => e.preventDefault()}
+                          onClick={() => { editor?.chain().focus().setColor(hex).run(); close(); }}
+                          style={{
+                            width: '22px', height: '22px',
+                            borderRadius: '50%',
+                            backgroundColor: hex,
+                            border: isActive ? '2px solid #4ade80' : '2px solid rgba(255,255,255,0.10)',
+                            cursor: 'pointer', padding: 0, outline: 'none',
+                            transition: 'transform 80ms ease, border-color 80ms ease',
+                          }}
+                          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1.18)'; }}
+                          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1)'; }}
+                        />
+                      );
+                    })}
+                  </div>
 
-      {/* ── Group 4: Attachment ── */}
-      <button
-        type="button"
-        aria-label="Attach file"
-        title="Attach file"
-        onMouseDown={e => e.preventDefault()}
-        onClick={() => {
-          const input = document.createElement('input');
-          input.type = 'file';
-          input.multiple = true;
-          input.click();
-        }}
-        style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          width: '28px', height: '28px',
-          borderRadius: '6px', border: 'none',
-          background: 'transparent', color: textSec,
-          cursor: 'pointer',
-          transition: 'background 80ms ease',
-          flexShrink: 0,
-        }}
-        onMouseEnter={e => { (e.currentTarget).style.background = hoverBg; }}
-        onMouseLeave={e => { (e.currentTarget).style.background = 'transparent'; }}
-      >
-        <Paperclip size={14} />
-      </button>
+                  {ts.textColor && (
+                    <>
+                      <div style={{ height: '1px', background: T.divider, margin: '10px 0 6px' }} />
+                      <button
+                        type="button"
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => { editor?.chain().focus().unsetColor().run(); close(); }}
+                        style={{
+                          width: '100%', padding: '4px 8px',
+                          border: 'none', background: 'transparent',
+                          color: 'rgba(148,163,184,0.45)',
+                          fontSize: '11px', cursor: 'pointer',
+                          borderRadius: '5px', textAlign: 'left',
+                          fontFamily: 'var(--ig-font-mono)',
+                          transition: 'background 80ms ease',
+                        }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = T.hover; }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
+                      >
+                        Clear color
+                      </button>
+                    </>
+                  )}
+                </div>
+              </DropPanel>
+            )}
+          </AnimatePresence>
+        </div>
 
-      {/* ── Spacer ── */}
-      <div style={{ flex: 1 }} />
+        <TDivider />
 
-      {/* ── Group 5: More (⋯) ── */}
-      <div style={{ position: 'relative', flexShrink: 0 }}>
-        <button
-          type="button"
-          aria-label="More formatting"
-          title="More formatting"
-          onMouseDown={e => e.preventDefault()}
-          onClick={() => toggleMenu('more')}
-          style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            width: '28px', height: '28px',
-            borderRadius: '6px', border: 'none',
-            background: openMenu === 'more' ? pressedBg : 'transparent',
-            color: openMenu === 'more' ? '#4ade80' : textSec,
-            cursor: 'pointer',
-            transition: 'background 80ms ease, color 80ms ease',
-          }}
-          onMouseEnter={e => { if (openMenu !== 'more') (e.currentTarget).style.background = hoverBg; }}
-          onMouseLeave={e => { if (openMenu !== 'more') (e.currentTarget).style.background = 'transparent'; }}
-        >
-          <MoreHorizontal size={14} />
-        </button>
+        {/* ── Group 3: Alignment ───────────────────────────────────────────── */}
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          <ToolbarBtn pressed={openMenu === 'align'} onClick={() => toggleMenu('align')} label="Text alignment">
+            <AlignIcon size={14} strokeWidth={1.8} />
+          </ToolbarBtn>
 
-        {openMenu === 'more' && (
-          <div style={{ ...dropStyle, right: 0, minWidth: '180px' }}>
-            {([
-              {
-                label: 'Strikethrough', icon: Strikethrough,
-                action: () => editor?.chain().focus().toggleStrike().run(),
-                active: ts.strike,
-              },
-              {
-                label: 'Inline Code', icon: Code,
-                action: () => editor?.chain().focus().toggleCode().run(),
-                active: ts.code,
-              },
-              {
-                label: 'Code Block', icon: Terminal,
-                action: () => editor?.chain().focus().toggleCodeBlock().run(),
-                active: ts.codeBlock,
-              },
-              {
-                label: 'Bullet List', icon: List,
-                action: () => editor?.chain().focus().toggleBulletList().run(),
-                active: ts.bulletList,
-              },
-              {
-                label: 'Numbered List', icon: ListOrdered,
-                action: () => editor?.chain().focus().toggleOrderedList().run(),
-                active: ts.orderedList,
-              },
-              {
-                label: 'Task List', icon: CheckSquare,
-                action: () => editor?.chain().focus().toggleTaskList().run(),
-                active: ts.taskList,
-              },
-              {
-                label: 'Blockquote', icon: Quote,
-                action: () => editor?.chain().focus().toggleBlockquote().run(),
-                active: ts.blockquote,
-              },
-              {
-                label: 'Divider', icon: Minus,
-                action: () => { editor?.chain().focus().setHorizontalRule().run(); setOpenMenu(null); },
-                active: false,
-              },
-            ]).map(({ label, icon: Icon, action, active }) => (
-              <button
-                key={label}
-                type="button"
-                onMouseDown={e => e.preventDefault()}
-                onClick={() => { action(); if (active || label === 'Divider') setOpenMenu(null); }}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '9px',
-                  width: '100%', padding: '7px 12px',
-                  border: 'none',
-                  background: active ? pressedBg : 'transparent',
-                  color: active ? '#4ade80' : textSec,
-                  cursor: 'pointer', textAlign: 'left',
-                  fontSize: '12px',
-                  transition: 'background 80ms ease',
-                }}
-                onMouseEnter={e => { if (!active) (e.currentTarget).style.background = hoverBg; }}
-                onMouseLeave={e => { if (!active) (e.currentTarget).style.background = 'transparent'; }}
-              >
-                <Icon size={13} />
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
+          <AnimatePresence>
+            {openMenu === 'align' && (
+              <DropPanel>
+                {([
+                  { label: 'Left',    icon: AlignLeft,    value: 'left'    as const },
+                  { label: 'Center',  icon: AlignCenter,  value: 'center'  as const },
+                  { label: 'Right',   icon: AlignRight,   value: 'right'   as const },
+                  { label: 'Justify', icon: AlignJustify, value: 'justify' as const },
+                ]).map(({ label, icon, value }) => (
+                  <DropItem
+                    key={value}
+                    icon={icon}
+                    label={label}
+                    active={ts.textAlign === value}
+                    onClick={() => { editor?.chain().focus().setTextAlign(value).run(); close(); }}
+                  />
+                ))}
+              </DropPanel>
+            )}
+          </AnimatePresence>
+        </div>
+
+        <TDivider />
+
+        {/* ── Group 4: Attachment ─────────────────────────────────────────── */}
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          <ToolbarBtn pressed={openMenu === 'attach'} onClick={() => toggleMenu('attach')} label="Attach file" icon={Paperclip} />
+
+          <AnimatePresence>
+            {openMenu === 'attach' && (
+              <DropPanel>
+                {/* Supported now */}
+                <div style={{
+                  padding: '7px 13px 4px',
+                  fontSize: '9.5px', fontFamily: 'var(--ig-font-mono)',
+                  color: 'rgba(148,163,184,0.38)',
+                  letterSpacing: '0.07em', textTransform: 'uppercase',
+                }}>Attach file</div>
+                {([
+                  { icon: FileText, label: 'PDF document',    accept: '.pdf' },
+                  { icon: FileType, label: 'Word document',   accept: '.doc,.docx' },
+                  { icon: Image,    label: 'Image',           accept: '.png,.jpg,.jpeg,.svg,.webp' },
+                  { icon: FileCode, label: 'Markdown / Text', accept: '.md,.txt' },
+                ] as const).map(({ icon, label, accept }) => (
+                  <DropItem
+                    key={label}
+                    icon={icon}
+                    label={label}
+                    onClick={() => {
+                      const input = document.createElement('input');
+                      input.type = 'file'; input.accept = accept; input.multiple = false;
+                      input.click();
+                      close();
+                    }}
+                  />
+                ))}
+
+                {/* Future */}
+                <div style={{
+                  padding: '8px 13px 4px',
+                  fontSize: '9.5px', fontFamily: 'var(--ig-font-mono)',
+                  color: 'rgba(148,163,184,0.28)',
+                  letterSpacing: '0.07em', textTransform: 'uppercase',
+                  borderTop: `1px solid ${T.divider}`, marginTop: '4px',
+                }}>Coming soon</div>
+                {([
+                  { icon: Globe,   label: 'Figma file' },
+                  { icon: BarChart2, label: 'Loom video' },
+                ] as const).map(({ icon, label }) => (
+                  <DropItem key={label} icon={icon} label={label} disabled badge="soon" />
+                ))}
+                <div style={{ height: '6px' }} />
+              </DropPanel>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* ── Spacer ──────────────────────────────────────────────────────── */}
+        <div style={{ flex: 1 }} />
+
+        {/* ── Group 5: More (⋯) ───────────────────────────────────────────── */}
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          <ToolbarBtn pressed={openMenu === 'more'} onClick={() => toggleMenu('more')} label="More formatting" icon={MoreHorizontal} />
+
+          <AnimatePresence>
+            {openMenu === 'more' && (
+              <DropPanel align="right">
+                {/* Active formatting */}
+                {([
+                  { icon: Strikethrough, label: 'Strikethrough', active: ts.strike,
+                    action: () => { editor?.chain().focus().toggleStrike().run(); } },
+                  { icon: Code,          label: 'Inline code',   active: ts.code,
+                    action: () => { editor?.chain().focus().toggleCode().run(); } },
+                  { icon: Terminal,      label: 'Code block',    active: ts.codeBlock,
+                    action: () => { editor?.chain().focus().toggleCodeBlock().run(); } },
+                ] as const).map(({ icon, label, active, action }) => (
+                  <DropItem key={label} icon={icon} label={label} active={active}
+                    onClick={() => { action(); close(); }} />
+                ))}
+
+                <div style={{ height: '1px', background: T.divider, margin: '4px 0' }} />
+
+                {([
+                  { icon: List,         label: 'Bullet list',    active: ts.bulletList,
+                    action: () => editor?.chain().focus().toggleBulletList().run() },
+                  { icon: ListOrdered,  label: 'Numbered list',  active: ts.orderedList,
+                    action: () => editor?.chain().focus().toggleOrderedList().run() },
+                  { icon: CheckSquare,  label: 'Task list',      active: ts.taskList,
+                    action: () => editor?.chain().focus().toggleTaskList().run() },
+                  { icon: Quote,        label: 'Blockquote',     active: ts.blockquote,
+                    action: () => editor?.chain().focus().toggleBlockquote().run() },
+                ] as const).map(({ icon, label, active, action }) => (
+                  <DropItem key={label} icon={icon} label={label} active={active}
+                    onClick={() => { action(); close(); }} />
+                ))}
+
+                <div style={{ height: '1px', background: T.divider, margin: '4px 0' }} />
+
+                <DropItem icon={Minus}  label="Horizontal rule"
+                  onClick={() => { editor?.chain().focus().setHorizontalRule().run(); close(); }} />
+                <DropItem icon={Table2} label="Table"
+                  onClick={() => {
+                    editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+                    close();
+                  }} />
+
+                {/* Future items — disabled */}
+                <div style={{
+                  padding: '8px 13px 4px',
+                  fontSize: '9.5px', fontFamily: 'var(--ig-font-mono)',
+                  color: 'rgba(148,163,184,0.28)',
+                  letterSpacing: '0.07em', textTransform: 'uppercase',
+                  borderTop: `1px solid ${T.divider}`, marginTop: '4px',
+                }}>Coming soon</div>
+                {([
+                  { icon: Pen,        label: 'Drawing canvas'  },
+                  { icon: Globe,      label: 'Embed'           },
+                  { icon: BarChart2,  label: 'Mermaid diagram' },
+                  { icon: Calculator, label: 'Math block'      },
+                ] as const).map(({ icon, label }) => (
+                  <DropItem key={label} icon={icon} label={label} disabled badge="soon" />
+                ))}
+                <div style={{ height: '6px' }} />
+              </DropPanel>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
     </div>
   );
 }
 
-// ── Bubble presets (Mission 2) ────────────────────────────────────────────────
+// ── Bubble presets (Mission 2 — unchanged) ────────────────────────────────────
 
 const BUBBLE_PRESETS = [
-  { label: 'More concise',    intent: 'Make this more concise — remove redundancy, preserve all PM insights' },
-  { label: 'Sharpen summary', intent: 'Rewrite summary to be crisper and interview-ready — one PM insight per sentence' },
-  { label: 'Add evidence',    intent: 'Ground every claim in frameworks, data, or explicitly labelled assumptions' },
+  { label: 'More concise',      intent: 'Make this more concise — remove redundancy, preserve all PM insights' },
+  { label: 'Sharpen summary',   intent: 'Rewrite summary to be crisper and interview-ready — one PM insight per sentence' },
+  { label: 'Add evidence',      intent: 'Ground every claim in frameworks, data, or explicitly labelled assumptions' },
   { label: 'Improve structure', intent: 'Reorganise for PM logic — problem → insight → decision → artifact' },
-  { label: 'More strategic',  intent: 'Strengthen strategic reasoning — sharper market framing, competitive logic, positioning' },
+  { label: 'More strategic',    intent: 'Strengthen strategic reasoning — sharper market framing, competitive logic, positioning' },
 ] as const;
 
 interface BubbleState { visible: boolean; top: number; anchorX: number; }
@@ -687,16 +761,13 @@ export default function TipTapRenderer({
   const assignAnchorIds = (dom: HTMLElement) => {
     if (!anchors) return;
     const sectionIds = parseSections(content);
-    const h2s = dom.querySelectorAll('h2');
-    h2s.forEach((el, i) => {
+    dom.querySelectorAll('h2').forEach((el, i) => {
       const id = sectionIds[i]?.anchorId;
       if (id) (el as HTMLElement).id = id;
     });
   };
 
-  // Re-created whenever `content` changes — correct for read-only; for editable
-  // mode, content only changes on artifact switch (not on user typing), so this
-  // never discards live edits.
+  // Re-created only when `content` changes (artifact switch, never on user typing)
   const editor = useEditor(
     {
       extensions: [
@@ -714,9 +785,7 @@ export default function TipTapRenderer({
       content,
       editable,
       immediatelyRender: false,
-      onCreate: ({ editor: ed }) => {
-        assignAnchorIds(ed.view.dom as HTMLElement);
-      },
+      onCreate: ({ editor: ed }) => { assignAnchorIds(ed.view.dom as HTMLElement); },
       onUpdate: ({ editor: ed }) => {
         assignAnchorIds(ed.view.dom as HTMLElement);
         if (editable && onContentChange) {
@@ -728,13 +797,11 @@ export default function TipTapRenderer({
     [content],
   );
 
-  // Runtime editable toggle
   useEffect(() => {
     if (!editor) return;
     editor.setEditable(editable, false);
   }, [editor, editable]);
 
-  // ⌘S save handler
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
     if (!editable || !onSave || !editor) return;
     if ((e.metaKey || e.ctrlKey) && e.key === 's') {
@@ -744,49 +811,43 @@ export default function TipTapRenderer({
     }
   }, [editable, onSave, editor]);
 
-  // Arrival highlight
   useEffect(() => {
     if (!containerRef.current) return;
-    const h2s = containerRef.current.querySelectorAll('.ProseMirror h2');
-    h2s.forEach(el => {
+    containerRef.current.querySelectorAll('.ProseMirror h2').forEach(el => {
       const e = el as HTMLElement;
       e.style.transition = reducedMotion ? 'none' : `background-color ${workspaceMotion.arrivalAccentMs}ms ease-out`;
       e.style.backgroundColor = (!!arrivalId && el.id === arrivalId) ? '#0d1a10' : 'transparent';
     });
   }, [arrivalId, reducedMotion, editor, content]);
 
-  // Selection Bubble
+  // ── Selection bubble (Mission 2 — unchanged) ──────────────────────────────
   const [bubble, setBubble] = useState<BubbleState>({ visible: false, top: 0, anchorX: 0 });
   const [bubbleLeft, setBubbleLeft] = useState(0);
 
   useEffect(() => {
-    const handleSelectionChange = () => {
+    const handle = () => {
       const container = containerRef.current;
       if (!container) return;
       const sel = window.getSelection();
       if (!sel || sel.rangeCount === 0 || sel.isCollapsed || sel.toString().length === 0) {
-        setBubble(b => (b.visible ? { ...b, visible: false } : b));
+        setBubble(b => b.visible ? { ...b, visible: false } : b);
         return;
       }
       if (!container.contains(sel.anchorNode)) {
-        setBubble(b => (b.visible ? { ...b, visible: false } : b));
+        setBubble(b => b.visible ? { ...b, visible: false } : b);
         return;
       }
-      const range  = sel.getRangeAt(0);
+      const range = sel.getRangeAt(0);
       const selRect = range.getBoundingClientRect();
-      if (selRect.width === 0 && selRect.height === 0) {
-        setBubble(b => (b.visible ? { ...b, visible: false } : b));
-        return;
-      }
-      const containerRect = container.getBoundingClientRect();
-      const GAP = 8; const BUBBLE_H_ESTIMATE = 40;
-      let top = selRect.top - containerRect.top - BUBBLE_H_ESTIMATE - GAP;
-      if (top < 0) top = selRect.bottom - containerRect.top + GAP;
-      const anchorX = selRect.left - containerRect.left + selRect.width / 2;
-      setBubble({ visible: true, top, anchorX });
+      if (selRect.width === 0 && selRect.height === 0) { setBubble(b => b.visible ? { ...b, visible: false } : b); return; }
+      const cRect = container.getBoundingClientRect();
+      const GAP = 8; const BH = 40;
+      let top = selRect.top - cRect.top - BH - GAP;
+      if (top < 0) top = selRect.bottom - cRect.top + GAP;
+      setBubble({ visible: true, top, anchorX: selRect.left - cRect.left + selRect.width / 2 });
     };
-    document.addEventListener('selectionchange', handleSelectionChange);
-    return () => document.removeEventListener('selectionchange', handleSelectionChange);
+    document.addEventListener('selectionchange', handle);
+    return () => document.removeEventListener('selectionchange', handle);
   }, []);
 
   useLayoutEffect(() => {
@@ -794,22 +855,18 @@ export default function TipTapRenderer({
     const container = containerRef.current;
     const el = bubbleRef.current;
     if (!container || !el) return;
-    const containerWidth = container.getBoundingClientRect().width;
-    const bubbleWidth = el.offsetWidth;
-    const margin = 4;
-    const maxLeft = Math.max(margin, containerWidth - bubbleWidth - margin);
-    const left = Math.max(margin, Math.min(bubble.anchorX - bubbleWidth / 2, maxLeft));
-    setBubbleLeft(left);
+    const cw = container.getBoundingClientRect().width;
+    const bw = el.offsetWidth;
+    const m = 4;
+    setBubbleLeft(Math.max(m, Math.min(bubble.anchorX - bw / 2, Math.max(m, cw - bw - m))));
   }, [bubble.visible, bubble.anchorX, bubble.top]);
 
   const handlePresetClick = (intent: string) => {
-    if (!onPresetSelect) return;
-    onPresetSelect(intent);
+    onPresetSelect?.(intent);
     window.getSelection()?.removeAllRanges();
     setBubble(b => ({ ...b, visible: false }));
   };
 
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div
       ref={containerRef}
@@ -840,11 +897,8 @@ export default function TipTapRenderer({
               exit={reducedMotion ? undefined : { opacity: 0, scale: 0.92, y: 4 }}
               transition={{ duration: 0.12, ease: 'easeOut' }}
               style={{
-                top: bubble.top,
-                left: bubbleLeft,
-                background: documentTheme === 'paper'
-                  ? 'rgba(253,248,243,0.97)'
-                  : 'var(--ig-surface-overlay)',
+                top: bubble.top, left: bubbleLeft,
+                background: documentTheme === 'paper' ? 'rgba(253,248,243,0.97)' : 'var(--ig-surface-overlay)',
                 border: `1px solid ${documentTheme === 'paper' ? 'rgba(74,222,128,0.2)' : 'rgba(74,222,128,0.18)'}`,
                 boxShadow: 'var(--ig-elev-overlay)',
                 borderRadius: 'var(--ig-radius-full)',

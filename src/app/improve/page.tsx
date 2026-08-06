@@ -247,7 +247,10 @@ export default function ImprovePage() {
   const [wsDocContent, setWsDocContent] = useState('');
   const [wsDocTitle, setWsDocTitle] = useState('');
   const [wsDocSaveState, setWsDocSaveState] = useState<'clean'|'dirty'|'saving'|'saved'>('clean');
-  const wsDocSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wsDocSaveTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Tracks live editor content without setState (setState would re-pass `content` prop →
+  // useEditor([content]) recreates the editor → focus lost on every keystroke).
+  const wsDocCurrentRef    = useRef<string>('');
   const [rawContent, setRawContent] = useState<string|null>(null);
   const [parseWarn,  setParseWarn]  = useState<string|null>(null);
   const [fileLoading,setFileLoading]= useState(false);
@@ -564,6 +567,7 @@ export default function ImprovePage() {
   const handleOpenWsDoc = useCallback((docId: string) => {
     const doc = getDoc(docId);
     if (!doc) return;
+    wsDocCurrentRef.current = doc.content;  // seed ref before editor mounts
     setWsDocId(docId);
     setWsDocData(doc);
     setWsDocContent(doc.content);
@@ -592,9 +596,13 @@ export default function ImprovePage() {
     setTimeout(() => setWsDocSaveState(s => s === 'saved' ? 'clean' : s), 2000);
   }, [wsDocId, wsDocTitle]);
 
-  // Autosave on content change (8s debounce, matching artifact save)
+  // Autosave on content change (8s debounce).
+  // IMPORTANT: do NOT call setWsDocContent here. That would update the `content`
+  // prop passed to TipTapRenderer, which would trigger useEditor([content]) to
+  // recreate the editor on every keystroke — destroying focus. wsDocCurrentRef
+  // tracks live content without causing any React re-render.
   const handleWsDocContentChange = useCallback((md: string) => {
-    setWsDocContent(md);
+    wsDocCurrentRef.current = md;
     setWsDocSaveState('dirty');
     if (wsDocSaveTimerRef.current) clearTimeout(wsDocSaveTimerRef.current);
     wsDocSaveTimerRef.current = setTimeout(() => void handleWsDocSave(md), 8000);
@@ -1159,7 +1167,7 @@ export default function ImprovePage() {
                 </span>
 
                 <button
-                  onClick={() => handleWsDocSave(wsDocContent)}
+                  onClick={() => handleWsDocSave(wsDocCurrentRef.current)}
                   style={{
                     padding: '5px 14px', background: '#0a1f0e', border: '1px solid #4ade8033',
                     borderRadius: '4px', fontSize: '11px', fontWeight: 600,

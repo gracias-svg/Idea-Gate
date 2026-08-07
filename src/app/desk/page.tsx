@@ -14,12 +14,15 @@ import { useGlobalStore } from '@/lib/GlobalStore';
 import { useRuntime } from '@/lib/RuntimeContext';
 import { parseContent } from '@/lib/parseContent';
 import { type StageData } from '@/components/desk/LifecycleNodeChain';
+import AgentToolGroup, { type StreamEvent } from '@/components/studio/AgentToolGroup';
+import LifecycleTaskList from '@/components/studio/LifecycleTaskList';
 import ArtifactReaderOverlay, { type ReaderArtifact } from '@/components/desk/ArtifactReader';
 import WorkspaceExplorer, { type WorkspaceNode } from '@/components/shared/WorkspaceExplorer';
 import FolderWorkspace from '@/components/shared/FolderWorkspace';
 import { useWorkspaceState } from '@/lib/useWorkspaceState';
 import AttentionDrawer from '@/components/desk/AttentionDrawer';
 import ArtifactInspector from '@/components/desk/ArtifactInspector';
+import { buildLiveDocumentsChildren } from '@/lib/buildWorkspaceTree';
 
 const MONO: React.CSSProperties = { fontFamily: "'JetBrains Mono','Fira Code',monospace" };
 const SANS: React.CSSProperties = { fontFamily: "'Geist Sans', 'Geist', system-ui, -apple-system, sans-serif" };
@@ -291,6 +294,10 @@ export default function DeskPage() {
   const [focusMode,    setFocusMode]    = useState(false);
   const [summaries,    setSummaries]    = useState<Record<string, string>>({});
   const [isRunning,    setIsRunning]    = useState(false);
+  // M32A: lifecycle execution state — drives AgentToolGroup in Desk center panel
+  const [deskCurrentAgent,  setDeskCurrentAgent]  = useState<string | null>(null);
+  const [deskRecentEvents,  setDeskRecentEvents]  = useState<StreamEvent[]>([]);
+  const [deskRunStartedAt,  setDeskRunStartedAt]  = useState<number | undefined>(undefined);
 
   // ── Folder workspace state ────────────────────────────────────────────────
   const [selectedFolder, setSelectedFolder] = useState<WorkspaceNode | null>(null);
@@ -366,14 +373,63 @@ export default function DeskPage() {
     return () => clearInterval(poll);
   },[]);
 
+  const deskEsRef = useRef<EventSource | null>(null);
   useEffect(()=>{
     const check = () => fetch('/api/run').then(r=>r.json())
-      .then(d=>setIsRunning(!!(d.running??false)))
+      .then(d=>{
+        const running = !!(d.isRunning??false);
+        setIsRunning(running);
+        // M32A: propagate agent / startedAt from .current-run.json into Desk panel
+        if (d.currentAgent != null) setDeskCurrentAgent(d.currentAgent as string | null);
+        if (running && d.startedAt && !deskEsRef.current) {
+          setDeskRunStartedAt(new Date(d.startedAt as string).getTime());
+        }
+        if (!running) {
+          setDeskCurrentAgent(null);
+          setDeskRecentEvents([]);
+          setDeskRunStartedAt(undefined);
+          if (deskEsRef.current) { deskEsRef.current.close(); deskEsRef.current = null; }
+        }
+      })
       .catch(()=>setIsRunning(false));
     check();
     const t = setInterval(check, 2000);
     return () => clearInterval(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
+
+  // M32A: SSE for real-time agent events in Desk — mirrors improve/page.tsx SSE effect
+  useEffect(()=>{
+    if (!isRunning) {
+      if (deskEsRef.current) { deskEsRef.current.close(); deskEsRef.current = null; }
+      return;
+    }
+    if (deskEsRef.current) return;
+    const es = new EventSource('/api/stream');
+    deskEsRef.current = es;
+    setDeskRecentEvents([]);
+    es.addEventListener('stage_start', (e:MessageEvent)=>{
+      try { const d=JSON.parse(e.data); setDeskRecentEvents([{type:'stage_start',stage:d.stage,name:d.name}]); } catch{/**/}
+    });
+    es.addEventListener('agent_active', (e:MessageEvent)=>{
+      try {
+        const d=JSON.parse(e.data);
+        if (d.agent) {
+          setDeskCurrentAgent(d.agent as string);
+          setDeskRecentEvents(prev=>[...prev,{type:'agent_active',agent:d.agent}]);
+        }
+      } catch{/**/}
+    });
+    es.addEventListener('run_complete', ()=>{
+      setIsRunning(false); setDeskCurrentAgent(null); setDeskRecentEvents([]);
+      if (deskEsRef.current) { deskEsRef.current.close(); deskEsRef.current = null; }
+    });
+    es.addEventListener('run_stopped', ()=>{
+      setIsRunning(false); setDeskCurrentAgent(null); setDeskRecentEvents([]);
+      if (deskEsRef.current) { deskEsRef.current.close(); deskEsRef.current = null; }
+    });
+    return ()=>{ es.close(); deskEsRef.current = null; };
+  },[isRunning]);
 
   // Fetch 150-char summaries for card grid
   useEffect(()=>{
@@ -602,27 +658,9 @@ export default function DeskPage() {
 
   // Workspace tree for WorkspaceExplorer (W1/W2)
   // R2 (Mission 17): All nodes wrapped inside a project root derived from projectPath.
+  // M32B: documents children built live from actual artifacts via buildLiveDocumentsChildren.
+  // No disabled/placeholder stage nodes. Tree grows with the lifecycle.
   const workspaceTree = useMemo((): WorkspaceNode[] => {
-    const phaseFolder = (phase: typeof LIFECYCLE_PHASES[0]): WorkspaceNode => ({
-      id:         `phase-${phase.id}`,
-      kind:       'folder',
-      label:      phase.label,
-      phaseColor: phase.color,
-      count:      phase.stages.filter(n => artifacts.some(a => stageNum(a) === n)).length,
-      children:   phase.stages.map(n => {
-        const file   = artifacts.find(a => stageNum(a) === n);
-        const health = getHealthState(file, n, journeyState.stages, runtime, isRunning, currentStage);
-        return {
-          id:          `stage-${n}`,
-          kind:        file ? ('file' as const) : ('disabled' as const),
-          label:       STAGE_LABEL[n] ?? `Stage ${n}`,
-          file:        file,
-          stageIndex:  n,
-          healthState: health,
-          version:     file ? runtime.getVersion(file) : 0,
-        } as WorkspaceNode;
-      }),
-    });
     // Inner nodes (Documents, History, coming-soon placeholders)
     const innerNodes: WorkspaceNode[] = [
       {
@@ -630,7 +668,14 @@ export default function DeskPage() {
         kind:     'folder',
         label:    'Documents',
         count:    artifacts.length,
-        children: LIFECYCLE_PHASES.map(phaseFolder),
+        children: buildLiveDocumentsChildren({
+          artifacts,
+          currentStage,
+          isRunning,
+          // Desk health: full richness — journey confidence + stale + generating
+          getHealth: (file, n) => getHealthState(file, n, journeyState.stages, runtime, isRunning, currentStage),
+          getVer:    (file)    => runtime.getVersion(file),
+        }),
       },
     ];
     if (runtime.state.events.length > 0) {
@@ -734,6 +779,30 @@ export default function DeskPage() {
               node={selectedFolder}
               onClose={() => { setSelectedFolder(null); ws.setActiveNodeId(null); }}
             />
+          ) : isRunning ? (
+            /* M32A Goals 5 & 6 — lifecycle execution panel mirrors Studio behaviour */
+            <div style={{
+              flex: 1, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', padding: '40px 32px', gap: '16px',
+              overflowY: 'auto',
+            }}>
+              <div style={{ width: '100%', maxWidth: '480px' }}>
+                <LifecycleTaskList
+                  currentStage={currentStage}
+                  isRunning={isRunning}
+                  idea={undefined}
+                />
+              </div>
+              <div style={{ width: '100%', maxWidth: '480px' }}>
+                <AgentToolGroup
+                  currentStage={currentStage}
+                  currentAgent={deskCurrentAgent}
+                  isRunning={isRunning}
+                  recentEvents={deskRecentEvents}
+                  startedAt={deskRunStartedAt}
+                />
+              </div>
+            </div>
           ) : (
           <div style={{flex:1,overflowY:'auto',padding:'32px 40px'}}>
             <div style={{maxWidth:'1080px',margin:'0 auto'}}>

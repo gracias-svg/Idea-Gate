@@ -6,7 +6,7 @@
 // Single settings entry point: ⚙ gear icon (rightmost, opens SettingsModal)
 // No other settings surfaces exist anywhere else in the product.
 
-import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { useRuntime } from '@/lib/RuntimeContext';
 import { useGlobalStore } from '@/lib/GlobalStore';
@@ -48,9 +48,16 @@ export default function TopBar() {
   const [runningIdea,   setRunningIdea]   = useState('');
   const [runError,      setRunError]      = useState('');
 
-  // Poll project state — faster cadence while a lifecycle is actively running.
-  // Uses /api/data (journey.json → currentStage + artifacts) and
-  // /api/run GET (isRunning flag from the spawn guard) — not /api/generate.
+  // Stable ref so the polling closure can read the current idea without a
+  // stale closure — we never want to overwrite user input with server data.
+  const ideaRef = useRef(idea);
+  useEffect(() => { ideaRef.current = idea; }, [idea]);
+
+  // Poll project state — mount-only effect (no [isRunning] dep).
+  // Previously dep was [isRunning]: every time isRunning changed the effect
+  // re-ran and called refresh() immediately. After Stop, that immediate call
+  // could still see { isRunning: true } on the server, flipping the badge back
+  // to Running within ~1 s. Fixed: stable 2 s interval, no restart on state change.
   useEffect(() => {
     const refresh = () => {
       fetch('/api/data').then(r=>r.json()).then(d=>{
@@ -59,14 +66,15 @@ export default function TopBar() {
       }).catch(()=>{});
       fetch('/api/run').then(r=>r.json()).then(d=>{
         setIsRunning(d.isRunning ?? false);
-        // Restore idea text after browser refresh — GET now returns it from .current-run.json
-        if (d.isRunning && d.idea && !idea) setIdea(d.idea);
+        // Restore idea text after browser refresh — only if textarea is empty
+        if (d.isRunning && d.idea && !ideaRef.current) setIdea(d.idea);
       }).catch(()=>{});
     };
     refresh();
-    const id = setInterval(refresh, isRunning ? 2000 : 4000);
+    const id = setInterval(refresh, 2000);
     return () => clearInterval(id);
-  }, [isRunning]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Global ⌘K handler (keyboard-nav setting gates this)
   useEffect(() => {
@@ -105,6 +113,11 @@ export default function TopBar() {
       if (!res.ok || data.error) {
         setRunError(data.error ?? `Failed to start lifecycle (HTTP ${res.status})`);
         setIsRunning(false);
+      } else {
+        // M32A Goal 2 & 7: new run started — clear old artifacts from workspace display
+        // so the tree starts fresh and fills progressively. Dispatch the existing
+        // ideagate:clearArtifact event that desk/page already listens for.
+        window.dispatchEvent(new Event('ideagate:clearArtifact'));
       }
       // On success: CLI is now running in background. Polling (above) detects
       // when it finishes and sets isRunning = false automatically.

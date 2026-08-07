@@ -230,6 +230,12 @@ export async function POST(req: Request) {
 }
 
 // ── DELETE — stop a running lifecycle ─────────────────────────────────────────
+//
+// Fast-stop design: mark server state as stopped and delete files BEFORE
+// sending any signals. This means GET /api/run returns { isRunning: false }
+// immediately after this handler completes — the polling effects in the UI
+// will never see a spurious { isRunning: true } after Stop returns.
+// SIGKILL is sent asynchronously after 2 s to reap any lingering process.
 export async function DELETE() {
   const pidFile = CLI_DIR ? path.join(CLI_DIR, '.current-run.pid') : '';
   const runFile = runFilePath();
@@ -245,18 +251,18 @@ export async function DELETE() {
     // No PID file — already stopped
   }
 
-  if (pid && !isNaN(pid)) {
-    try {
-      process.kill(pid, 'SIGTERM');
-      // Give process 2s to exit gracefully, then SIGKILL
-      await new Promise(r => setTimeout(r, 2000));
-      try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ }
-    } catch { /* process already exited */ }
-  }
-
+  // ── Mark stopped immediately so GET never flip-flops back to running ──
   isRunning = false;
   try { fs.unlinkSync(pidFile); } catch { /* already gone */ }
   try { if (runFile) fs.unlinkSync(runFile); } catch { /* already gone */ }
+
+  if (pid && !isNaN(pid)) {
+    // SIGTERM now; SIGKILL after 2 s — both fire-and-forget so DELETE returns fast
+    try { process.kill(pid, 'SIGTERM'); } catch { /* already exited */ }
+    setTimeout(() => {
+      try { process.kill(pid!, 'SIGKILL'); } catch { /* already gone */ }
+    }, 2000);
+  }
 
   console.log(`[RUN] Lifecycle stopped by user. PID was: ${pid}`);
   return NextResponse.json({ stopped: true });

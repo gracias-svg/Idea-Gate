@@ -27,6 +27,7 @@ import { stageDisplayNumber } from '@/lib/execution/adapters/orchestration';
 import ViewSwitcher from '@/components/improve/ViewSwitcher';
 import TipTapRenderer from '@/components/improve/TipTapRenderer';
 import { humanName, stageNum } from '@/lib/artifactDisplay';
+import { buildLiveDocumentsChildren } from '@/lib/buildWorkspaceTree';
 import WorkspaceExplorer, { type WorkspaceNode } from '@/components/shared/WorkspaceExplorer';
 import FolderWorkspace from '@/components/shared/FolderWorkspace';
 import { useWorkspaceState } from '@/lib/useWorkspaceState';
@@ -317,6 +318,13 @@ export default function ImprovePage() {
         if (d.currentAgent != null) setRunCurrentAgent(d.currentAgent);
         setRunIsRunning(nowRunning);
 
+        // Transition: stopped → running → new lifecycle started, clear stale display
+        if (!prevRunning && nowRunning) {
+          setArtifacts([]);
+          setSelected(null);
+          setRunCurrentAgent(null);
+          setRecentEvents([]);
+        }
         // Transition: running → stopped → auto-select newest artifact
         if (prevRunning && !nowRunning) {
           setRunCurrentAgent(null);
@@ -335,10 +343,13 @@ export default function ImprovePage() {
     };
 
     poll();
-    const id = setInterval(poll, runIsRunning ? 2000 : 4000);
+    const id = setInterval(poll, 2000);
     return () => { cancelled = true; clearInterval(id); };
+  // mount-only — dep on runIsRunning caused a polling restart that fired an
+  // immediate GET while DELETE was still in-flight, flipping the UI back to Running.
+  // prevRunning is now stable for the lifetime of the mount (correct transition detection).
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runIsRunning]);
+  }, []);
 
   // SSE: open EventSource when runIsRunning transitions to true
   useEffect(() => {
@@ -383,6 +394,14 @@ export default function ImprovePage() {
       } catch { /* ignore */ }
     });
     es.addEventListener('run_complete', () => {
+      setRunIsRunning(false);
+      setRunCurrentAgent(null);
+      if (esRunRef.current) { esRunRef.current.close(); esRunRef.current = null; }
+    });
+    // run_stopped is sent when the user clicks Stop. Without this handler the
+    // browser EventSource auto-reconnects indefinitely (built-in browser behaviour)
+    // because the server closes the stream with no client-side acknowledgment.
+    es.addEventListener('run_stopped', () => {
       setRunIsRunning(false);
       setRunCurrentAgent(null);
       if (esRunRef.current) { esRunRef.current.close(); esRunRef.current = null; }
@@ -627,41 +646,22 @@ export default function ImprovePage() {
   },[selected]);
 
   // ── W6: Studio workspace tree for WorkspaceExplorer ────────────────────────
-  // Simpler health than Desk: isStale → stale, else trustworthy (no 'questionable').
+  // M32B: tree built live from actual disk artifacts via buildLiveDocumentsChildren.
+  // No disabled/placeholder stage nodes. No static lifecycle pre-build.
   const studioTree = React.useMemo((): WorkspaceNode[] => {
-    const STUDIO_PHASES = [
-      { id: 'discover',  label: 'Discover',  color: '#4ade80', stages: [0, 1, 2]        },
-      { id: 'decide',    label: 'Decide',    color: '#38bdf8', stages: [3, 4, 5, 6]     },
-      { id: 'specify',   label: 'Specify',   color: '#818cf8', stages: [7, 8, 9]        },
-      { id: 'architect', label: 'Architect', color: '#fb923c', stages: [10, 11]         },
-      { id: 'ship',      label: 'Ship',      color: '#fde047', stages: [12, 13, 14]     },
-    ];
-    // Fix 4 (Mission 22): wrap in project-root to match Desk's explorer structure.
     const documentsNode: WorkspaceNode = {
       id:    'documents',
       kind:  'folder',
       label: 'Documents',
       count: artifacts.length,
-      children: STUDIO_PHASES.map(phase => ({
-        id:         `phase-${phase.id}`,
-        kind:       'folder' as const,
-        label:      phase.label,
-        phaseColor: phase.color,
-        count:      phase.stages.filter(n => artifacts.some(f => stageNum(f) === n)).length,
-        children:   phase.stages.map(n => {
-          const file   = artifacts.find(f => stageNum(f) === n);
-          const health = file ? (runtime.isStale(file) ? 'stale' : 'trustworthy') : 'queued';
-          return {
-            id:          `stage-${n}`,
-            kind:        (file ? 'file' : 'disabled') as 'file' | 'disabled',
-            label:       STAGE_LABELS[n] ?? `Stage ${n}`,
-            file:        file,
-            stageIndex:  n,
-            healthState: health as WorkspaceNode['healthState'],
-            version:     file ? runtime.getVersion(file) : 0,
-          } satisfies WorkspaceNode;
-        }),
-      })),
+      children: buildLiveDocumentsChildren({
+        artifacts,
+        currentStage: runCurrentStage,
+        isRunning:    runIsRunning,
+        // Studio health: simpler — isStale → stale, else trustworthy.
+        getHealth: (file) => runtime.isStale(file) ? 'stale' : 'trustworthy',
+        getVer:    (file) => runtime.getVersion(file),
+      }),
     };
     const optionalFolders: WorkspaceNode[] = [
       {
@@ -689,7 +689,7 @@ export default function ImprovePage() {
       count:    artifacts.length,
       children: [documentsNode, ...optionalFolders],
     }];
-  }, [artifacts, runtime, activeProject, ws.projectDisplayName]);
+  }, [artifacts, runtime, activeProject, ws.projectDisplayName, runIsRunning, runCurrentStage]);
 
   const activeModel = MODELS.find(m => m.key === modelKey) ?? (() => {
     const meta = getModelMeta(modelKey);

@@ -87,6 +87,27 @@ A new orchestration type (Research, Investigate, Plan, etc.) is new **contents**
 **CRITICAL RULE — Context isolation:**
 The workspace tree must be derived from the **CURRENT ACTIVE RUN**. Research artifacts must not appear in a Build workspace and vice versa. The condition `outcome === 'research'` must guard Research-specific tree nodes. This is enforced at the data layer (which `WorkspaceNode[]` array is passed), not with CSS/display:none.
 
+**ACTIVE WORKSPACE ISOLATION (mandatory rule for all orchestrations):**
+
+The canonical shell is shared. The workspace DATA is not.
+
+WorkspaceExplorer must receive EITHER Build nodes OR Research nodes — never both simultaneously. The tree is mutually exclusive by active outcome:
+
+```
+IF v3RunInfo?.outcome === 'research' AND v3Artifacts.length > 0:
+  WorkspaceExplorer receives research-only tree
+  (Project root → Documents → Research Intelligence → artifacts)
+  Build project tree must NOT render
+
+ELSE:
+  WorkspaceExplorer receives Build project tree only
+  Research Intelligence folder must NOT render
+```
+
+Implementation: the `workspaceTree` useMemo in `desk/page.tsx` must return early with the Research-only tree when `isResearchActive`. The Build tree code path must never append Research nodes — mutual exclusion is enforced by `return` before the Build tree is constructed.
+
+Historical runs remaining on disk are acceptable and expected. They must NOT enter the active workspace merely because they exist in storage. **ARTIFACT CO-OCCURRENCE IS NOT ACTIVE CONTEXT.**
+
 ---
 
 ### 2.3 Studio — Universal Collaborative Document Editor
